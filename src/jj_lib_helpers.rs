@@ -5,11 +5,10 @@
 /// provides helpers for read operations and simple mutations.
 use eyre::{bail, Context, Result};
 use itertools::Itertools;
-use jj_lib::backend::CommitId;
 use jj_lib::commit::Commit;
 use jj_lib::config::{ConfigLayer, ConfigSource, StackedConfig};
 use jj_lib::id_prefix::IdPrefixContext;
-use jj_lib::ref_name::{RefName, RefNameBuf, RemoteName, RemoteRefSymbol};
+use jj_lib::ref_name::{RemoteName, RemoteRefSymbol};
 use jj_lib::repo::{ReadonlyRepo, Repo, StoreFactories};
 use jj_lib::revset::{
     self, RevsetDiagnostics, RevsetIteratorExt, RevsetParseContext, RevsetWorkspaceContext,
@@ -72,16 +71,6 @@ impl JjRepo {
             repo,
             settings,
         })
-    }
-
-    #[allow(dead_code)]
-    pub fn workspace(&self) -> &Workspace {
-        &self.workspace
-    }
-
-    #[allow(dead_code)]
-    pub fn repo(&self) -> &Arc<ReadonlyRepo> {
-        &self.repo
     }
 
     /// Start a transaction for making changes
@@ -154,20 +143,6 @@ impl JjRepo {
         self.eval_revset_single("@")
     }
 
-    /// Get all local bookmarks as (name, commit_id) pairs
-    #[allow(dead_code)]
-    pub fn local_bookmarks(&self) -> Vec<(&RefName, CommitId)> {
-        self.repo
-            .view()
-            .local_bookmarks()
-            .filter_map(|(name, target)| {
-                target
-                    .as_resolved()
-                    .and_then(|opt| opt.as_ref().map(|id| (name, id.clone())))
-            })
-            .collect()
-    }
-
     /// Get local bookmarks on a specific commit
     pub fn bookmarks_at(&self, commit: &Commit) -> Vec<String> {
         self.repo
@@ -217,51 +192,6 @@ impl JjRepo {
                 }
             })
             .collect()
-    }
-
-    /// Get tracked bookmarks that are deleted on remote (target is absent)
-    #[allow(dead_code)]
-    pub fn deleted_remote_bookmarks(&self, remote: &str) -> Vec<String> {
-        let remote_name = RemoteName::new(remote);
-        self.repo
-            .view()
-            .all_remote_bookmarks()
-            .filter_map(|(symbol, remote_ref)| {
-                // A bookmark is "deleted" on remote if it's tracked but the target is absent
-                if symbol.remote == remote_name && remote_ref.target.is_absent() {
-                    Some(symbol.name.as_str().to_string())
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
-    /// Set a local bookmark to point to a commit
-    #[allow(dead_code)]
-    pub fn set_bookmark(&self, name: &str, commit_id: &CommitId) -> Result<Arc<ReadonlyRepo>> {
-        let mut tx = self.start_transaction();
-        let target = jj_lib::op_store::RefTarget::resolved(Some(commit_id.clone()));
-        tx.repo_mut()
-            .set_local_bookmark_target(&RefNameBuf::from(name.to_string()), target);
-        let repo = tx
-            .commit(format!("set bookmark {name}"))
-            .wrap_err("failed to commit transaction")?;
-        Ok(repo)
-    }
-
-    /// Delete a local bookmark
-    #[allow(dead_code)]
-    pub fn delete_bookmark(&self, name: &str) -> Result<Arc<ReadonlyRepo>> {
-        let mut tx = self.start_transaction();
-        tx.repo_mut().set_local_bookmark_target(
-            &RefNameBuf::from(name.to_string()),
-            jj_lib::op_store::RefTarget::absent(),
-        );
-        let repo = tx
-            .commit(format!("delete bookmark {name}"))
-            .wrap_err("failed to commit transaction")?;
-        Ok(repo)
     }
 
     /// Abandon a commit
