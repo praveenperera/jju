@@ -155,6 +155,29 @@ impl<'a> PreviewBuilder<'a> {
         Self { tree, relations }
     }
 
+    /// Find the last node in a chain (the leaf/tip of the moving subtree)
+    /// Follows children until finding a node with no children in the moving set
+    fn find_last_descendant(&self, start: NodeId, moving_ids: &HashSet<NodeId>) -> NodeId {
+        let mut current = start;
+        loop {
+            // find children that are in the moving set
+            let moving_children: Vec<NodeId> = self
+                .relations
+                .children_of(current)
+                .iter()
+                .copied()
+                .filter(|c| moving_ids.contains(c))
+                .collect();
+
+            if moving_children.is_empty() {
+                // no more moving children, this is the last node
+                return current;
+            }
+            // follow the first moving child (in a linear chain, there should be only one)
+            current = moving_children[0];
+        }
+    }
+
     /// Build a rebase preview using data-first approach
     pub fn rebase_preview(
         mut self,
@@ -197,12 +220,14 @@ impl<'a> PreviewBuilder<'a> {
         let dest_children: Vec<NodeId> = self.relations.children_of(dest).to_vec();
 
         if !allow_branches && !dest_children.is_empty() {
-            // INLINE mode: source takes over dest's children
-            // dest's children become source's children
+            // INLINE mode: dest's children go to the END of the moving chain
+            // find the last node in the moving chain (leaf of the moving subtree)
+            let last_moving = self.find_last_descendant(source, &moving_ids);
+
             for &child in &dest_children {
                 if !moving_ids.contains(&child) {
                     self.relations.remove_from_parent(child);
-                    self.relations.add_child(source, child);
+                    self.relations.add_child(last_moving, child);
                 }
             }
         }
