@@ -2,6 +2,10 @@ use super::app::{
     App, BookmarkInputState, BookmarkSelectAction, BookmarkSelectState, ConfirmState, DiffLineKind,
     DiffStats, MessageKind, Mode, RebaseType, StatusMessage,
 };
+use super::preview::{
+    get_node, MarkerMode, NodeId, PreviewBuilder, PreviewRebaseType,
+    render_tree_line as render_preview_line,
+};
 use super::tree::{BookmarkInfo, TreeNode};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -11,14 +15,6 @@ use ratatui::{
     Frame,
 };
 use tui_popup::Popup;
-
-struct PreviewEntry {
-    original_index: usize,
-    visual_depth: usize,
-    is_source: bool,
-    is_moving: bool,
-    is_dest: bool,
-}
 
 /// Format bookmarks to fit within max_width, showing "+N" for overflow
 /// Diverged bookmarks are marked with * suffix
@@ -163,11 +159,39 @@ fn render_tree(frame: &mut Frame, app: &App, area: Rect) {
     let viewport_height = inner.height as usize;
     let scroll_offset = app.tree.scroll_offset;
 
-    // check if we're in rebase mode - use preview rendering
+    // check if we're in rebase mode - use data-first preview rendering
     if let (Mode::Rebasing, Some(ref state)) = (&app.mode, &app.rebase_state) {
-        let preview =
-            build_rebase_preview(app, state.dest_cursor, &state.source_rev, state.rebase_type);
-        render_tree_with_preview(frame, app, inner, viewport_height, scroll_offset, &preview);
+        // find source index from source_rev
+        let source_idx = app
+            .tree
+            .visible_entries
+            .iter()
+            .enumerate()
+            .find(|(_, entry)| app.tree.nodes[entry.node_index].change_id == state.source_rev)
+            .map(|(idx, _)| idx)
+            .unwrap_or(0);
+
+        let rebase_type = match state.rebase_type {
+            RebaseType::Single => PreviewRebaseType::Single,
+            RebaseType::WithDescendants => PreviewRebaseType::WithDescendants,
+        };
+
+        let preview = PreviewBuilder::new(&app.tree).rebase_preview(
+            NodeId(source_idx),
+            NodeId(state.dest_cursor),
+            rebase_type,
+            state.allow_branches,
+        );
+
+        render_tree_with_data_preview(
+            frame,
+            app,
+            inner,
+            viewport_height,
+            scroll_offset,
+            &preview,
+            state.allow_branches,
+        );
     } else {
         // normal rendering (including MovingBookmark and Squashing modes)
         render_tree_normal(frame, app, inner, viewport_height, scroll_offset);
@@ -245,6 +269,51 @@ fn render_tree_normal(
                 line_count += 1;
             }
         }
+    }
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, area);
+}
+
+/// Render tree using data-first preview (for rebase mode)
+fn render_tree_with_data_preview(
+    frame: &mut Frame,
+    app: &App,
+    area: Rect,
+    viewport_height: usize,
+    scroll_offset: usize,
+    preview: &super::preview::Preview,
+    allow_branches: bool,
+) {
+    let mut lines: Vec<Line> = Vec::new();
+
+    // find cursor position in preview (the dest node)
+    let cursor_slot_idx = preview
+        .dest_id
+        .and_then(|dest| preview.slots.iter().position(|s| s.node_id == dest));
+
+    for (line_count, (slot_idx, slot)) in preview
+        .slots
+        .iter()
+        .enumerate()
+        .skip(scroll_offset)
+        .enumerate()
+    {
+        if line_count >= viewport_height {
+            break;
+        }
+
+        let node = get_node(&app.tree, slot.node_id);
+        let is_cursor = cursor_slot_idx == Some(slot_idx);
+        let marker_mode = MarkerMode::Rebase { allow_branches };
+
+        lines.push(render_preview_line(
+            node,
+            slot.visual_depth,
+            is_cursor,
+            slot.role,
+            marker_mode,
+        ));
     }
 
     let paragraph = Paragraph::new(lines);
@@ -334,278 +403,6 @@ fn render_tree_line_with_markers(
         );
     } else if is_source {
         // highlight source entry
-        line = line.style(Style::default().bg(Color::Rgb(50, 50, 30)));
-    } else if is_multi_selected {
-        line = line.style(Style::default().bg(Color::Rgb(40, 50, 40)));
-    }
-
-    line
-}
-
-/// Build the preview list showing how the tree will look after rebase
-fn build_rebase_preview(
-    app: &App,
-    dest_cursor: usize,
-    source_rev: &str,
-    rebase_type: RebaseType,
-) -> Vec<PreviewEntry> {
-    let mut preview = Vec::new();
-
-    // find source index
-    let mut source_idx = None;
-    let mut source_struct_depth = 0usize;
-    let mut source_visual_depth = 0usize;
-
-    for (idx, entry) in app.tree.visible_entries.iter().enumerate() {
-        let node = &app.tree.nodes[entry.node_index];
-        if node.change_id == source_rev {
-            source_idx = Some(idx);
-            source_struct_depth = node.depth;
-            source_visual_depth = entry.visual_depth;
-            break;
-        }
-    }
-
-    // get destination visual depth
-    let dest_visual_depth = app
-        .tree
-        .visible_entries
-        .get(dest_cursor)
-        .map(|e| e.visual_depth)
-        .unwrap_or(0);
-
-    // for 'r' mode: source moves to after dest, entries between them shift down
-    if rebase_type == RebaseType::Single {
-        let source_index = source_idx.unwrap_or(0);
-
-        for (idx, entry) in app.tree.visible_entries.iter().enumerate() {
-            // skip source at its original position - it will be inserted after dest
-            if idx == source_index {
-                continue;
-            }
-
-            let is_dest = idx == dest_cursor;
-
-            // entries between dest (exclusive) and source (exclusive) shift down by 1 depth
-            let depth = if idx > dest_cursor && idx < source_index {
-                entry.visual_depth + 1
-            } else {
-                entry.visual_depth
-            };
-
-            preview.push(PreviewEntry {
-                original_index: idx,
-                visual_depth: depth,
-                is_source: false,
-                is_moving: false,
-                is_dest,
-            });
-
-            // insert source right after dest
-            if is_dest {
-                preview.push(PreviewEntry {
-                    original_index: source_index,
-                    visual_depth: dest_visual_depth + 1,
-                    is_source: true,
-                    is_moving: true,
-                    is_dest: false,
-                });
-            }
-        }
-        return preview;
-    }
-
-    // for 's' mode: source + descendants move together after dest
-    let mut moving_indices = std::collections::HashSet::new();
-    let mut in_source_tree = false;
-
-    for (idx, entry) in app.tree.visible_entries.iter().enumerate() {
-        let node = &app.tree.nodes[entry.node_index];
-        if node.change_id == source_rev {
-            moving_indices.insert(idx);
-            in_source_tree = true;
-        } else if in_source_tree {
-            if node.depth > source_struct_depth {
-                moving_indices.insert(idx);
-            } else {
-                break;
-            }
-        }
-    }
-
-    let moving_entries: Vec<(usize, usize)> = app
-        .tree
-        .visible_entries
-        .iter()
-        .enumerate()
-        .filter(|(idx, _)| moving_indices.contains(idx))
-        .map(|(idx, entry)| (idx, entry.visual_depth))
-        .collect();
-
-    // find the first moving index (source) for determining entries that need shifting
-    let first_moving_idx = moving_indices.iter().min().copied().unwrap_or(0);
-    let num_moving = moving_indices.len();
-
-    for (idx, entry) in app.tree.visible_entries.iter().enumerate() {
-        if moving_indices.contains(&idx) {
-            continue;
-        }
-
-        let is_dest = idx == dest_cursor;
-
-        // entries between dest and source shift down by the size of the moving stack
-        let depth = if idx > dest_cursor && idx < first_moving_idx {
-            entry.visual_depth + num_moving
-        } else {
-            entry.visual_depth
-        };
-
-        preview.push(PreviewEntry {
-            original_index: idx,
-            visual_depth: depth,
-            is_source: false,
-            is_moving: false,
-            is_dest,
-        });
-
-        // after destination, insert moving entries with adjusted visual depths
-        if is_dest {
-            for (mov_idx, mov_visual_depth) in &moving_entries {
-                let is_source_entry = source_idx == Some(*mov_idx);
-                // source becomes child of dest, descendants keep relative depth
-                let new_depth =
-                    dest_visual_depth + 1 + mov_visual_depth.saturating_sub(source_visual_depth);
-
-                preview.push(PreviewEntry {
-                    original_index: *mov_idx,
-                    visual_depth: new_depth,
-                    is_source: is_source_entry,
-                    is_moving: true,
-                    is_dest: false,
-                });
-            }
-        }
-    }
-
-    preview
-}
-
-/// Render tree with rebase preview
-fn render_tree_with_preview(
-    frame: &mut Frame,
-    app: &App,
-    area: Rect,
-    viewport_height: usize,
-    scroll_offset: usize,
-    preview: &[PreviewEntry],
-) {
-    let mut lines: Vec<Line> = Vec::new();
-
-    // find which preview index contains the destination cursor
-    let cursor_preview_idx = preview.iter().position(|p| p.is_dest);
-
-    for (line_count, (preview_idx, entry)) in
-        preview.iter().enumerate().skip(scroll_offset).enumerate()
-    {
-        if line_count >= viewport_height {
-            break;
-        }
-
-        let orig_entry = &app.tree.visible_entries[entry.original_index];
-        let node = &app.tree.nodes[orig_entry.node_index];
-
-        // cursor is on the destination entry
-        let is_cursor = cursor_preview_idx == Some(preview_idx);
-
-        lines.push(render_tree_line_rebase(
-            node,
-            entry.visual_depth,
-            is_cursor,
-            false, // is_multi_selected - not relevant in rebase mode
-            entry.is_source,
-            entry.is_moving,
-            entry.is_dest,
-        ));
-    }
-
-    let paragraph = Paragraph::new(lines);
-    frame.render_widget(paragraph, area);
-}
-
-fn render_tree_line_rebase(
-    node: &TreeNode,
-    visual_depth: usize,
-    is_cursor: bool,
-    is_multi_selected: bool,
-    is_source: bool,
-    is_moving: bool,
-    is_dest: bool,
-) -> Line<'static> {
-    let indent = "  ".repeat(visual_depth);
-    let connector = if visual_depth > 0 { "├── " } else { "" };
-    let at_marker = if node.is_working_copy { "@ " } else { "" };
-    let selection_marker = if is_multi_selected { "[x] " } else { "" };
-
-    let (prefix, suffix) = node
-        .change_id
-        .split_at(node.unique_prefix_len.min(node.change_id.len()));
-
-    let mut spans = Vec::new();
-
-    // change_id color: yellow for moving entries, magenta for normal
-    let prefix_color = if is_moving {
-        Color::Yellow
-    } else {
-        Color::Magenta
-    };
-
-    spans.extend([
-        Span::raw(format!("{indent}{connector}{selection_marker}{at_marker}(")),
-        Span::styled(prefix.to_string(), Style::default().fg(prefix_color)),
-        Span::styled(suffix.to_string(), Style::default().fg(Color::DarkGray)),
-        Span::raw(")"),
-    ]);
-
-    if !node.bookmarks.is_empty() {
-        let bookmark_str = format_bookmarks_truncated(&node.bookmarks, 30);
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(bookmark_str, Style::default().fg(Color::Cyan)));
-    }
-
-    let desc = if node.description.is_empty() {
-        if node.is_working_copy {
-            "(working copy)".to_string()
-        } else {
-            "(no description)".to_string()
-        }
-    } else {
-        node.description.clone()
-    };
-    spans.push(Span::styled(
-        format!("  {desc}"),
-        Style::default().fg(Color::DarkGray),
-    ));
-
-    // add rebase markers on the right
-    if is_source {
-        spans.push(Span::styled("  ← src", Style::default().fg(Color::Yellow)));
-    } else if is_dest && !is_moving {
-        spans.push(Span::styled("  ← dest", Style::default().fg(Color::Cyan)));
-    } else if is_moving && !is_source {
-        spans.push(Span::styled("  ↳", Style::default().fg(Color::Yellow)));
-    }
-
-    let mut line = Line::from(spans);
-
-    // apply styling based on state
-    if is_cursor {
-        line = line.style(
-            Style::default()
-                .bg(Color::Rgb(40, 40, 60))
-                .add_modifier(Modifier::BOLD),
-        );
-    } else if is_moving {
-        // highlight moving entries (source and descendants)
         line = line.style(Style::default().bg(Color::Rgb(50, 50, 30)));
     } else if is_multi_selected {
         line = line.style(Style::default().bg(Color::Rgb(40, 50, 40)));

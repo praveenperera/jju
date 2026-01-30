@@ -1,5 +1,6 @@
 mod app;
 mod keybindings;
+mod preview;
 mod tree;
 mod ui;
 
