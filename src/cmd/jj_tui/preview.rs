@@ -160,7 +160,7 @@ impl<'a> PreviewBuilder<'a> {
     fn find_last_descendant(&self, start: NodeId, moving_ids: &HashSet<NodeId>) -> NodeId {
         let mut current = start;
         loop {
-            // find children that are in the moving set
+            // Find children that are in the moving set
             let moving_children: Vec<NodeId> = self
                 .relations
                 .children_of(current)
@@ -170,10 +170,10 @@ impl<'a> PreviewBuilder<'a> {
                 .collect();
 
             if moving_children.is_empty() {
-                // no more moving children, this is the last node
+                // No more moving children, this is the last node
                 return current;
             }
-            // follow the first moving child (in a linear chain, there should be only one)
+            // Follow the first moving child (in a linear chain, there should be only one)
             current = moving_children[0];
         }
     }
@@ -221,7 +221,7 @@ impl<'a> PreviewBuilder<'a> {
 
         if !allow_branches && !dest_children.is_empty() {
             // INLINE mode: dest's children go to the END of the moving chain
-            // find the last node in the moving chain (leaf of the moving subtree)
+            // Find the last node in the moving chain (leaf of the moving subtree)
             let last_moving = self.find_last_descendant(source, &moving_ids);
 
             for &child in &dest_children {
@@ -438,4 +438,387 @@ pub fn render_tree_line(
     }
 
     line
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cmd::jj_tui::tree::{TreeNode, TreeState, VisibleEntry};
+    use ahash::{HashMap, HashSet};
+
+    fn make_node(change_id: &str, depth: usize) -> TreeNode {
+        TreeNode {
+            change_id: change_id.to_string(),
+            unique_prefix_len: 4,
+            description: String::new(),
+            bookmarks: vec![],
+            is_working_copy: false,
+            parent_ids: vec![],
+            depth,
+            author_name: String::new(),
+            author_email: String::new(),
+            timestamp: String::new(),
+        }
+    }
+
+    fn make_tree(nodes: Vec<TreeNode>, full_mode: bool) -> TreeState {
+        let visible_entries: Vec<VisibleEntry> = nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| VisibleEntry {
+                node_index: i,
+                visual_depth: n.depth,
+            })
+            .collect();
+
+        TreeState {
+            nodes,
+            cursor: 0,
+            scroll_offset: 0,
+            full_mode,
+            expanded_entry: None,
+            children_map: HashMap::default(),
+            visible_entries,
+            selected: HashSet::default(),
+            selection_anchor: None,
+        }
+    }
+
+    #[test]
+    fn test_from_tree_linear() {
+        // Linear tree: A -> B -> C -> D
+        let tree = make_tree(
+            vec![
+                make_node("aaaa", 0),
+                make_node("bbbb", 1),
+                make_node("cccc", 2),
+                make_node("dddd", 3),
+            ],
+            true,
+        );
+
+        let relations = TreeRelations::from_tree(&tree);
+
+        // Check parent relationships
+        assert_eq!(relations.parent_of(NodeId(0)), None); // A is root
+        assert_eq!(relations.parent_of(NodeId(1)), Some(NodeId(0))); // B's parent is A
+        assert_eq!(relations.parent_of(NodeId(2)), Some(NodeId(1))); // C's parent is B
+        assert_eq!(relations.parent_of(NodeId(3)), Some(NodeId(2))); // D's parent is C
+
+        // Check children
+        assert_eq!(relations.children_of(NodeId(0)), &[NodeId(1)]);
+        assert_eq!(relations.children_of(NodeId(1)), &[NodeId(2)]);
+        assert_eq!(relations.children_of(NodeId(2)), &[NodeId(3)]);
+        assert_eq!(relations.children_of(NodeId(3)), &[] as &[NodeId]);
+    }
+
+    #[test]
+    fn test_from_tree_forked() {
+        // Forked tree:
+        // A (depth 0)
+        //   B (depth 1)
+        //     C (depth 2)
+        //   D (depth 1) <- sibling of B
+        let tree = make_tree(
+            vec![
+                make_node("aaaa", 0),
+                make_node("bbbb", 1),
+                make_node("cccc", 2),
+                make_node("dddd", 1), // same depth as B
+            ],
+            true,
+        );
+
+        let relations = TreeRelations::from_tree(&tree);
+
+        // Check parent relationships
+        assert_eq!(relations.parent_of(NodeId(0)), None); // A is root
+        assert_eq!(relations.parent_of(NodeId(1)), Some(NodeId(0))); // B's parent is A
+        assert_eq!(relations.parent_of(NodeId(2)), Some(NodeId(1))); // C's parent is B
+        assert_eq!(relations.parent_of(NodeId(3)), Some(NodeId(0))); // D's parent is A
+
+        // Check children
+        let children_of_a = relations.children_of(NodeId(0));
+        assert!(children_of_a.contains(&NodeId(1))); // B
+        assert!(children_of_a.contains(&NodeId(3))); // D
+        assert_eq!(children_of_a.len(), 2);
+    }
+
+    #[test]
+    fn test_descendants() {
+        // Linear tree: A -> B -> C
+        let tree = make_tree(
+            vec![
+                make_node("aaaa", 0),
+                make_node("bbbb", 1),
+                make_node("cccc", 2),
+            ],
+            true,
+        );
+
+        let relations = TreeRelations::from_tree(&tree);
+
+        let desc_a = relations.descendants(NodeId(0));
+        assert!(desc_a.contains(&NodeId(1)));
+        assert!(desc_a.contains(&NodeId(2)));
+        assert_eq!(desc_a.len(), 2);
+
+        let desc_b = relations.descendants(NodeId(1));
+        assert!(desc_b.contains(&NodeId(2)));
+        assert_eq!(desc_b.len(), 1);
+
+        let desc_c = relations.descendants(NodeId(2));
+        assert!(desc_c.is_empty());
+    }
+
+    #[test]
+    fn test_rebase_with_descendants() {
+        // Tree:
+        // A (depth 0)
+        //   B (depth 1)
+        //     C (depth 2)
+        //     D (depth 2)
+        // Rebase B with descendants onto A (should be no-op essentially, but test the slots)
+        let tree = make_tree(
+            vec![
+                make_node("aaaa", 0),
+                make_node("bbbb", 1),
+                make_node("cccc", 2),
+                make_node("dddd", 2),
+            ],
+            true,
+        );
+
+        let preview = PreviewBuilder::new(&tree).rebase_preview(
+            NodeId(1), // source = B
+            NodeId(0), // dest = A (B's current parent)
+            PreviewRebaseType::WithDescendants,
+            true, // allow_branches (fork mode)
+        );
+
+        // In fork mode with B already child of A, should get:
+        // A at depth 0
+        //   B at depth 1 (source)
+        //     C at depth 2 (moving)
+        //     D at depth 2 (moving)
+
+        assert_eq!(preview.slots.len(), 4);
+
+        // Find each node's slot
+        let slot_a = preview.slots.iter().find(|s| s.node_id == NodeId(0)).unwrap();
+        let slot_b = preview.slots.iter().find(|s| s.node_id == NodeId(1)).unwrap();
+        let slot_c = preview.slots.iter().find(|s| s.node_id == NodeId(2)).unwrap();
+        let slot_d = preview.slots.iter().find(|s| s.node_id == NodeId(3)).unwrap();
+
+        assert_eq!(slot_a.visual_depth, 0);
+        assert_eq!(slot_b.visual_depth, 1);
+        assert_eq!(slot_c.visual_depth, 2);
+        assert_eq!(slot_d.visual_depth, 2);
+
+        assert_eq!(slot_b.role, NodeRole::Source);
+        assert_eq!(slot_c.role, NodeRole::Moving);
+        assert_eq!(slot_d.role, NodeRole::Moving);
+    }
+
+    #[test]
+    fn test_non_full_mode_with_hidden_nodes() {
+        // Simulate non-full mode where some nodes are hidden
+        // Actual tree (with hidden nodes):
+        // A (depth 0) visible
+        //   B (depth 1) HIDDEN
+        //     C (depth 2) visible
+        //       D (depth 3) visible
+        //
+        // visible_entries would be: A, C, D with visual_depths 0, 1, 2
+        // But node.depth would be: 0, 2, 3
+
+        // Create nodes with their structural depths
+        let nodes = vec![
+            make_node("aaaa", 0), // A
+            make_node("cccc", 2), // C (B is hidden, so structural depth is still 2)
+            make_node("dddd", 3), // D
+        ];
+
+        // But visible_entries have visual_depth based on visible ancestors
+        let visible_entries = vec![
+            VisibleEntry {
+                node_index: 0,
+                visual_depth: 0,
+            },
+            VisibleEntry {
+                node_index: 1,
+                visual_depth: 1, // visual depth is 1 (child of visible A)
+            },
+            VisibleEntry {
+                node_index: 2,
+                visual_depth: 2, // visual depth is 2
+            },
+        ];
+
+        let tree = TreeState {
+            nodes,
+            cursor: 0,
+            scroll_offset: 0,
+            full_mode: false,
+            expanded_entry: None,
+            children_map: HashMap::default(),
+            visible_entries,
+            selected: HashSet::default(),
+            selection_anchor: None,
+        };
+
+        let relations = TreeRelations::from_tree(&tree);
+
+        // from_tree uses node.depth, not visual_depth
+        // So it sees depths: 0, 2, 3
+        // This should give: A (0), C (2) -> parent A, D (3) -> parent C ✓
+
+        assert_eq!(relations.parent_of(NodeId(0)), None); // A is root
+        assert_eq!(relations.parent_of(NodeId(1)), Some(NodeId(0))); // C's parent is A
+        assert_eq!(relations.parent_of(NodeId(2)), Some(NodeId(1))); // D's parent is C
+    }
+
+    #[test]
+    fn test_rebase_subtree_to_different_parent() {
+        // Tree:
+        // A (depth 0)
+        //   B (depth 1)
+        //     C (depth 2)  <- source
+        //       D (depth 3) <- descendant
+        // Rebase C with descendants onto A
+        let tree = make_tree(
+            vec![
+                make_node("aaaa", 0),
+                make_node("bbbb", 1),
+                make_node("cccc", 2),
+                make_node("dddd", 3),
+            ],
+            true,
+        );
+
+        let preview = PreviewBuilder::new(&tree).rebase_preview(
+            NodeId(2), // source = C
+            NodeId(0), // dest = A
+            PreviewRebaseType::WithDescendants,
+            true, // fork mode
+        );
+
+        // Expected result:
+        // A at depth 0 (dest)
+        //   B at depth 1
+        //   C at depth 1 (source, moved to be sibling of B)
+        //     D at depth 2 (moving, stays as child of C)
+
+        let slot_a = preview.slots.iter().find(|s| s.node_id == NodeId(0)).unwrap();
+        let slot_b = preview.slots.iter().find(|s| s.node_id == NodeId(1)).unwrap();
+        let slot_c = preview.slots.iter().find(|s| s.node_id == NodeId(2)).unwrap();
+        let slot_d = preview.slots.iter().find(|s| s.node_id == NodeId(3)).unwrap();
+
+        assert_eq!(slot_a.visual_depth, 0);
+        assert_eq!(slot_a.role, NodeRole::Destination);
+
+        assert_eq!(slot_b.visual_depth, 1);
+        assert_eq!(slot_b.role, NodeRole::Normal);
+
+        assert_eq!(slot_c.visual_depth, 1); // C moves to be sibling of B
+        assert_eq!(slot_c.role, NodeRole::Source);
+
+        // THIS IS THE KEY TEST: D should be depth 2 (child of C), not depth 1 (sibling of C)
+        assert_eq!(slot_d.visual_depth, 2, "D should be at depth 2, child of C");
+        assert_eq!(slot_d.role, NodeRole::Moving);
+    }
+
+    #[test]
+    fn test_rebase_inline_mode_linear_chain() {
+        // Test inline mode with a linear chain (the bug that was fixed)
+        // Original tree (linear):
+        // A (depth 0) <- dest
+        //   B (depth 1) <- will be reparented to end of chain
+        //     C (depth 2) <- source
+        //       D (depth 3) <- descendant
+        //
+        // Rebase C with descendants onto A in INLINE mode
+        // Expected: B goes to END of chain (after D), keeping tree linear
+        // A (depth 0) <- dest
+        //   C (depth 1) <- source
+        //     D (depth 2) <- descendant
+        //       B (depth 3) <- moved to end of chain
+        let tree = make_tree(
+            vec![
+                make_node("aaaa", 0), // A (dest)
+                make_node("bbbb", 1), // B (will be reparented to end)
+                make_node("cccc", 2), // C (source)
+                make_node("dddd", 3), // D (descendant)
+            ],
+            true,
+        );
+
+        let preview = PreviewBuilder::new(&tree).rebase_preview(
+            NodeId(2), // source = C
+            NodeId(0), // dest = A
+            PreviewRebaseType::WithDescendants,
+            false, // allow_branches = false (inline mode)
+        );
+
+        // Verify the chain is linear with B at the end
+        let slot_a = preview.slots.iter().find(|s| s.node_id == NodeId(0)).unwrap();
+        let slot_b = preview.slots.iter().find(|s| s.node_id == NodeId(1)).unwrap();
+        let slot_c = preview.slots.iter().find(|s| s.node_id == NodeId(2)).unwrap();
+        let slot_d = preview.slots.iter().find(|s| s.node_id == NodeId(3)).unwrap();
+
+        assert_eq!(slot_a.visual_depth, 0, "A should be at depth 0 (dest)");
+        assert_eq!(slot_c.visual_depth, 1, "C should be at depth 1 (source, child of A)");
+        assert_eq!(slot_d.visual_depth, 2, "D should be at depth 2 (child of C)");
+        assert_eq!(
+            slot_b.visual_depth, 3,
+            "B should be at depth 3 (END of chain, child of D)"
+        );
+
+        assert_eq!(slot_a.role, NodeRole::Destination);
+        assert_eq!(slot_c.role, NodeRole::Source);
+        assert_eq!(slot_d.role, NodeRole::Moving);
+        assert_eq!(slot_b.role, NodeRole::Normal);
+    }
+
+    #[test]
+    fn test_rebase_fork_mode() {
+        // Test fork mode (allow_branches = true)
+        // In fork mode, dest's children stay as siblings, not moved to end
+        // Original tree:
+        // A (depth 0) <- dest
+        //   B (depth 1) <- stays as sibling
+        //     C (depth 2) <- source
+        //       D (depth 3) <- descendant
+        //
+        // Rebase C with descendants onto A in FORK mode
+        // A (depth 0) <- dest
+        //   B (depth 1) <- stays as child of A
+        //   C (depth 1) <- source (sibling of B)
+        //     D (depth 2) <- descendant
+        let tree = make_tree(
+            vec![
+                make_node("aaaa", 0), // A
+                make_node("bbbb", 1), // B
+                make_node("cccc", 2), // C (source)
+                make_node("dddd", 3), // D (descendant)
+            ],
+            true,
+        );
+
+        let preview = PreviewBuilder::new(&tree).rebase_preview(
+            NodeId(2), // source = C
+            NodeId(0), // dest = A
+            PreviewRebaseType::WithDescendants,
+            true, // allow_branches = true (fork mode)
+        );
+
+        let slot_b = preview.slots.iter().find(|s| s.node_id == NodeId(1)).unwrap();
+        let slot_c = preview.slots.iter().find(|s| s.node_id == NodeId(2)).unwrap();
+        let slot_d = preview.slots.iter().find(|s| s.node_id == NodeId(3)).unwrap();
+
+        // In fork mode, B stays at depth 1 (sibling of C)
+        assert_eq!(slot_b.visual_depth, 1, "B should be at depth 1 (child of A)");
+        assert_eq!(slot_c.visual_depth, 1, "C should be at depth 1 (sibling of B)");
+        assert_eq!(slot_d.visual_depth, 2, "D should be at depth 2 (child of C)");
+    }
 }

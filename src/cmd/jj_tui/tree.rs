@@ -62,7 +62,7 @@ pub struct TreeState {
     pub scroll_offset: usize,
     pub full_mode: bool,
     pub expanded_entry: Option<usize>,
-    children_map: HashMap<String, Vec<String>>,
+    pub(crate) children_map: HashMap<String, Vec<String>>,
     pub visible_entries: Vec<VisibleEntry>,
     pub selected: HashSet<usize>,
     pub selection_anchor: Option<usize>,
