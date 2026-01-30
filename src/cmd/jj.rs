@@ -1,11 +1,11 @@
 use crate::jj_lib_helpers::JjRepo;
+use ahash::{HashMap, HashMapExt};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use duct::cmd;
 use eyre::{bail, Context as _, Result};
 use log::debug;
 use regex::Regex;
-use ahash::{HashMap, HashMapExt};
 use std::ffi::OsString;
 use std::io::Write;
 

@@ -1,12 +1,12 @@
 use super::tree::TreeState;
 use super::ui;
 use crate::jj_lib_helpers::JjRepo;
+use ahash::{HashSet, HashSetExt};
 use duct::cmd;
 use eyre::Result;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::style::Color;
 use ratatui::DefaultTerminal;
-use ahash::{HashSet, HashSetExt};
 use std::time::{Duration, Instant};
 use syntect::highlighting::{Style as SyntectStyle, ThemeSet};
 use syntect::parsing::SyntaxSet;
@@ -80,7 +80,6 @@ pub struct StatusMessage {
     pub kind: MessageKind,
     pub expires: Instant,
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmAction {
@@ -217,7 +216,8 @@ impl App {
                         let _ = self.refresh_tree();
                     }
                     Ok(_) => self.set_status("Editor cancelled", MessageKind::Warning),
-                    Err(e) => self.set_status(&format!("Failed to launch editor: {e}"), MessageKind::Error),
+                    Err(e) => self
+                        .set_status(&format!("Failed to launch editor: {e}"), MessageKind::Error),
                 }
                 continue;
             }
@@ -423,7 +423,11 @@ impl App {
     }
 
     fn git_import(&mut self) -> Result<()> {
-        match cmd!("jj", "git", "import").stdout_null().stderr_null().run() {
+        match cmd!("jj", "git", "import")
+            .stdout_null()
+            .stderr_null()
+            .run()
+        {
             Ok(_) => {
                 let _ = self.refresh_tree();
                 self.set_status("Git import complete", MessageKind::Success);
@@ -436,7 +440,11 @@ impl App {
     }
 
     fn git_export(&mut self) -> Result<()> {
-        match cmd!("jj", "git", "export").stdout_null().stderr_null().run() {
+        match cmd!("jj", "git", "export")
+            .stdout_null()
+            .stderr_null()
+            .run()
+        {
             Ok(_) => {
                 let _ = self.refresh_tree();
                 self.set_status("Git export complete", MessageKind::Success);
@@ -465,7 +473,9 @@ impl App {
             if let Some(ref mut state) = self.diff_state {
                 match (pending, code) {
                     ('z', KeyCode::Char('t')) => state.scroll_offset = 0,
-                    ('z', KeyCode::Char('b')) => state.scroll_offset = state.lines.len().saturating_sub(1),
+                    ('z', KeyCode::Char('b')) => {
+                        state.scroll_offset = state.lines.len().saturating_sub(1)
+                    }
                     _ => {}
                 }
             }
@@ -636,16 +646,29 @@ impl App {
     fn commit_working_copy(&mut self) -> Result<()> {
         if let Some(node) = self.tree.current_node() {
             if !node.is_working_copy {
-                self.set_status("Can only commit from working copy (@)", MessageKind::Warning);
+                self.set_status(
+                    "Can only commit from working copy (@)",
+                    MessageKind::Warning,
+                );
                 return Ok(());
             }
         }
         // use -m with current description to avoid opening $EDITOR
-        let desc = self.tree.current_node()
+        let desc = self
+            .tree
+            .current_node()
             .map(|n| n.description.clone())
             .unwrap_or_default();
-        let desc = if desc.is_empty() { "(no description)".to_string() } else { desc };
-        match cmd!("jj", "commit", "-m", &desc).stdout_null().stderr_null().run() {
+        let desc = if desc.is_empty() {
+            "(no description)".to_string()
+        } else {
+            desc
+        };
+        match cmd!("jj", "commit", "-m", &desc)
+            .stdout_null()
+            .stderr_null()
+            .run()
+        {
             Ok(_) => {
                 self.set_status("Changes committed", MessageKind::Success);
                 self.refresh_tree()?;
@@ -752,7 +775,11 @@ impl App {
             match state.action {
                 ConfirmAction::Abandon => {
                     let revset = state.revs.join(" | ");
-                    match cmd!("jj", "abandon", &revset).stdout_null().stderr_null().run() {
+                    match cmd!("jj", "abandon", &revset)
+                        .stdout_null()
+                        .stderr_null()
+                        .run()
+                    {
                         Ok(_) => {
                             let count = state.revs.len();
                             let msg = if count == 1 {
@@ -829,19 +856,10 @@ impl App {
     // Rebase operations
 
     fn get_current_operation_id(&self) -> Result<String> {
-        let output = cmd!(
-            "jj",
-            "op",
-            "log",
-            "--limit",
-            "1",
-            "-T",
-            "id",
-            "--no-graph"
-        )
-        .stdout_capture()
-        .stderr_null()
-        .read()?;
+        let output = cmd!("jj", "op", "log", "--limit", "1", "-T", "id", "--no-graph")
+            .stdout_capture()
+            .stderr_null()
+            .read()?;
         Ok(output.trim().to_string())
     }
 
@@ -870,7 +888,9 @@ impl App {
         let current = self.tree.cursor;
 
         // get source's structural depth
-        let source_struct_depth = self.tree.visible_entries
+        let source_struct_depth = self
+            .tree
+            .visible_entries
             .get(current)
             .map(|e| self.tree.nodes[e.node_index].depth)
             .unwrap_or(0);
@@ -1026,19 +1046,10 @@ impl App {
         } else {
             // clean inline: try to insert between dest and its first child
             match self.get_first_child(&dest) {
-                Ok(Some(next)) => cmd!(
-                    "jj",
-                    "rebase",
-                    mode_flag,
-                    source,
-                    "-A",
-                    &dest,
-                    "-B",
-                    &next
-                )
-                .stdout_null()
-                .stderr_null()
-                .run(),
+                Ok(Some(next)) => cmd!("jj", "rebase", mode_flag, source, "-A", &dest, "-B", &next)
+                    .stdout_null()
+                    .stderr_null()
+                    .run(),
                 _ => cmd!("jj", "rebase", mode_flag, source, "-A", &dest)
                     .stdout_null()
                     .stderr_null()
@@ -1075,19 +1086,12 @@ impl App {
     }
 
     fn check_conflicts(&self) -> bool {
-        cmd!(
-            "jj",
-            "log",
-            "-r",
-            "@",
-            "-T",
-            r#"if(conflict, "conflict")"#
-        )
-        .stdout_capture()
-        .stderr_null()
-        .read()
-        .map(|s| s.contains("conflict"))
-        .unwrap_or(false)
+        cmd!("jj", "log", "-r", "@", "-T", r#"if(conflict, "conflict")"#)
+            .stdout_capture()
+            .stderr_null()
+            .read()
+            .map(|s| s.contains("conflict"))
+            .unwrap_or(false)
     }
 
     fn cancel_rebase(&mut self) {
@@ -1111,7 +1115,10 @@ impl App {
             ),
         };
 
-        let cmd_preview = format!("jj rebase {} {} -d trunk() --skip-emptied", mode_flag, short_rev);
+        let cmd_preview = format!(
+            "jj rebase {} {} -d trunk() --skip-emptied",
+            mode_flag, short_rev
+        );
 
         self.confirm_state = Some(ConfirmState {
             action: ConfirmAction::RebaseOntoTrunk(rebase_type),
@@ -1409,7 +1416,10 @@ impl App {
             }
             Err(e) => {
                 let action = if deleting { "Delete" } else { "Create" };
-                self.set_status(&format!("{action} bookmark failed: {e}"), MessageKind::Error);
+                self.set_status(
+                    &format!("{action} bookmark failed: {e}"),
+                    MessageKind::Error,
+                );
             }
         }
 
@@ -1509,7 +1519,9 @@ impl App {
 
         // start with cursor at parent (same logic as rebase mode)
         let current = self.tree.cursor;
-        let source_struct_depth = self.tree.visible_entries
+        let source_struct_depth = self
+            .tree
+            .visible_entries
             .get(current)
             .map(|e| self.tree.nodes[e.node_index].depth)
             .unwrap_or(0);
@@ -1599,7 +1611,10 @@ impl App {
                 let _ = self.refresh_tree();
 
                 if has_conflicts {
-                    self.set_status("Squash created conflicts. Press u to undo", MessageKind::Warning);
+                    self.set_status(
+                        "Squash created conflicts. Press u to undo",
+                        MessageKind::Warning,
+                    );
                 } else {
                     self.set_status("Squash complete", MessageKind::Success);
                 }

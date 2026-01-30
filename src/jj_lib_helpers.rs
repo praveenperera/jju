@@ -79,6 +79,7 @@ impl JjRepo {
         &self.workspace
     }
 
+    #[allow(dead_code)]
     pub fn repo(&self) -> &Arc<ReadonlyRepo> {
         &self.repo
     }
@@ -154,6 +155,7 @@ impl JjRepo {
     }
 
     /// Get all local bookmarks as (name, commit_id) pairs
+    #[allow(dead_code)]
     pub fn local_bookmarks(&self) -> Vec<(&RefName, CommitId)> {
         self.repo
             .view()
@@ -195,8 +197,12 @@ impl JjRepo {
                     let local_id = commit.id();
 
                     // check if origin remote bookmark exists and differs
-                    let symbol = RemoteRefSymbol { name, remote: origin };
-                    let is_diverged = self.repo
+                    let symbol = RemoteRefSymbol {
+                        name,
+                        remote: origin,
+                    };
+                    let is_diverged = self
+                        .repo
                         .view()
                         .get_remote_bookmark(symbol)
                         .target
@@ -214,6 +220,7 @@ impl JjRepo {
     }
 
     /// Get tracked bookmarks that are deleted on remote (target is absent)
+    #[allow(dead_code)]
     pub fn deleted_remote_bookmarks(&self, remote: &str) -> Vec<String> {
         let remote_name = RemoteName::new(remote);
         self.repo
@@ -231,6 +238,7 @@ impl JjRepo {
     }
 
     /// Set a local bookmark to point to a commit
+    #[allow(dead_code)]
     pub fn set_bookmark(&self, name: &str, commit_id: &CommitId) -> Result<Arc<ReadonlyRepo>> {
         let mut tx = self.start_transaction();
         let target = jj_lib::op_store::RefTarget::resolved(Some(commit_id.clone()));
@@ -243,6 +251,7 @@ impl JjRepo {
     }
 
     /// Delete a local bookmark
+    #[allow(dead_code)]
     pub fn delete_bookmark(&self, name: &str) -> Result<Arc<ReadonlyRepo>> {
         let mut tx = self.start_transaction();
         tx.repo_mut().set_local_bookmark_target(

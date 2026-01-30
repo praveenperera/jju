@@ -28,7 +28,11 @@ impl TreeNode {
         if self.bookmarks.is_empty() {
             format!("({})", self.change_id)
         } else {
-            self.bookmarks.iter().map(|b| b.name.as_str()).collect::<Vec<_>>().join(" ")
+            self.bookmarks
+                .iter()
+                .map(|b| b.name.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
         }
     }
 

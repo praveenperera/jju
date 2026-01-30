@@ -1,4 +1,7 @@
-use super::app::{App, BookmarkInputState, BookmarkSelectAction, BookmarkSelectState, ConfirmState, DiffLineKind, DiffStats, MessageKind, Mode, RebaseType, StatusMessage};
+use super::app::{
+    App, BookmarkInputState, BookmarkSelectAction, BookmarkSelectState, ConfirmState, DiffLineKind,
+    DiffStats, MessageKind, Mode, RebaseType, StatusMessage,
+};
 use super::tree::{BookmarkInfo, TreeNode};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -41,7 +44,11 @@ fn format_bookmarks_truncated(bookmarks: &[BookmarkInfo], max_width: usize) -> S
     for (i, bm) in bookmarks.iter().enumerate() {
         let bm_display = format_bookmark(bm);
         let remaining = bookmarks.len() - i - 1;
-        let suffix = if remaining > 0 { format!(" +{}", remaining) } else { String::new() };
+        let suffix = if remaining > 0 {
+            format!(" +{}", remaining)
+        } else {
+            String::new()
+        };
         let candidate = if result.is_empty() {
             format!("{}{}", bm_display, suffix)
         } else {
@@ -83,8 +90,15 @@ pub fn render(frame: &mut Frame, app: &App) {
                 render_diff(frame, state, chunks[0]);
             }
         }
-        Mode::Normal | Mode::Help | Mode::Selecting | Mode::Confirming
-        | Mode::Rebasing | Mode::MovingBookmark | Mode::BookmarkInput | Mode::BookmarkSelect | Mode::Squashing => {
+        Mode::Normal
+        | Mode::Help
+        | Mode::Selecting
+        | Mode::Confirming
+        | Mode::Rebasing
+        | Mode::MovingBookmark
+        | Mode::BookmarkInput
+        | Mode::BookmarkSelect
+        | Mode::Squashing => {
             if app.split_view {
                 let split = Layout::default()
                     .direction(Direction::Horizontal)
@@ -151,7 +165,8 @@ fn render_tree(frame: &mut Frame, app: &App, area: Rect) {
 
     // check if we're in rebase mode - use preview rendering
     if let (Mode::Rebasing, Some(ref state)) = (&app.mode, &app.rebase_state) {
-        let preview = build_rebase_preview(app, state.dest_cursor, &state.source_rev, state.rebase_type);
+        let preview =
+            build_rebase_preview(app, state.dest_cursor, &state.source_rev, state.rebase_type);
         render_tree_with_preview(frame, app, inner, viewport_height, scroll_offset, &preview);
     } else {
         // normal rendering (including MovingBookmark and Squashing modes)
@@ -160,16 +175,23 @@ fn render_tree(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 /// Normal tree rendering (non-rebase mode)
-fn render_tree_normal(frame: &mut Frame, app: &App, area: Rect, viewport_height: usize, scroll_offset: usize) {
+fn render_tree_normal(
+    frame: &mut Frame,
+    app: &App,
+    area: Rect,
+    viewport_height: usize,
+    scroll_offset: usize,
+) {
     let mut lines: Vec<Line> = Vec::new();
     let mut line_count = 0;
 
     // get bookmark move info if in that mode
-    let bm_move_info = if let (Mode::MovingBookmark, Some(ref state)) = (&app.mode, &app.moving_bookmark_state) {
-        Some((state.bookmark_name.clone(), state.dest_cursor))
-    } else {
-        None
-    };
+    let bm_move_info =
+        if let (Mode::MovingBookmark, Some(ref state)) = (&app.mode, &app.moving_bookmark_state) {
+            Some((state.bookmark_name.clone(), state.dest_cursor))
+        } else {
+            None
+        };
 
     // get squash info if in that mode
     let squash_info = if let (Mode::Squashing, Some(ref state)) = (&app.mode, &app.squash_state) {
@@ -186,7 +208,8 @@ fn render_tree_normal(frame: &mut Frame, app: &App, area: Rect, viewport_height:
         let node = app.tree.get_node(entry);
 
         // determine cursor and markers based on mode
-        let (is_cursor, is_source, is_dest) = if let Some((ref bm_name, dest_cursor)) = bm_move_info {
+        let (is_cursor, is_source, is_dest) = if let Some((ref bm_name, dest_cursor)) = bm_move_info
+        {
             let is_source = node.has_bookmark(bm_name);
             let is_dest = visible_idx == dest_cursor && !is_source;
             (visible_idx == dest_cursor, is_source, is_dest)
@@ -250,7 +273,11 @@ fn render_tree_line_with_markers(
     let mut spans = Vec::new();
 
     // change_id color: yellow for source, normal magenta otherwise
-    let prefix_color = if is_source { Color::Yellow } else { Color::Magenta };
+    let prefix_color = if is_source {
+        Color::Yellow
+    } else {
+        Color::Magenta
+    };
 
     spans.extend([
         Span::raw(format!("{indent}{connector}{selection_marker}{at_marker}(")),
@@ -262,7 +289,11 @@ fn render_tree_line_with_markers(
     if !node.bookmarks.is_empty() {
         let bookmark_str = format_bookmarks_truncated(&node.bookmarks, 30);
         spans.push(Span::raw(" "));
-        let bm_color = if is_source { Color::Yellow } else { Color::Cyan };
+        let bm_color = if is_source {
+            Color::Yellow
+        } else {
+            Color::Cyan
+        };
         spans.push(Span::styled(bookmark_str, Style::default().fg(bm_color)));
     }
 
@@ -275,11 +306,18 @@ fn render_tree_line_with_markers(
     } else {
         node.description.clone()
     };
-    spans.push(Span::styled(format!("  {desc}"), Style::default().fg(Color::DarkGray)));
+    spans.push(Span::styled(
+        format!("  {desc}"),
+        Style::default().fg(Color::DarkGray),
+    ));
 
     // add source/dest markers on the right
     if is_source {
-        let marker = if is_squash_mode { "  ← src" } else { "  ← bm" };
+        let marker = if is_squash_mode {
+            "  ← src"
+        } else {
+            "  ← bm"
+        };
         spans.push(Span::styled(marker, Style::default().fg(Color::Yellow)));
     } else if is_dest {
         spans.push(Span::styled("  ← dest", Style::default().fg(Color::Green)));
@@ -305,7 +343,12 @@ fn render_tree_line_with_markers(
 }
 
 /// Build the preview list showing how the tree will look after rebase
-fn build_rebase_preview(app: &App, dest_cursor: usize, source_rev: &str, rebase_type: RebaseType) -> Vec<PreviewEntry> {
+fn build_rebase_preview(
+    app: &App,
+    dest_cursor: usize,
+    source_rev: &str,
+    rebase_type: RebaseType,
+) -> Vec<PreviewEntry> {
     let mut preview = Vec::new();
 
     // find source index
@@ -324,7 +367,9 @@ fn build_rebase_preview(app: &App, dest_cursor: usize, source_rev: &str, rebase_
     }
 
     // get destination visual depth
-    let dest_visual_depth = app.tree.visible_entries
+    let dest_visual_depth = app
+        .tree
+        .visible_entries
         .get(dest_cursor)
         .map(|e| e.visual_depth)
         .unwrap_or(0);
@@ -388,7 +433,9 @@ fn build_rebase_preview(app: &App, dest_cursor: usize, source_rev: &str, rebase_
         }
     }
 
-    let moving_entries: Vec<(usize, usize)> = app.tree.visible_entries
+    let moving_entries: Vec<(usize, usize)> = app
+        .tree
+        .visible_entries
         .iter()
         .enumerate()
         .filter(|(idx, _)| moving_indices.contains(idx))
@@ -426,7 +473,8 @@ fn build_rebase_preview(app: &App, dest_cursor: usize, source_rev: &str, rebase_
             for (mov_idx, mov_visual_depth) in &moving_entries {
                 let is_source_entry = source_idx == Some(*mov_idx);
                 // source becomes child of dest, descendants keep relative depth
-                let new_depth = dest_visual_depth + 1 + mov_visual_depth.saturating_sub(source_visual_depth);
+                let new_depth =
+                    dest_visual_depth + 1 + mov_visual_depth.saturating_sub(source_visual_depth);
 
                 preview.push(PreviewEntry {
                     original_index: *mov_idx,
@@ -456,7 +504,9 @@ fn render_tree_with_preview(
     // find which preview index contains the destination cursor
     let cursor_preview_idx = preview.iter().position(|p| p.is_dest);
 
-    for (line_count, (preview_idx, entry)) in preview.iter().enumerate().skip(scroll_offset).enumerate() {
+    for (line_count, (preview_idx, entry)) in
+        preview.iter().enumerate().skip(scroll_offset).enumerate()
+    {
         if line_count >= viewport_height {
             break;
         }
@@ -503,7 +553,11 @@ fn render_tree_line_rebase(
     let mut spans = Vec::new();
 
     // change_id color: yellow for moving entries, magenta for normal
-    let prefix_color = if is_moving { Color::Yellow } else { Color::Magenta };
+    let prefix_color = if is_moving {
+        Color::Yellow
+    } else {
+        Color::Magenta
+    };
 
     spans.extend([
         Span::raw(format!("{indent}{connector}{selection_marker}{at_marker}(")),
@@ -527,7 +581,10 @@ fn render_tree_line_rebase(
     } else {
         node.description.clone()
     };
-    spans.push(Span::styled(format!("  {desc}"), Style::default().fg(Color::DarkGray)));
+    spans.push(Span::styled(
+        format!("  {desc}"),
+        Style::default().fg(Color::DarkGray),
+    ));
 
     // add rebase markers on the right
     if is_source {
@@ -615,7 +672,8 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             .unwrap_or_else(|| "?".to_string());
         let src_short: String = state.source_rev.chars().take(8).collect();
         format!(" | {src_short}→{dest_name}")
-    } else if let (Mode::MovingBookmark, Some(ref state)) = (&app.mode, &app.moving_bookmark_state) {
+    } else if let (Mode::MovingBookmark, Some(ref state)) = (&app.mode, &app.moving_bookmark_state)
+    {
         let dest_name = app
             .tree
             .visible_entries
@@ -828,7 +886,10 @@ fn render_confirmation(frame: &mut Frame, state: &ConfirmState) {
         .border_style(Style::default().fg(Color::Red));
 
     let inner = block.inner(popup_area);
-    frame.render_widget(block.style(Style::default().bg(Color::Rgb(30, 20, 20))), popup_area);
+    frame.render_widget(
+        block.style(Style::default().bg(Color::Rgb(30, 20, 20))),
+        popup_area,
+    );
 
     let mut lines = vec![
         Line::from(Span::styled(
@@ -842,16 +903,27 @@ fn render_confirmation(frame: &mut Frame, state: &ConfirmState) {
     for (i, rev) in state.revs.iter().take(5).enumerate() {
         lines.push(Line::from(format!("  {rev}")));
         if i == 4 && state.revs.len() > 5 {
-            lines.push(Line::from(format!("  ... and {} more", state.revs.len() - 5)));
+            lines.push(Line::from(format!(
+                "  ... and {} more",
+                state.revs.len() - 5
+            )));
         }
     }
 
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::raw("  Press "),
-        Span::styled("y", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "y",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" to confirm or "),
-        Span::styled("n", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "n",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" to cancel"),
     ]));
 
@@ -911,8 +983,8 @@ fn render_diff_pane(frame: &mut Frame, _app: &App, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let hint = Paragraph::new("Press D to view full diff")
-        .style(Style::default().fg(Color::DarkGray));
+    let hint =
+        Paragraph::new("Press D to view full diff").style(Style::default().fg(Color::DarkGray));
     frame.render_widget(hint, inner);
 }
 
@@ -963,9 +1035,15 @@ fn render_commit_details(
         ]),
         Line::from(vec![
             Span::styled(format!("{indent}Changes: "), label_style),
-            Span::styled(format!("+{}", stats.map(|s| s.insertions).unwrap_or(0)), Style::default().fg(Color::Green)),
+            Span::styled(
+                format!("+{}", stats.map(|s| s.insertions).unwrap_or(0)),
+                Style::default().fg(Color::Green),
+            ),
             Span::raw(" "),
-            Span::styled(format!("-{}", stats.map(|s| s.deletions).unwrap_or(0)), Style::default().fg(Color::Red)),
+            Span::styled(
+                format!("-{}", stats.map(|s| s.deletions).unwrap_or(0)),
+                Style::default().fg(Color::Red),
+            ),
             Span::styled(format!(" ({stats_str})"), dim),
         ]),
         Line::from(vec![
@@ -998,15 +1076,26 @@ fn render_bookmark_input(frame: &mut Frame, state: &BookmarkInputState) {
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(if state.deleting { Color::Red } else { Color::Cyan }));
+        .border_style(Style::default().fg(if state.deleting {
+            Color::Red
+        } else {
+            Color::Cyan
+        }));
 
     let inner = block.inner(popup_area);
-    let bg_color = if state.deleting { Color::Rgb(30, 20, 20) } else { Color::Rgb(20, 20, 30) };
+    let bg_color = if state.deleting {
+        Color::Rgb(30, 20, 20)
+    } else {
+        Color::Rgb(20, 20, 30)
+    };
     frame.render_widget(block.style(Style::default().bg(bg_color)), popup_area);
 
     // render text with cursor
     let before = &state.name[..state.cursor];
-    let cursor_char = state.name.get(state.cursor..).and_then(|s| s.chars().next());
+    let cursor_char = state
+        .name
+        .get(state.cursor..)
+        .and_then(|s| s.chars().next());
     let after = if let Some(c) = cursor_char {
         &state.name[state.cursor + c.len_utf8()..]
     } else {
@@ -1041,7 +1130,10 @@ fn render_bookmark_input(frame: &mut Frame, state: &BookmarkInputState) {
         Line::from(""),
         target_line,
         Line::from(""),
-        Line::from(Span::styled(help_text, Style::default().fg(Color::DarkGray))),
+        Line::from(Span::styled(
+            help_text,
+            Style::default().fg(Color::DarkGray),
+        )),
     ];
 
     let paragraph = Paragraph::new(lines);
@@ -1094,13 +1186,22 @@ fn render_bookmark_select(frame: &mut Frame, state: &BookmarkSelectState) {
     lines.push(Line::from(""));
 
     for (i, bookmark) in state.bookmarks.iter().enumerate() {
-        let marker = if i == state.selected_index { "> " } else { "  " };
+        let marker = if i == state.selected_index {
+            "> "
+        } else {
+            "  "
+        };
         let style = if i == state.selected_index {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)
         };
-        lines.push(Line::from(Span::styled(format!("{marker}{bookmark}"), style)));
+        lines.push(Line::from(Span::styled(
+            format!("{marker}{bookmark}"),
+            style,
+        )));
     }
 
     lines.push(Line::from(""));
@@ -1121,8 +1222,8 @@ fn render_toast(frame: &mut Frame, msg: &StatusMessage) {
         MessageKind::Error => Color::Red,
     };
 
-    let popup = Popup::new(msg.text.clone())
-        .style(Style::default().fg(color).bg(Color::Rgb(30, 30, 40)));
+    let popup =
+        Popup::new(msg.text.clone()).style(Style::default().fg(color).bg(Color::Rgb(30, 30, 40)));
 
     frame.render_widget(popup, frame.area());
 }
