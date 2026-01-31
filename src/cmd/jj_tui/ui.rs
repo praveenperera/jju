@@ -287,10 +287,10 @@ fn render_tree_with_data_preview(
 ) {
     let mut lines: Vec<Line> = Vec::new();
 
-    // find cursor position in preview (the dest node)
+    // find cursor position in preview (the source node being moved)
     let cursor_slot_idx = preview
-        .dest_id
-        .and_then(|dest| preview.slots.iter().position(|s| s.node_id == dest));
+        .source_id
+        .and_then(|src| preview.slots.iter().position(|s| s.node_id == src));
 
     for (line_count, (slot_idx, slot)) in preview
         .slots
@@ -348,10 +348,16 @@ fn render_tree_line_with_markers(
         Color::Magenta
     };
 
+    let dim_color = if is_cursor {
+        Color::White
+    } else {
+        Color::DarkGray
+    };
+
     spans.extend([
         Span::raw(format!("{indent}{connector}{selection_marker}{at_marker}(")),
         Span::styled(prefix.to_string(), Style::default().fg(prefix_color)),
-        Span::styled(suffix.to_string(), Style::default().fg(Color::DarkGray)),
+        Span::styled(suffix.to_string(), Style::default().fg(dim_color)),
         Span::raw(")"),
     ]);
 
@@ -375,10 +381,7 @@ fn render_tree_line_with_markers(
     } else {
         node.description.clone()
     };
-    spans.push(Span::styled(
-        format!("  {desc}"),
-        Style::default().fg(Color::DarkGray),
-    ));
+    spans.push(Span::styled(format!("  {desc}"), Style::default().fg(dim_color)));
 
     // add source/dest markers on the right
     if is_source {

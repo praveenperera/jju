@@ -368,10 +368,16 @@ pub fn render_tree_line(
         _ => Color::Magenta,
     };
 
+    let dim_color = if is_cursor || matches!(role, NodeRole::Destination) {
+        Color::White
+    } else {
+        Color::DarkGray
+    };
+
     spans.extend([
         Span::raw(format!("{indent}{connector}{at_marker}(")),
         Span::styled(prefix.to_string(), Style::default().fg(prefix_color)),
-        Span::styled(suffix.to_string(), Style::default().fg(Color::DarkGray)),
+        Span::styled(suffix.to_string(), Style::default().fg(dim_color)),
         Span::raw(")"),
     ]);
 
@@ -401,10 +407,7 @@ pub fn render_tree_line(
     } else {
         node.description.clone()
     };
-    spans.push(Span::styled(
-        format!("  {desc}"),
-        Style::default().fg(Color::DarkGray),
-    ));
+    spans.push(Span::styled(format!("  {desc}"), Style::default().fg(dim_color)));
 
     // add markers based on role and mode
     match (role, marker_mode) {
