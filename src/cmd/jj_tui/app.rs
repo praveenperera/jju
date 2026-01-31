@@ -143,6 +143,12 @@ pub struct SquashState {
     pub op_before: String,
 }
 
+pub struct PendingSquash {
+    pub source_rev: String,
+    pub target_rev: String,
+    pub op_before: String,
+}
+
 pub struct App {
     pub tree: TreeState,
     pub mode: Mode,
@@ -152,6 +158,7 @@ pub struct App {
     pub diff_stats_cache: std::collections::HashMap<String, DiffStats>,
     pub status_message: Option<StatusMessage>,
     pub pending_editor: Option<String>,
+    pub pending_squash: Option<PendingSquash>,
     pub confirm_state: Option<ConfirmState>,
     pub rebase_state: Option<RebaseState>,
     pub moving_bookmark_state: Option<MovingBookmarkState>,
@@ -180,6 +187,7 @@ impl App {
             diff_stats_cache: std::collections::HashMap::new(),
             status_message: None,
             pending_editor: None,
+            pending_squash: None,
             confirm_state: None,
             rebase_state: None,
             moving_bookmark_state: None,
@@ -218,6 +226,37 @@ impl App {
                     Ok(_) => self.set_status("Editor cancelled", MessageKind::Warning),
                     Err(e) => self
                         .set_status(&format!("Failed to launch editor: {e}"), MessageKind::Error),
+                }
+                continue;
+            }
+
+            // handle pending squash (may open editor for combined description)
+            if let Some(squash) = self.pending_squash.take() {
+                ratatui::restore();
+                let status = std::process::Command::new("jj")
+                    .args(["squash", "-f", &squash.source_rev, "-t", &squash.target_rev])
+                    .status();
+                *terminal = ratatui::init();
+
+                match status {
+                    Ok(s) if s.success() => {
+                        self.last_op = Some(squash.op_before);
+                        let has_conflicts = self.check_conflicts();
+                        let _ = self.refresh_tree();
+
+                        if has_conflicts {
+                            self.set_status(
+                                "Squash created conflicts. Press u to undo",
+                                MessageKind::Warning,
+                            );
+                        } else {
+                            self.set_status("Squash complete", MessageKind::Success);
+                        }
+                    }
+                    Ok(_) => self.set_status("Squash cancelled", MessageKind::Warning),
+                    Err(e) => {
+                        self.set_status(&format!("Squash failed: {e}"), MessageKind::Error)
+                    }
                 }
                 continue;
             }
@@ -1598,31 +1637,15 @@ impl App {
             return Ok(());
         }
 
-        match cmd!("jj", "squash", "-t", &target, "-f", source)
-            .stdout_null()
-            .stderr_null()
-            .run()
-        {
-            Ok(_) => {
-                self.last_op = Some(state.op_before.clone());
-                let has_conflicts = self.check_conflicts();
-                self.squash_state = None;
-                self.mode = Mode::Normal;
-                let _ = self.refresh_tree();
-
-                if has_conflicts {
-                    self.set_status(
-                        "Squash created conflicts. Press u to undo",
-                        MessageKind::Warning,
-                    );
-                } else {
-                    self.set_status("Squash complete", MessageKind::Success);
-                }
-            }
-            Err(e) => {
-                self.set_status(&format!("Squash failed: {e}"), MessageKind::Error);
-            }
-        }
+        // set pending squash state - the actual command runs in run_loop()
+        // because jj squash may open an editor when both revisions have descriptions
+        self.pending_squash = Some(PendingSquash {
+            source_rev: source.clone(),
+            target_rev: target,
+            op_before: state.op_before.clone(),
+        });
+        self.squash_state = None;
+        self.mode = Mode::Normal;
         Ok(())
     }
 

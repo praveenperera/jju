@@ -1276,12 +1276,15 @@ fn split_hunk(
     }
 
     // squash the new commit into its working copy changes
+    // use std::process::Command to allow interactive editor if needed
     println!("{}", "Squashing changes...".dimmed());
-    cmd!("jj", "squash")
-        .stdout_null()
-        .stderr_null()
-        .run()
-        .wrap_err("failed to squash changes")?;
+    let status = std::process::Command::new("jj")
+        .arg("squash")
+        .status()
+        .wrap_err("failed to run jj squash")?;
+    if !status.success() {
+        bail!("jj squash failed");
+    }
 
     // now edit the original revision to restore remaining changes
     println!("{}", "Restoring remaining changes...".dimmed());
@@ -1356,11 +1359,14 @@ fn split_hunk(
     }
 
     // squash the restored changes
-    cmd!("jj", "squash")
-        .stdout_null()
-        .stderr_null()
-        .run()
-        .wrap_err("failed to squash remaining changes")?;
+    // use std::process::Command to allow interactive editor if needed
+    let status = std::process::Command::new("jj")
+        .arg("squash")
+        .status()
+        .wrap_err("failed to run jj squash")?;
+    if !status.success() {
+        bail!("failed to squash remaining changes");
+    }
 
     println!("{}", "Split complete".green());
     Ok(())
