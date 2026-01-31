@@ -642,10 +642,23 @@ impl App {
     }
 
     fn refresh_tree(&mut self) -> Result<()> {
+        // save current position to restore after refresh
+        let current_change_id = self.tree.current_node().map(|n| n.change_id.clone());
+
         let jj_repo = JjRepo::load(None)?;
         self.tree = TreeState::load(&jj_repo)?;
         self.tree.clear_selection();
         self.diff_stats_cache.clear();
+
+        // restore cursor to same change_id if it still exists
+        if let Some(change_id) = current_change_id {
+            if let Some(idx) = self.tree.visible_entries.iter().position(|e| {
+                self.tree.nodes[e.node_index].change_id == change_id
+            }) {
+                self.tree.cursor = idx;
+            }
+        }
+
         Ok(())
     }
 
