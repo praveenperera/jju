@@ -368,12 +368,15 @@ pub fn render_tree_line(
         _ => Color::Magenta,
     };
 
-    let dim_color = Color::White;
+    let dim_color = Color::Reset;
 
     spans.extend([
         Span::raw(format!("{indent}{connector}{at_marker}(")),
         Span::styled(prefix.to_string(), Style::default().fg(prefix_color)),
-        Span::styled(suffix.to_string(), Style::default().fg(dim_color)),
+        Span::styled(
+            suffix.to_string(),
+            Style::default().add_modifier(Modifier::DIM),
+        ),
         Span::raw(")"),
     ]);
 
@@ -480,7 +483,7 @@ mod tests {
             visible_entries,
             selected: HashSet::default(),
             selection_anchor: None,
-            focused_root: None,
+            focus_stack: Vec::new(),
         }
     }
 
@@ -665,7 +668,7 @@ mod tests {
             visible_entries,
             selected: HashSet::default(),
             selection_anchor: None,
-            focused_root: None,
+            focus_stack: Vec::new(),
         };
 
         let relations = TreeRelations::from_tree(&tree);

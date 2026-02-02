@@ -754,19 +754,21 @@ impl App {
     fn refresh_tree(&mut self) -> Result<()> {
         // save current position to restore after refresh
         let current_change_id = self.tree.current_node().map(|n| n.change_id.clone());
-        // save focused root change_id if currently focused
-        let focused_change_id = self
+        // save focus stack change_ids to restore after refresh
+        let focus_stack_change_ids: Vec<String> = self
             .tree
-            .focused_root
-            .and_then(|idx| self.tree.nodes.get(idx).map(|n| n.change_id.clone()));
+            .focus_stack
+            .iter()
+            .filter_map(|&idx| self.tree.nodes.get(idx).map(|n| n.change_id.clone()))
+            .collect();
 
         let jj_repo = JjRepo::load(None)?;
         self.tree = TreeState::load(&jj_repo)?;
         self.tree.clear_selection();
         self.diff_stats_cache.clear();
 
-        // restore focus if the focused node still exists
-        if let Some(change_id) = focused_change_id {
+        // restore focus stack if the focused nodes still exist
+        for change_id in focus_stack_change_ids {
             if let Some(node_idx) = self
                 .tree
                 .nodes

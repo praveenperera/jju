@@ -66,7 +66,7 @@ pub struct TreeState {
     pub visible_entries: Vec<VisibleEntry>,
     pub selected: HashSet<usize>,
     pub selection_anchor: Option<usize>,
-    pub focused_root: Option<usize>, // node_index of zoom root
+    pub focus_stack: Vec<usize>, // stack of node_indices for nested zoom
 }
 
 impl TreeState {
@@ -135,7 +135,7 @@ impl TreeState {
                 visible_entries: Vec::new(),
                 selected: HashSet::default(),
                 selection_anchor: None,
-                focused_root: None,
+                focus_stack: Vec::new(),
             });
         }
 
@@ -218,7 +218,7 @@ impl TreeState {
             visible_entries,
             selected: HashSet::default(),
             selection_anchor: None,
-            focused_root: None,
+            focus_stack: Vec::new(),
         })
     }
 
@@ -348,8 +348,9 @@ impl TreeState {
     }
 
     fn recompute_visible_entries(&mut self) {
+        let focused_root = self.focus_stack.last().copied();
         self.visible_entries =
-            Self::compute_visible_entries(&self.nodes, self.full_mode, self.focused_root);
+            Self::compute_visible_entries(&self.nodes, self.full_mode, focused_root);
 
         if self.cursor >= self.visible_count() {
             self.cursor = self.visible_count().saturating_sub(1);
@@ -366,34 +367,34 @@ impl TreeState {
         };
         let current_node_idx = entry.node_index;
 
-        if self.focused_root == Some(current_node_idx) && self.cursor == 0 {
-            // we're on the focused root at cursor 0, unfocus
+        // if on the current focus root at cursor 0, zoom out one level
+        if self.focus_stack.last() == Some(&current_node_idx) && self.cursor == 0 {
             self.unfocus();
         } else {
-            // focus on the current node
+            // zoom in on the current node
             self.focus_on(current_node_idx);
         }
     }
 
-    /// Focus on a specific node (zoom in)
+    /// Focus on a specific node (zoom in), pushing to the focus stack
     pub fn focus_on(&mut self, node_index: usize) {
-        self.focused_root = Some(node_index);
+        self.focus_stack.push(node_index);
         self.recompute_visible_entries();
         self.cursor = 0;
         self.scroll_offset = 0;
     }
 
-    /// Unfocus and return to full tree (zoom out)
+    /// Unfocus one level (zoom out), popping from the focus stack
     pub fn unfocus(&mut self) {
-        let focused_change_id = self
-            .focused_root
+        let popped_change_id = self
+            .focus_stack
+            .pop()
             .and_then(|idx| self.nodes.get(idx).map(|n| n.change_id.clone()));
 
-        self.focused_root = None;
         self.recompute_visible_entries();
 
         // restore cursor to the previously focused node
-        if let Some(change_id) = focused_change_id {
+        if let Some(change_id) = popped_change_id {
             if let Some(idx) = self
                 .visible_entries
                 .iter()
@@ -406,7 +407,19 @@ impl TreeState {
 
     /// Returns true if the tree is currently focused (zoomed)
     pub fn is_focused(&self) -> bool {
-        self.focused_root.is_some()
+        !self.focus_stack.is_empty()
+    }
+
+    /// Returns the current focus depth (number of zoom levels)
+    pub fn focus_depth(&self) -> usize {
+        self.focus_stack.len()
+    }
+
+    /// Get the currently focused node (top of the stack)
+    pub fn focused_node(&self) -> Option<&TreeNode> {
+        self.focus_stack
+            .last()
+            .and_then(|&idx| self.nodes.get(idx))
     }
 
     pub fn update_scroll(&mut self, viewport_height: usize) {

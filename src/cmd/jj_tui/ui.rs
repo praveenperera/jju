@@ -253,6 +253,9 @@ fn render_tree_normal(
         };
         let is_multi_selected = app.tree.selected.contains(&visible_idx);
 
+        // check if this node is a zoom root (in the focus stack)
+        let is_zoom_root = app.tree.focus_stack.contains(&entry.node_index);
+
         lines.push(render_tree_line_with_markers(
             node,
             entry.visual_depth,
@@ -261,6 +264,7 @@ fn render_tree_normal(
             is_source,
             is_dest,
             squash_info.is_some(),
+            is_zoom_root,
         ));
         line_count += 1;
 
@@ -328,6 +332,7 @@ fn render_tree_with_data_preview(
 }
 
 /// Render a tree line with source/dest markers (for bookmark move and squash modes)
+#[allow(clippy::too_many_arguments)]
 fn render_tree_line_with_markers(
     node: &TreeNode,
     visual_depth: usize,
@@ -336,11 +341,13 @@ fn render_tree_line_with_markers(
     is_source: bool,
     is_dest: bool,
     is_squash_mode: bool,
+    is_zoom_root: bool,
 ) -> Line<'static> {
     let indent = "  ".repeat(visual_depth);
     let connector = if visual_depth > 0 { "├── " } else { "" };
     let at_marker = if node.is_working_copy { "@ " } else { "" };
     let selection_marker = if is_multi_selected { "[x] " } else { "" };
+    let zoom_marker = if is_zoom_root { "◉ " } else { "" };
 
     let (prefix, suffix) = node
         .change_id
@@ -355,12 +362,20 @@ fn render_tree_line_with_markers(
         Color::Magenta
     };
 
-    let dim_color = Color::White;
+    let dim_color = Color::Reset;
+
+    // add zoom marker with distinct color
+    if is_zoom_root {
+        spans.push(Span::styled(zoom_marker, Style::default().fg(Color::Cyan)));
+    }
 
     spans.extend([
         Span::raw(format!("{indent}{connector}{selection_marker}{at_marker}(")),
         Span::styled(prefix.to_string(), Style::default().fg(prefix_color)),
-        Span::styled(suffix.to_string(), Style::default().fg(dim_color)),
+        Span::styled(
+            suffix.to_string(),
+            Style::default().add_modifier(Modifier::DIM),
+        ),
         Span::raw(")"),
     ]);
 
@@ -444,7 +459,25 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 
     let full_indicator = if app.tree.full_mode { " [FULL]" } else { "" };
     let split_indicator = if app.split_view { " [SPLIT]" } else { "" };
-    let focus_indicator = if app.tree.is_focused() { " [FOCUS]" } else { "" };
+
+    // show zoom indicator with depth and focused node info
+    let focus_indicator = if app.tree.is_focused() {
+        let depth = app.tree.focus_depth();
+        let focused_name = app
+            .tree
+            .focused_node()
+            .map(|n| {
+                if !n.bookmarks.is_empty() {
+                    n.bookmark_names().first().cloned().unwrap_or_default()
+                } else {
+                    n.change_id.chars().take(8).collect::<String>()
+                }
+            })
+            .unwrap_or_default();
+        format!(" [ZOOM:{depth}→{focused_name}]")
+    } else {
+        String::new()
+    };
 
     // show pending key when waiting for second key in sequence
     let pending_indicator = match app.pending_key {
@@ -803,7 +836,7 @@ fn render_commit_details(
     stats: Option<&DiffStats>,
 ) -> Vec<Line<'static>> {
     let indent = "  ".repeat(visual_depth + 1);
-    let dim = Style::default().fg(Color::DarkGray);
+    let dim = Style::default().fg(Color::Reset);
     let label_style = Style::default().fg(Color::Yellow);
 
     let author = if node.author_email.is_empty() {
