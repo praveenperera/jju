@@ -373,10 +373,10 @@ impl TreeState {
         // if on the current focus root at cursor 0, zoom out one level
         if self.focus_stack.last() == Some(&current_node_idx) && self.cursor == 0 {
             self.unfocus();
-        } else {
-            // zoom in on the current node
-            self.focus_on(current_node_idx);
+            return;
         }
+
+        self.focus_on(current_node_idx);
     }
 
     /// Focus on a specific node (zoom in), pushing to the focus stack

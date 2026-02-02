@@ -512,12 +512,9 @@ impl App {
     }
 
     fn git_push(&mut self) -> Result<()> {
-        let node = match self.tree.current_node() {
-            Some(n) => n,
-            None => {
-                self.set_status("No revision selected", MessageKind::Error);
-                return Ok(());
-            }
+        let Some(node) = self.tree.current_node() else {
+            self.set_status("No revision selected", MessageKind::Error);
+            return Ok(());
         };
 
         if node.bookmarks.is_empty() {
@@ -579,11 +576,8 @@ impl App {
     }
 
     fn handle_help_key(&mut self, code: KeyCode) {
-        match code {
-            KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('?') => {
-                self.mode = Mode::Normal;
-            }
-            _ => {}
+        if matches!(code, KeyCode::Char('q' | '?') | KeyCode::Esc) {
+            self.mode = Mode::Normal;
         }
     }
 
@@ -764,13 +758,11 @@ impl App {
     /// Check if moving a bookmark from current position to dest would be moving backwards
     /// Returns true if dest is an ancestor of the bookmark's current position
     fn is_bookmark_move_backwards(&self, bookmark_name: &str, dest_rev: &str) -> bool {
-        // Find the current position of the bookmark
-        let current_pos = self.tree.nodes.iter().find(|n| n.has_bookmark(bookmark_name));
-
-        let current_change_id = match current_pos {
-            Some(node) => &node.change_id,
-            None => return false, // New bookmark, not backwards
+        let Some(current_node) = self.tree.nodes.iter().find(|n| n.has_bookmark(bookmark_name))
+        else {
+            return false; // new bookmark, not backwards
         };
+        let current_change_id = &current_node.change_id;
 
         // Use jj to check if dest is an ancestor of current position
         // If `jj log -r "dest & ancestors(current)"` returns output, dest is an ancestor
@@ -789,10 +781,9 @@ impl App {
         .stderr_capture()
         .read();
 
-        match check_result {
-            Ok(output) => !output.trim().is_empty(),
-            Err(_) => false,
-        }
+        check_result
+            .map(|output| !output.trim().is_empty())
+            .unwrap_or(false)
     }
 
     fn refresh_tree(&mut self) -> Result<()> {
@@ -1161,13 +1152,9 @@ impl App {
     }
 
     fn handle_rebasing_key(&mut self, code: KeyCode) {
-        // clone rebase_state to avoid borrow issues
-        let state = match self.rebase_state.as_ref() {
-            Some(s) => s.clone(),
-            None => {
-                self.mode = Mode::Normal;
-                return;
-            }
+        let Some(state) = self.rebase_state.clone() else {
+            self.mode = Mode::Normal;
+            return;
         };
 
         match code {
@@ -1255,12 +1242,9 @@ impl App {
 
     fn execute_rebase(&mut self, state: &RebaseState) -> Result<()> {
         let source = &state.source_rev;
-        let dest = match self.get_rev_at_cursor(state.dest_cursor) {
-            Some(d) => d,
-            None => {
-                self.set_status("Invalid destination", MessageKind::Error);
-                return Ok(());
-            }
+        let Some(dest) = self.get_rev_at_cursor(state.dest_cursor) else {
+            self.set_status("Invalid destination", MessageKind::Error);
+            return Ok(());
         };
 
         // don't allow rebasing onto self
@@ -1390,12 +1374,9 @@ impl App {
     // Bookmark operations
 
     fn enter_move_bookmark_mode(&mut self) -> Result<()> {
-        let node = match self.tree.current_node() {
-            Some(n) => n,
-            None => {
-                self.set_status("No revision selected", MessageKind::Error);
-                return Ok(());
-            }
+        let Some(node) = self.tree.current_node() else {
+            self.set_status("No revision selected", MessageKind::Error);
+            return Ok(());
         };
 
         // If no bookmarks on this revision, show picker to select any bookmark to move here
@@ -1428,12 +1409,9 @@ impl App {
     }
 
     fn handle_moving_bookmark_key(&mut self, code: KeyCode) {
-        let state = match self.moving_bookmark_state.as_ref() {
-            Some(s) => s.clone(),
-            None => {
-                self.mode = Mode::Normal;
-                return;
-            }
+        let Some(state) = self.moving_bookmark_state.clone() else {
+            self.mode = Mode::Normal;
+            return;
         };
 
         match code {
@@ -1465,12 +1443,9 @@ impl App {
     }
 
     fn execute_bookmark_move(&mut self, state: &MovingBookmarkState) -> Result<()> {
-        let dest = match self.get_rev_at_cursor(state.dest_cursor) {
-            Some(d) => d,
-            None => {
-                self.set_status("Invalid destination", MessageKind::Error);
-                return Ok(());
-            }
+        let Some(dest) = self.get_rev_at_cursor(state.dest_cursor) else {
+            self.set_status("Invalid destination", MessageKind::Error);
+            return Ok(());
         };
 
         let name = &state.bookmark_name;
@@ -1676,12 +1651,9 @@ impl App {
     }
 
     fn handle_bookmark_select_key(&mut self, code: KeyCode) {
-        let state = match self.bookmark_select_state.as_ref() {
-            Some(s) => s.clone(),
-            None => {
-                self.mode = Mode::Normal;
-                return;
-            }
+        let Some(state) = self.bookmark_select_state.clone() else {
+            self.mode = Mode::Normal;
+            return;
         };
 
         match code {
@@ -1821,12 +1793,9 @@ impl App {
     }
 
     fn handle_bookmark_picker_key(&mut self, key: event::KeyEvent) {
-        let state = match self.bookmark_picker_state.as_ref() {
-            Some(s) => s.clone(),
-            None => {
-                self.mode = Mode::Normal;
-                return;
-            }
+        let Some(state) = self.bookmark_picker_state.clone() else {
+            self.mode = Mode::Normal;
+            return;
         };
 
         match key.code {
@@ -1976,12 +1945,9 @@ impl App {
     }
 
     fn handle_squashing_key(&mut self, code: KeyCode) {
-        let state = match self.squash_state.as_ref() {
-            Some(s) => s.clone(),
-            None => {
-                self.mode = Mode::Normal;
-                return;
-            }
+        let Some(state) = self.squash_state.clone() else {
+            self.mode = Mode::Normal;
+            return;
         };
 
         match code {
@@ -2014,12 +1980,9 @@ impl App {
 
     fn execute_squash(&mut self, state: &SquashState) -> Result<()> {
         let source = &state.source_rev;
-        let target = match self.get_rev_at_cursor(state.dest_cursor) {
-            Some(t) => t,
-            None => {
-                self.set_status("Invalid target", MessageKind::Error);
-                return Ok(());
-            }
+        let Some(target) = self.get_rev_at_cursor(state.dest_cursor) else {
+            self.set_status("Invalid target", MessageKind::Error);
+            return Ok(());
         };
 
         if *source == target {

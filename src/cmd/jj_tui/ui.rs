@@ -113,32 +113,24 @@ pub fn render(frame: &mut Frame, app: &App) {
     render_status_bar(frame, app, chunks[1]);
 
     // render overlays
-    if matches!(app.mode, Mode::Help) {
+    if app.mode == Mode::Help {
         render_help(frame);
     }
 
-    if let Some(ref state) = app.confirm_state {
-        if matches!(app.mode, Mode::Confirming) {
-            render_confirmation(frame, state);
-        }
+    if let (Mode::Confirming, Some(ref state)) = (app.mode, &app.confirm_state) {
+        render_confirmation(frame, state);
     }
 
-    if let Some(ref state) = app.bookmark_input_state {
-        if matches!(app.mode, Mode::BookmarkInput) {
-            render_bookmark_input(frame, state);
-        }
+    if let (Mode::BookmarkInput, Some(ref state)) = (app.mode, &app.bookmark_input_state) {
+        render_bookmark_input(frame, state);
     }
 
-    if let Some(ref state) = app.bookmark_select_state {
-        if matches!(app.mode, Mode::BookmarkSelect) {
-            render_bookmark_select(frame, state);
-        }
+    if let (Mode::BookmarkSelect, Some(ref state)) = (app.mode, &app.bookmark_select_state) {
+        render_bookmark_select(frame, state);
     }
 
-    if let Some(ref state) = app.bookmark_picker_state {
-        if matches!(app.mode, Mode::BookmarkPicker) {
-            render_bookmark_picker(frame, state);
-        }
+    if let (Mode::BookmarkPicker, Some(ref state)) = (app.mode, &app.bookmark_picker_state) {
+        render_bookmark_picker(frame, state);
     }
 
     // render prefix key popup when waiting for second key in sequence
@@ -1203,10 +1195,8 @@ fn render_prefix_key_popup(frame: &mut Frame, pending_key: char) {
     const EDGE_MARGIN: u16 = 2;
     const POPUP_BG: Color = Color::Rgb(25, 25, 35);
 
-    let menu = PREFIX_MENUS.iter().find(|m| m.prefix == pending_key);
-    let menu = match menu {
-        Some(m) => m,
-        None => return,
+    let Some(menu) = PREFIX_MENUS.iter().find(|m| m.prefix == pending_key) else {
+        return;
     };
 
     let max_label_len = menu.bindings.iter().map(|b| b.label.len()).max().unwrap_or(0);

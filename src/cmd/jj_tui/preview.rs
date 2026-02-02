@@ -94,7 +94,7 @@ impl TreeRelations {
     }
 
     fn children_of(&self, node: NodeId) -> &[NodeId] {
-        self.children.get(&node).map(|v| v.as_slice()).unwrap_or(&[])
+        self.children.get(&node).map_or(&[], Vec::as_slice)
     }
 
     /// Get all descendants of a node (recursive)
