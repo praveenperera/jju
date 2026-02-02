@@ -194,6 +194,15 @@ impl JjRepo {
             .collect()
     }
 
+    /// Get all local bookmark names in the repository
+    pub fn all_local_bookmarks(&self) -> Vec<String> {
+        self.repo
+            .view()
+            .local_bookmarks()
+            .map(|(name, _target)| name.as_str().to_string())
+            .collect()
+    }
+
     /// Abandon a commit
     pub fn abandon(&self, commit: &Commit) -> Result<Arc<ReadonlyRepo>> {
         let mut tx = self.start_transaction();

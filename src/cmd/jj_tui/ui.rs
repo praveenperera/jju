@@ -1,6 +1,6 @@
 use super::app::{
-    App, BookmarkInputState, BookmarkSelectAction, BookmarkSelectState, ConfirmState, DiffLineKind,
-    DiffStats, MessageKind, Mode, RebaseType, StatusMessage,
+    App, BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState,
+    ConfirmState, DiffLineKind, DiffStats, MessageKind, Mode, RebaseType, StatusMessage,
 };
 use super::preview::{
     get_node, MarkerMode, NodeId, PreviewBuilder, PreviewRebaseType,
@@ -94,6 +94,7 @@ pub fn render(frame: &mut Frame, app: &App) {
         | Mode::MovingBookmark
         | Mode::BookmarkInput
         | Mode::BookmarkSelect
+        | Mode::BookmarkPicker
         | Mode::Squashing => {
             if app.split_view {
                 let split = Layout::default()
@@ -130,6 +131,12 @@ pub fn render(frame: &mut Frame, app: &App) {
     if let Some(ref state) = app.bookmark_select_state {
         if matches!(app.mode, Mode::BookmarkSelect) {
             render_bookmark_select(frame, state);
+        }
+    }
+
+    if let Some(ref state) = app.bookmark_picker_state {
+        if matches!(app.mode, Mode::BookmarkPicker) {
+            render_bookmark_picker(frame, state);
         }
     }
 
@@ -431,6 +438,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Mode::MovingBookmark => "MOVE BOOKMARK",
         Mode::BookmarkInput => "BOOKMARK",
         Mode::BookmarkSelect => "SELECT BM",
+        Mode::BookmarkPicker => "PICK BM",
         Mode::Squashing => "SQUASH",
     };
 
@@ -542,6 +550,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Mode::MovingBookmark => "j/k:dest  Enter:run  Esc:cancel",
         Mode::BookmarkInput => "Enter:confirm  Esc:cancel",
         Mode::BookmarkSelect => "j/k:navigate  Enter:select  Esc:cancel",
+        Mode::BookmarkPicker => "type:filter  j/k:navigate  Enter:select  Esc:cancel",
         Mode::Squashing => "j/k:dest  Enter:run  Esc:cancel",
     };
 
@@ -1007,6 +1016,98 @@ fn render_bookmark_select(frame: &mut Frame, state: &BookmarkSelectState) {
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         "j/k: navigate | Enter: select | Esc: cancel",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, inner);
+}
+
+fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
+    let area = frame.area();
+    let filtered = state.filtered_bookmarks();
+    let list_height = filtered.len().min(10);
+    let popup_height = (8 + list_height) as u16;
+    let popup_width = 60u16.min(area.width.saturating_sub(4));
+
+    let popup_area = Rect {
+        x: (area.width.saturating_sub(popup_width)) / 2,
+        y: (area.height.saturating_sub(popup_height)) / 2,
+        width: popup_width,
+        height: popup_height,
+    };
+
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .title(" Move Bookmark Here ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let inner = block.inner(popup_area);
+    frame.render_widget(
+        block.style(Style::default().bg(Color::Rgb(20, 20, 30))),
+        popup_area,
+    );
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // show revision context
+    let rev_short: String = state.target_rev.chars().take(8).collect();
+    lines.push(Line::from(vec![
+        Span::styled("Move to: ", Style::default().fg(Color::Yellow)),
+        Span::styled(rev_short, Style::default().fg(Color::DarkGray)),
+    ]));
+    lines.push(Line::from(""));
+
+    // show filter input
+    let filter_display = if state.filter.is_empty() {
+        "type to filter...".to_string()
+    } else {
+        state.filter.clone()
+    };
+    let filter_style = if state.filter.is_empty() {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::White)
+    };
+    lines.push(Line::from(vec![
+        Span::styled("Filter: ", Style::default().fg(Color::Green)),
+        Span::styled(filter_display, filter_style),
+        Span::styled("█", Style::default().fg(Color::Cyan)), // cursor
+    ]));
+    lines.push(Line::from(""));
+
+    // show filtered bookmarks
+    if filtered.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  (no matching bookmarks)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for (i, bookmark) in filtered.iter().take(10).enumerate() {
+            let marker = if i == state.selected_index { "> " } else { "  " };
+            let style = if i == state.selected_index {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            lines.push(Line::from(Span::styled(format!("{marker}{bookmark}"), style)));
+        }
+        // show ellipsis if there are more items
+        if filtered.len() > 10 {
+            lines.push(Line::from(Span::styled(
+                format!("  ... and {} more", filtered.len() - 10),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "type: filter | j/k: navigate | Enter: select | Esc: cancel",
         Style::default().fg(Color::DarkGray),
     )));
 
