@@ -453,6 +453,7 @@ mod tests {
             change_id: change_id.to_string(),
             unique_prefix_len: 4,
             description: String::new(),
+            full_description: String::new(),
             bookmarks: vec![],
             is_working_copy: false,
             parent_ids: vec![],

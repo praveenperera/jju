@@ -13,6 +13,7 @@ pub struct TreeNode {
     pub change_id: String,
     pub unique_prefix_len: usize,
     pub description: String,
+    pub full_description: String,
     pub bookmarks: Vec<BookmarkInfo>,
     pub is_working_copy: bool,
     pub parent_ids: Vec<String>,
@@ -88,6 +89,7 @@ impl TreeState {
                 .map(|(name, is_diverged)| BookmarkInfo { name, is_diverged })
                 .collect();
             let description = JjRepo::description_first_line(commit);
+            let full_description = commit.description().to_string();
 
             let parents = jj_repo.parent_commits(commit)?;
             let parent_ids: Vec<String> = parents
@@ -105,6 +107,7 @@ impl TreeState {
                 change_id: change_id.clone(),
                 unique_prefix_len,
                 description,
+                full_description,
                 bookmarks,
                 is_working_copy,
                 parent_ids: parent_ids.clone(),

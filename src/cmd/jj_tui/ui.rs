@@ -231,6 +231,9 @@ fn render_tree_normal(
         None
     };
 
+    // check if any row is expanded (for dimming logic)
+    let is_expanded_mode = app.tree.expanded_entry.is_some();
+
     for (visible_idx, entry) in app.tree.visible_nodes().enumerate().skip(scroll_offset) {
         if line_count >= viewport_height {
             break;
@@ -256,6 +259,12 @@ fn render_tree_normal(
         // check if this node is a zoom root (in the focus stack)
         let is_zoom_root = app.tree.focus_stack.contains(&entry.node_index);
 
+        // check if this row is expanded
+        let is_this_expanded = app.tree.is_expanded(visible_idx);
+
+        // dim non-expanded, non-cursor rows when in expanded mode
+        let is_dimmed = is_expanded_mode && !is_cursor && !is_this_expanded;
+
         lines.push(render_tree_line_with_markers(
             node,
             entry.visual_depth,
@@ -265,13 +274,15 @@ fn render_tree_normal(
             is_dest,
             squash_info.is_some(),
             is_zoom_root,
+            is_dimmed,
         ));
         line_count += 1;
 
         // render expanded details
-        if app.tree.is_expanded(visible_idx) && line_count < viewport_height {
+        if is_this_expanded && line_count < viewport_height {
             let stats = app.diff_stats_cache.get(&node.change_id);
-            let detail_lines = render_commit_details(node, entry.visual_depth, stats);
+            let detail_lines =
+                render_commit_details(node, entry.visual_depth, stats, &node.full_description);
             for detail in detail_lines {
                 if line_count >= viewport_height {
                     break;
@@ -342,6 +353,7 @@ fn render_tree_line_with_markers(
     is_dest: bool,
     is_squash_mode: bool,
     is_zoom_root: bool,
+    is_dimmed: bool,
 ) -> Line<'static> {
     let indent = "  ".repeat(visual_depth);
     let connector = if visual_depth > 0 { "├── " } else { "" };
@@ -427,6 +439,9 @@ fn render_tree_line_with_markers(
         line = line.style(Style::default().bg(Color::Rgb(50, 50, 30)));
     } else if is_multi_selected {
         line = line.style(Style::default().bg(Color::Rgb(40, 50, 40)));
+    } else if is_dimmed {
+        // dim non-expanded rows when another row is expanded
+        line = line.style(Style::default().add_modifier(Modifier::DIM));
     }
 
     line
@@ -834,6 +849,7 @@ fn render_commit_details(
     node: &TreeNode,
     visual_depth: usize,
     stats: Option<&DiffStats>,
+    full_description: &str,
 ) -> Vec<Line<'static>> {
     let indent = "  ".repeat(visual_depth + 1);
     let dim = Style::default().fg(Color::Reset);
@@ -843,12 +859,6 @@ fn render_commit_details(
         node.author_name.clone()
     } else {
         format!("{} <{}>", node.author_name, node.author_email)
-    };
-
-    let desc = if node.description.is_empty() {
-        "(empty)".to_string()
-    } else {
-        node.description.clone()
     };
 
     let stats_str = match stats {
@@ -862,7 +872,7 @@ fn render_commit_details(
         None => "loading...".to_string(),
     };
 
-    vec![
+    let mut lines = vec![
         Line::from(vec![
             Span::styled(format!("{indent}Change ID: "), label_style),
             Span::styled(node.change_id.clone(), dim),
@@ -888,11 +898,30 @@ fn render_commit_details(
             ),
             Span::styled(format!(" ({stats_str})"), dim),
         ]),
-        Line::from(vec![
-            Span::styled(format!("{indent}Description: "), label_style),
-            Span::styled(desc, dim),
-        ]),
-    ]
+    ];
+
+    // add description header
+    lines.push(Line::from(vec![
+        Span::styled(format!("{indent}Description:"), label_style),
+    ]));
+
+    // add multi-line description
+    let desc_text = full_description.trim();
+    if desc_text.is_empty() {
+        lines.push(Line::from(vec![
+            Span::styled(format!("{indent}  "), label_style),
+            Span::styled("(empty)", dim),
+        ]));
+    } else {
+        for desc_line in desc_text.lines() {
+            lines.push(Line::from(vec![
+                Span::styled(format!("{indent}  "), label_style),
+                Span::styled(desc_line.to_string(), dim),
+            ]));
+        }
+    }
+
+    lines
 }
 
 fn render_bookmark_input(frame: &mut Frame, state: &BookmarkInputState) {
