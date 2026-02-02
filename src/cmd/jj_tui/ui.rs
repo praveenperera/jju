@@ -348,11 +348,7 @@ fn render_tree_line_with_markers(
         Color::Magenta
     };
 
-    let dim_color = if is_cursor {
-        Color::White
-    } else {
-        Color::DarkGray
-    };
+    let dim_color = Color::White;
 
     spans.extend([
         Span::raw(format!("{indent}{connector}{selection_marker}{at_marker}(")),
@@ -440,6 +436,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 
     let full_indicator = if app.tree.full_mode { " [FULL]" } else { "" };
     let split_indicator = if app.split_view { " [SPLIT]" } else { "" };
+    let focus_indicator = if app.tree.is_focused() { " [FOCUS]" } else { "" };
 
     // show pending key when waiting for second key in sequence
     let pending_indicator = match app.pending_key {
@@ -519,6 +516,8 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Mode::Normal => {
             if !app.tree.selected.is_empty() {
                 "a:abandon  x:toggle  Esc:clear"
+            } else if app.tree.is_focused() {
+                "Enter:unfocus f:toggle-full ?:help q:quit"
             } else if app.current_has_bookmark() {
                 "p:push m:move-bm B:del-bm r:rebase ?:help q:quit"
             } else {
@@ -546,7 +545,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Mode::Squashing => "j/k:dest  Enter:run  Esc:cancel",
     };
 
-    let left = format!(" {mode_indicator}{full_indicator}{split_indicator}{pending_indicator}{selection_indicator}{current_info}");
+    let left = format!(" {mode_indicator}{full_indicator}{split_indicator}{focus_indicator}{pending_indicator}{selection_indicator}{current_info}");
     let right = format!("{hints} ");
 
     let available = area.width as usize;
@@ -593,6 +592,7 @@ fn render_help(frame: &mut Frame) {
         Line::from("  z b       Jump to bottom"),
         Line::from("  z z       Center current line"),
         Line::from("  @         Jump to working copy"),
+        Line::from("  Enter     Zoom in/out on node"),
         Line::from(""),
         Line::from(Span::styled(
             "View",

@@ -66,6 +66,7 @@ pub struct TreeState {
     pub visible_entries: Vec<VisibleEntry>,
     pub selected: HashSet<usize>,
     pub selection_anchor: Option<usize>,
+    pub focused_root: Option<usize>, // node_index of zoom root
 }
 
 impl TreeState {
@@ -134,6 +135,7 @@ impl TreeState {
                 visible_entries: Vec::new(),
                 selected: HashSet::default(),
                 selection_anchor: None,
+                focused_root: None,
             });
         }
 
@@ -204,7 +206,7 @@ impl TreeState {
             );
         }
 
-        let visible_entries = Self::compute_visible_entries(&nodes, true);
+        let visible_entries = Self::compute_visible_entries(&nodes, true, None);
 
         Ok(Self {
             nodes,
@@ -216,26 +218,53 @@ impl TreeState {
             visible_entries,
             selected: HashSet::default(),
             selection_anchor: None,
+            focused_root: None,
         })
     }
 
-    fn compute_visible_entries(nodes: &[TreeNode], full_mode: bool) -> Vec<VisibleEntry> {
+    fn compute_visible_entries(
+        nodes: &[TreeNode],
+        full_mode: bool,
+        focused_root: Option<usize>,
+    ) -> Vec<VisibleEntry> {
+        // when focused, filter to only the focused node and its descendants
+        let (filtered_nodes, base_depth): (Vec<(usize, &TreeNode)>, usize) =
+            if let Some(root_idx) = focused_root {
+                if root_idx >= nodes.len() {
+                    return Vec::new();
+                }
+                let root_depth = nodes[root_idx].depth;
+                let mut result = vec![(root_idx, &nodes[root_idx])];
+
+                // collect descendants (nodes after root with greater depth)
+                for (i, node) in nodes.iter().enumerate().skip(root_idx + 1) {
+                    if node.depth > root_depth {
+                        result.push((i, node));
+                    } else {
+                        // hit a sibling or ancestor, stop
+                        break;
+                    }
+                }
+                (result, root_depth)
+            } else {
+                (nodes.iter().enumerate().collect(), 0)
+            };
+
         if full_mode {
-            // in full mode, use structural depth
-            nodes
+            // in full mode, use structural depth (minus base_depth for focused)
+            filtered_nodes
                 .iter()
-                .enumerate()
                 .map(|(i, n)| VisibleEntry {
-                    node_index: i,
-                    visual_depth: n.depth,
+                    node_index: *i,
+                    visual_depth: n.depth.saturating_sub(base_depth),
                 })
                 .collect()
         } else {
             // in non-full mode, compute visual depth based on visible ancestors
             let mut entries = Vec::new();
-            let mut depth_stack: Vec<usize> = Vec::new(); // stack of structural depths
+            let mut depth_stack: Vec<usize> = Vec::new();
 
-            for (i, node) in nodes.iter().enumerate() {
+            for (i, node) in filtered_nodes {
                 if !node.is_visible(full_mode) {
                     continue;
                 }
@@ -315,11 +344,69 @@ impl TreeState {
 
     pub fn toggle_full_mode(&mut self) {
         self.full_mode = !self.full_mode;
-        self.visible_entries = Self::compute_visible_entries(&self.nodes, self.full_mode);
+        self.recompute_visible_entries();
+    }
+
+    fn recompute_visible_entries(&mut self) {
+        self.visible_entries =
+            Self::compute_visible_entries(&self.nodes, self.full_mode, self.focused_root);
 
         if self.cursor >= self.visible_count() {
             self.cursor = self.visible_count().saturating_sub(1);
         }
+
+        // clear expanded entry when view changes to avoid stale index
+        self.expanded_entry = None;
+    }
+
+    /// Toggle focus on the current node
+    pub fn toggle_focus(&mut self) {
+        let Some(entry) = self.current_entry() else {
+            return;
+        };
+        let current_node_idx = entry.node_index;
+
+        if self.focused_root == Some(current_node_idx) && self.cursor == 0 {
+            // we're on the focused root at cursor 0, unfocus
+            self.unfocus();
+        } else {
+            // focus on the current node
+            self.focus_on(current_node_idx);
+        }
+    }
+
+    /// Focus on a specific node (zoom in)
+    pub fn focus_on(&mut self, node_index: usize) {
+        self.focused_root = Some(node_index);
+        self.recompute_visible_entries();
+        self.cursor = 0;
+        self.scroll_offset = 0;
+    }
+
+    /// Unfocus and return to full tree (zoom out)
+    pub fn unfocus(&mut self) {
+        let focused_change_id = self
+            .focused_root
+            .and_then(|idx| self.nodes.get(idx).map(|n| n.change_id.clone()));
+
+        self.focused_root = None;
+        self.recompute_visible_entries();
+
+        // restore cursor to the previously focused node
+        if let Some(change_id) = focused_change_id {
+            if let Some(idx) = self
+                .visible_entries
+                .iter()
+                .position(|e| self.nodes[e.node_index].change_id == change_id)
+            {
+                self.cursor = idx;
+            }
+        }
+    }
+
+    /// Returns true if the tree is currently focused (zoomed)
+    pub fn is_focused(&self) -> bool {
+        self.focused_root.is_some()
     }
 
     pub fn update_scroll(&mut self, viewport_height: usize) {

@@ -368,11 +368,7 @@ pub fn render_tree_line(
         _ => Color::Magenta,
     };
 
-    let dim_color = if is_cursor || matches!(role, NodeRole::Destination) {
-        Color::White
-    } else {
-        Color::DarkGray
-    };
+    let dim_color = Color::White;
 
     spans.extend([
         Span::raw(format!("{indent}{connector}{at_marker}(")),
@@ -484,6 +480,7 @@ mod tests {
             visible_entries,
             selected: HashSet::default(),
             selection_anchor: None,
+            focused_root: None,
         }
     }
 
@@ -668,6 +665,7 @@ mod tests {
             visible_entries,
             selected: HashSet::default(),
             selection_anchor: None,
+            focused_root: None,
         };
 
         let relations = TreeRelations::from_tree(&tree);

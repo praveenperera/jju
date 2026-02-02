@@ -354,6 +354,9 @@ impl App {
                 let _ = self.enter_diff_view();
             }
 
+            // zoom in/out on node
+            KeyCode::Enter => self.tree.toggle_focus(),
+
             // details toggle
             KeyCode::Tab => self.tree.toggle_expanded(),
 
@@ -644,17 +647,37 @@ impl App {
     fn refresh_tree(&mut self) -> Result<()> {
         // save current position to restore after refresh
         let current_change_id = self.tree.current_node().map(|n| n.change_id.clone());
+        // save focused root change_id if currently focused
+        let focused_change_id = self
+            .tree
+            .focused_root
+            .and_then(|idx| self.tree.nodes.get(idx).map(|n| n.change_id.clone()));
 
         let jj_repo = JjRepo::load(None)?;
         self.tree = TreeState::load(&jj_repo)?;
         self.tree.clear_selection();
         self.diff_stats_cache.clear();
 
+        // restore focus if the focused node still exists
+        if let Some(change_id) = focused_change_id {
+            if let Some(node_idx) = self
+                .tree
+                .nodes
+                .iter()
+                .position(|n| n.change_id == change_id)
+            {
+                self.tree.focus_on(node_idx);
+            }
+        }
+
         // restore cursor to same change_id if it still exists
         if let Some(change_id) = current_change_id {
-            if let Some(idx) = self.tree.visible_entries.iter().position(|e| {
-                self.tree.nodes[e.node_index].change_id == change_id
-            }) {
+            if let Some(idx) = self
+                .tree
+                .visible_entries
+                .iter()
+                .position(|e| self.tree.nodes[e.node_index].change_id == change_id)
+            {
                 self.tree.cursor = idx;
             }
         }
