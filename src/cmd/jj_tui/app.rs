@@ -1,241 +1,22 @@
 use super::commands;
+use super::handlers;
+use super::state::{
+    BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState,
+    ConfirmAction, ConfirmState, DiffState, DiffStats, MessageKind, ModeState,
+    MovingBookmarkState, PendingSquash, RebaseState, RebaseType, SquashState, StatusMessage,
+};
 use super::tree::TreeState;
 use super::ui;
 use crate::jj_lib_helpers::JjRepo;
 use ahash::{HashSet, HashSetExt};
 use eyre::Result;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-use ratatui::style::Color;
 use ratatui::DefaultTerminal;
 use std::fs;
 use std::io::Write;
 use std::time::{Duration, Instant};
-use syntect::highlighting::{Style as SyntectStyle, ThemeSet};
+use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
-
-pub struct KeyBinding {
-    pub key: char,
-    pub label: &'static str,
-}
-
-pub struct PrefixMenu {
-    pub prefix: char,
-    pub title: &'static str,
-    pub bindings: &'static [KeyBinding],
-}
-
-pub const PREFIX_MENUS: &[PrefixMenu] = &[
-    PrefixMenu {
-        prefix: 'g',
-        title: "git",
-        bindings: &[
-            KeyBinding { key: 'i', label: "import" },
-            KeyBinding { key: 'e', label: "export" },
-        ],
-    },
-    PrefixMenu {
-        prefix: 'z',
-        title: "nav",
-        bindings: &[
-            KeyBinding { key: 't', label: "top" },
-            KeyBinding { key: 'b', label: "bottom" },
-            KeyBinding { key: 'z', label: "center" },
-        ],
-    },
-    PrefixMenu {
-        prefix: 'b',
-        title: "bookmark",
-        bindings: &[
-            KeyBinding { key: 'm', label: "move" },
-            KeyBinding { key: 's', label: "set/new" },
-            KeyBinding { key: 'd', label: "delete" },
-        ],
-    },
-];
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiffLineKind {
-    FileHeader,
-    Hunk,
-    Added,
-    Removed,
-    Context,
-}
-
-#[derive(Debug, Clone)]
-pub struct StyledSpan {
-    pub text: String,
-    pub fg: Color,
-}
-
-#[derive(Debug, Clone)]
-pub struct DiffLine {
-    pub spans: Vec<StyledSpan>,
-    pub kind: DiffLineKind,
-}
-
-#[derive(Debug, Clone)]
-pub struct DiffState {
-    pub lines: Vec<DiffLine>,
-    pub scroll_offset: usize,
-    pub rev: String,
-}
-
-/// Unified mode state - single source of truth for current mode and its associated state
-/// This replaces the old pattern of `Mode` enum + `Option<*State>` fields
-#[derive(Debug, Clone)]
-pub enum ModeState {
-    Normal,
-    Help,
-    ViewingDiff(DiffState),
-    Confirming(ConfirmState),
-    Selecting,
-    Rebasing(RebaseState),
-    MovingBookmark(MovingBookmarkState),
-    BookmarkInput(BookmarkInputState),
-    BookmarkSelect(BookmarkSelectState),
-    BookmarkPicker(BookmarkPickerState),
-    Squashing(SquashState),
-}
-
-impl ModeState {
-    /// Check if this is Help mode
-    pub fn is_help(&self) -> bool {
-        matches!(self, ModeState::Help)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RebaseType {
-    Single,          // -r: just this revision
-    WithDescendants, // -s: revision + all descendants
-}
-
-impl std::fmt::Display for RebaseType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RebaseType::Single => write!(f, "-r"),
-            RebaseType::WithDescendants => write!(f, "-s"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MessageKind {
-    #[allow(dead_code)]
-    Info,
-    Success,
-    Warning,
-    Error,
-}
-
-pub struct StatusMessage {
-    pub text: String,
-    pub kind: MessageKind,
-    pub expires: Instant,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ConfirmAction {
-    Abandon,
-    RebaseOntoTrunk(RebaseType),
-    MoveBookmarkBackwards {
-        bookmark_name: String,
-        dest_rev: String,
-        op_before: String,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub struct ConfirmState {
-    pub action: ConfirmAction,
-    pub message: String,
-    pub revs: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct RebaseState {
-    pub source_rev: String,
-    pub rebase_type: RebaseType,
-    pub dest_cursor: usize,
-    pub allow_branches: bool,
-    pub op_before: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct DiffStats {
-    pub files_changed: usize,
-    pub insertions: usize,
-    pub deletions: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct MovingBookmarkState {
-    pub bookmark_name: String,
-    pub dest_cursor: usize,
-    pub op_before: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct BookmarkInputState {
-    pub name: String,
-    pub cursor: usize,
-    pub target_rev: String,
-    pub deleting: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BookmarkSelectAction {
-    Move,
-    Delete,
-}
-
-#[derive(Debug, Clone)]
-pub struct BookmarkSelectState {
-    pub bookmarks: Vec<String>,
-    pub selected_index: usize,
-    pub target_rev: String,
-    pub action: BookmarkSelectAction,
-}
-
-/// State for picking a bookmark from all bookmarks with type-to-filter
-#[derive(Debug, Clone)]
-pub struct BookmarkPickerState {
-    pub all_bookmarks: Vec<String>,
-    pub filter: String,
-    pub filter_cursor: usize,
-    pub selected_index: usize,
-    pub target_rev: String,
-    pub action: BookmarkSelectAction,
-}
-
-impl BookmarkPickerState {
-    /// Get bookmarks that match the current filter
-    pub fn filtered_bookmarks(&self) -> Vec<&String> {
-        if self.filter.is_empty() {
-            self.all_bookmarks.iter().collect()
-        } else {
-            let filter_lower = self.filter.to_lowercase();
-            self.all_bookmarks
-                .iter()
-                .filter(|b| b.to_lowercase().contains(&filter_lower))
-                .collect()
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SquashState {
-    pub source_rev: String,
-    pub dest_cursor: usize,
-    pub op_before: String,
-}
-
-pub struct PendingSquash {
-    pub source_rev: String,
-    pub target_rev: String,
-    pub op_before: String,
-}
 
 pub struct App {
     pub tree: TreeState,
@@ -437,11 +218,6 @@ impl App {
 
             KeyCode::Char('f') => self.tree.toggle_full_mode(),
 
-            // diff viewing
-            KeyCode::Char('D') => {
-                let _ = self.enter_diff_view();
-            }
-
             // zoom in/out on node
             KeyCode::Enter => self.tree.toggle_focus(),
 
@@ -455,8 +231,11 @@ impl App {
             // split view toggle
             KeyCode::Char('\\') => self.split_view = !self.split_view,
 
-            // edit operations
-            KeyCode::Char('d') => self.enter_edit_description(),
+            // diff viewing
+            KeyCode::Char('d') => {
+                let _ = self.enter_diff_view();
+            }
+            KeyCode::Char('D') => self.enter_edit_description(),
             KeyCode::Char('e') => {
                 let _ = self.edit_working_copy();
             }
@@ -615,7 +394,7 @@ impl App {
     fn enter_diff_view(&mut self) -> Result<()> {
         let rev = self.current_rev();
         let diff_output = commands::diff::get_diff(&rev)?;
-        let lines = parse_diff(&diff_output, &self.syntax_set, &self.theme_set);
+        let lines = handlers::diff::parse_diff(&diff_output, &self.syntax_set, &self.theme_set);
         self.mode = ModeState::ViewingDiff(DiffState {
             lines,
             scroll_offset: 0,
@@ -642,41 +421,7 @@ impl App {
 
     fn fetch_diff_stats(&self, change_id: &str) -> Result<DiffStats> {
         let output = commands::diff::get_stats(change_id)?;
-
-        // parse output like: "3 files changed, 45 insertions(+), 12 deletions(-)"
-        // or individual file lines and final summary
-        let mut files_changed = 0;
-        let mut insertions = 0;
-        let mut deletions = 0;
-
-        for line in output.lines() {
-            // look for the summary line
-            if line.contains("file") && line.contains("changed") {
-                // parse: "N file(s) changed, M insertion(s)(+), K deletion(s)(-)"
-                for part in line.split(',') {
-                    let part = part.trim();
-                    if part.contains("file") {
-                        if let Some(num) = part.split_whitespace().next() {
-                            files_changed = num.parse().unwrap_or(0);
-                        }
-                    } else if part.contains("insertion") {
-                        if let Some(num) = part.split_whitespace().next() {
-                            insertions = num.parse().unwrap_or(0);
-                        }
-                    } else if part.contains("deletion") {
-                        if let Some(num) = part.split_whitespace().next() {
-                            deletions = num.parse().unwrap_or(0);
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(DiffStats {
-            files_changed,
-            insertions,
-            deletions,
-        })
+        Ok(handlers::diff::parse_diff_stats(&output))
     }
 
     pub fn ensure_expanded_stats(&mut self) {
@@ -833,7 +578,6 @@ impl App {
                 return Ok(());
             }
         }
-        // use -m with current description to avoid opening $EDITOR
         let desc = self
             .tree
             .current_node()
@@ -1890,120 +1634,4 @@ impl App {
 
         indices
     }
-}
-
-fn syntect_to_ratatui_color(style: SyntectStyle) -> Color {
-    Color::Rgb(style.foreground.r, style.foreground.g, style.foreground.b)
-}
-
-fn parse_diff(output: &str, ss: &SyntaxSet, ts: &ThemeSet) -> Vec<DiffLine> {
-    let theme = &ts.themes["base16-eighties.dark"];
-    let plain_text = ss.find_syntax_plain_text();
-
-    let mut current_file: Option<String> = None;
-    let mut lines = Vec::new();
-
-    for line in output.lines() {
-        let (kind, code_content) = if line.starts_with("diff --git") {
-            // extract filename from "diff --git a/path/file.rs b/path/file.rs"
-            if let Some(b_path) = line.split(" b/").nth(1) {
-                current_file = Some(b_path.to_string());
-            }
-            (DiffLineKind::FileHeader, None)
-        } else if line.starts_with("+++") || line.starts_with("---") {
-            (DiffLineKind::FileHeader, None)
-        } else if line.starts_with("@@") {
-            (DiffLineKind::Hunk, None)
-        } else if let Some(rest) = line.strip_prefix('+') {
-            (DiffLineKind::Added, Some(rest))
-        } else if let Some(rest) = line.strip_prefix('-') {
-            (DiffLineKind::Removed, Some(rest))
-        } else if let Some(rest) = line.strip_prefix(' ') {
-            (DiffLineKind::Context, Some(rest))
-        } else {
-            (DiffLineKind::Context, Some(line))
-        };
-
-        let spans = if let Some(code) = code_content {
-            let prefix = match kind {
-                DiffLineKind::Added => "+",
-                DiffLineKind::Removed => "-",
-                DiffLineKind::Context => " ",
-                _ => "",
-            };
-
-            let prefix_color = match kind {
-                DiffLineKind::Added => Color::Green,
-                DiffLineKind::Removed => Color::Red,
-                _ => Color::DarkGray,
-            };
-
-            // try syntect highlighting
-            let syntax = current_file.as_ref().and_then(|f| {
-                std::path::Path::new(f)
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .and_then(|ext| ss.find_syntax_by_extension(ext))
-            });
-
-            let code_spans = if let Some(syn) = syntax {
-                let mut highlighter = syntect::easy::HighlightLines::new(syn, theme);
-                highlighter.highlight_line(code, ss).ok().map(|ranges| {
-                    ranges
-                        .into_iter()
-                        .map(|(style, text)| StyledSpan {
-                            text: text.to_string(),
-                            fg: syntect_to_ratatui_color(style),
-                        })
-                        .collect::<Vec<_>>()
-                })
-            } else {
-                None
-            };
-
-            // fall back to plain text
-            let code_spans = code_spans.unwrap_or_else(|| {
-                let mut highlighter = syntect::easy::HighlightLines::new(plain_text, theme);
-                highlighter
-                    .highlight_line(code, ss)
-                    .map(|ranges| {
-                        ranges
-                            .into_iter()
-                            .map(|(style, text)| StyledSpan {
-                                text: text.to_string(),
-                                fg: syntect_to_ratatui_color(style),
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_else(|_| {
-                        vec![StyledSpan {
-                            text: code.to_string(),
-                            fg: Color::White,
-                        }]
-                    })
-            });
-
-            let mut result = vec![StyledSpan {
-                text: prefix.to_string(),
-                fg: prefix_color,
-            }];
-            result.extend(code_spans);
-            result
-        } else {
-            // non-code lines (headers, hunks)
-            let color = match kind {
-                DiffLineKind::FileHeader => Color::Yellow,
-                DiffLineKind::Hunk => Color::Cyan,
-                _ => Color::White,
-            };
-            vec![StyledSpan {
-                text: line.to_string(),
-                fg: color,
-            }]
-        };
-
-        lines.push(DiffLine { spans, kind });
-    }
-
-    lines
 }

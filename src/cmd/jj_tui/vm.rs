@@ -1,6 +1,7 @@
 //! View model for tree rows - separates state computation from rendering
 
-use super::app::{App, DiffStats, ModeState, RebaseType};
+use super::app::App;
+use super::state::{DiffStats, ModeState, RebaseType};
 use super::preview::{NodeId, NodeRole, PreviewBuilder, PreviewRebaseType};
 use super::tree::{BookmarkInfo, TreeNode};
 
@@ -433,7 +434,7 @@ mod tests {
 
     #[test]
     fn test_build_rebase_view_roles() {
-        use crate::cmd::jj_tui::app::RebaseState;
+        use crate::cmd::jj_tui::state::RebaseState;
 
         let tree = make_tree(vec![
             make_node("aaaa", 0),

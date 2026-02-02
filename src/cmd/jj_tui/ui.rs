@@ -1,8 +1,10 @@
-use super::app::{
-    App, BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState,
-    ConfirmState, DiffLineKind, MessageKind, ModeState, RebaseType, StatusMessage, PREFIX_MENUS,
-};
+use super::app::App;
 use super::preview::NodeRole;
+use super::state::{
+    BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState,
+    ConfirmState, DiffLineKind, DiffState, MessageKind, ModeState, RebaseType, StatusMessage,
+    PREFIX_MENUS,
+};
 use super::theme;
 use super::tree::BookmarkInfo;
 use super::vm::{build_tree_view, Marker, TreeRowVm};
@@ -688,7 +690,7 @@ fn render_confirmation(frame: &mut Frame, state: &ConfirmState) {
     frame.render_widget(paragraph, inner);
 }
 
-fn render_diff(frame: &mut Frame, state: &super::app::DiffState, area: Rect) {
+fn render_diff(frame: &mut Frame, state: &DiffState, area: Rect) {
     let block = Block::default()
         .title(format!(" Diff: {} ", state.rev))
         .borders(Borders::ALL)

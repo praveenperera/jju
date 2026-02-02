@@ -1,7 +1,9 @@
 mod app;
 mod commands;
+mod handlers;
 mod keybindings;
 mod preview;
+mod state;
 mod theme;
 mod tree;
 mod ui;
