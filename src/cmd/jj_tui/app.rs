@@ -369,7 +369,9 @@ impl App {
                 let _ = self.enter_squash_mode();
             }
             KeyCode::Esc => {
-                if !self.tree.selected.is_empty() {
+                if self.tree.is_focused() {
+                    self.tree.unfocus();
+                } else if !self.tree.selected.is_empty() {
                     self.tree.clear_selection();
                 }
             }
@@ -394,7 +396,7 @@ impl App {
             KeyCode::Enter => self.tree.toggle_focus(),
 
             // details toggle
-            KeyCode::Tab => self.tree.toggle_expanded(),
+            KeyCode::Tab | KeyCode::Char(' ') => self.tree.toggle_expanded(),
 
             // page scrolling
             KeyCode::Char('u') if ctrl => self.tree.page_up(viewport_height / 2),
@@ -411,6 +413,7 @@ impl App {
             KeyCode::Char('n') => {
                 let _ = self.create_new_commit();
             }
+            KeyCode::Char('c') if ctrl => self.should_quit = true,
             KeyCode::Char('c') => {
                 let _ = self.commit_working_copy();
             }
@@ -1829,9 +1832,7 @@ impl App {
                     self.mode = Mode::Normal;
                 }
             }
-            KeyCode::Down | KeyCode::Char('j')
-                if !key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
+            KeyCode::Down => {
                 if let Some(ref mut s) = self.bookmark_picker_state {
                     let filtered_count = s.filtered_bookmarks().len();
                     if s.selected_index < filtered_count.saturating_sub(1) {
@@ -1839,9 +1840,7 @@ impl App {
                     }
                 }
             }
-            KeyCode::Up | KeyCode::Char('k')
-                if !key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
+            KeyCode::Up => {
                 if let Some(ref mut s) = self.bookmark_picker_state {
                     if s.selected_index > 0 {
                         s.selected_index -= 1;

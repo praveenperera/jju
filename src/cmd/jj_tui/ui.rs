@@ -1169,7 +1169,7 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "type: filter | j/k: navigate | Enter: select | Esc: cancel",
+        "type: filter | ↑/↓: navigate | Enter: select | Esc: cancel",
         Style::default().fg(Color::DarkGray),
     )));
 
