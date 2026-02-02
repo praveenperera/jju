@@ -1,6 +1,7 @@
 use super::app::{
     App, BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState,
     ConfirmState, DiffLineKind, DiffStats, MessageKind, Mode, RebaseType, StatusMessage,
+    PREFIX_MENUS,
 };
 use super::preview::{
     get_node, MarkerMode, NodeId, PreviewBuilder, PreviewRebaseType,
@@ -138,6 +139,11 @@ pub fn render(frame: &mut Frame, app: &App) {
         if matches!(app.mode, Mode::BookmarkPicker) {
             render_bookmark_picker(frame, state);
         }
+    }
+
+    // render prefix key popup when waiting for second key in sequence
+    if let Some(pending) = app.pending_key {
+        render_prefix_key_popup(frame, pending);
     }
 
     // render toast notification last (on top of everything)
@@ -575,9 +581,9 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             } else if app.tree.is_focused() {
                 "Enter:unfocus f:toggle-full ?:help q:quit"
             } else if app.current_has_bookmark() {
-                "p:push m:move-bm B:del-bm r:rebase ?:help q:quit"
+                "p:push b:bookmark r:rebase ?:help q:quit"
             } else {
-                "b:new-bm r/s:rebase t:trunk d:desc gi:import ge:export ?:help q:quit"
+                "r/s:rebase t:trunk d:desc b:bookmark g:git z:nav ?:help q:quit"
             }
         }
         Mode::Help => "q/Esc:close",
@@ -694,9 +700,9 @@ fn render_help(frame: &mut Frame) {
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from("  p         Push current bookmark"),
-        Line::from("  m         Move bookmark"),
-        Line::from("  b         Create bookmark"),
-        Line::from("  B         Delete bookmark"),
+        Line::from("  b m       Move bookmark"),
+        Line::from("  b s       Set/create bookmark"),
+        Line::from("  b d       Delete bookmark"),
         Line::from("  g i       Git import"),
         Line::from("  g e       Git export"),
         Line::from(""),
@@ -1101,26 +1107,38 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
 
     frame.render_widget(Clear, popup_area);
 
+    let (title, border_color, bg_color) = match state.action {
+        BookmarkSelectAction::Move => (
+            " Move Bookmark Here ",
+            Color::Cyan,
+            Color::Rgb(20, 20, 30),
+        ),
+        BookmarkSelectAction::Delete => (
+            " Delete Bookmark ",
+            Color::Red,
+            Color::Rgb(30, 20, 20),
+        ),
+    };
+
     let block = Block::default()
-        .title(" Move Bookmark Here ")
+        .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
+        .border_style(Style::default().fg(border_color));
 
     let inner = block.inner(popup_area);
-    frame.render_widget(
-        block.style(Style::default().bg(Color::Rgb(20, 20, 30))),
-        popup_area,
-    );
+    frame.render_widget(block.style(Style::default().bg(bg_color)), popup_area);
 
     let mut lines: Vec<Line> = Vec::new();
 
-    // show revision context
-    let rev_short: String = state.target_rev.chars().take(8).collect();
-    lines.push(Line::from(vec![
-        Span::styled("Move to: ", Style::default().fg(Color::Yellow)),
-        Span::styled(rev_short, Style::default().fg(Color::DarkGray)),
-    ]));
-    lines.push(Line::from(""));
+    // show revision context (only for move action)
+    if matches!(state.action, BookmarkSelectAction::Move) {
+        let rev_short: String = state.target_rev.chars().take(8).collect();
+        lines.push(Line::from(vec![
+            Span::styled("Move to: ", Style::default().fg(Color::Yellow)),
+            Span::styled(rev_short, Style::default().fg(Color::DarkGray)),
+        ]));
+        lines.push(Line::from(""));
+    }
 
     // show filter input
     let filter_display = if state.filter.is_empty() {
@@ -1172,6 +1190,75 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
         "type: filter | ↑/↓: navigate | Enter: select | Esc: cancel",
         Style::default().fg(Color::DarkGray),
     )));
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, inner);
+}
+
+fn render_prefix_key_popup(frame: &mut Frame, pending_key: char) {
+    const KEY_SPACING: usize = 3; // "k  " (key char + 2 spaces)
+    const TITLE_WRAPPER: usize = 4; // "g ()" around title
+    const HORIZONTAL_PADDING: usize = 4;
+    const FIXED_HEIGHT_LINES: usize = 4; // title + separator + 2 border lines
+    const EDGE_MARGIN: u16 = 2;
+    const POPUP_BG: Color = Color::Rgb(25, 25, 35);
+
+    let menu = PREFIX_MENUS.iter().find(|m| m.prefix == pending_key);
+    let menu = match menu {
+        Some(m) => m,
+        None => return,
+    };
+
+    let max_label_len = menu.bindings.iter().map(|b| b.label.len()).max().unwrap_or(0);
+    let content_width = max_label_len + KEY_SPACING;
+    let title_width = menu.title.len() + TITLE_WRAPPER;
+    let popup_width = (content_width.max(title_width) + HORIZONTAL_PADDING) as u16;
+    let popup_height = (menu.bindings.len() + FIXED_HEIGHT_LINES) as u16;
+
+    let area = frame.area();
+    let popup_area = Rect {
+        x: area.width.saturating_sub(popup_width + EDGE_MARGIN),
+        y: area.height.saturating_sub(popup_height + EDGE_MARGIN),
+        width: popup_width,
+        height: popup_height,
+    };
+
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray))
+        .style(Style::default().bg(POPUP_BG));
+
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    let mut lines = Vec::new();
+
+    // title line
+    lines.push(Line::from(Span::styled(
+        format!("{} ({})", pending_key, menu.title),
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    )));
+
+    // separator
+    lines.push(Line::from(Span::styled(
+        "─".repeat(inner.width as usize),
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    // key bindings
+    for binding in menu.bindings {
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("{}  ", binding.key),
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(binding.label, Style::default().fg(Color::White)),
+        ]));
+    }
 
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, inner);

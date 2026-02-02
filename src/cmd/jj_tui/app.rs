@@ -13,6 +13,46 @@ use std::time::{Duration, Instant};
 use syntect::highlighting::{Style as SyntectStyle, ThemeSet};
 use syntect::parsing::SyntaxSet;
 
+pub struct KeyBinding {
+    pub key: char,
+    pub label: &'static str,
+}
+
+pub struct PrefixMenu {
+    pub prefix: char,
+    pub title: &'static str,
+    pub bindings: &'static [KeyBinding],
+}
+
+pub const PREFIX_MENUS: &[PrefixMenu] = &[
+    PrefixMenu {
+        prefix: 'g',
+        title: "git",
+        bindings: &[
+            KeyBinding { key: 'i', label: "import" },
+            KeyBinding { key: 'e', label: "export" },
+        ],
+    },
+    PrefixMenu {
+        prefix: 'z',
+        title: "nav",
+        bindings: &[
+            KeyBinding { key: 't', label: "top" },
+            KeyBinding { key: 'b', label: "bottom" },
+            KeyBinding { key: 'z', label: "center" },
+        ],
+    },
+    PrefixMenu {
+        prefix: 'b',
+        title: "bookmark",
+        bindings: &[
+            KeyBinding { key: 'm', label: "move" },
+            KeyBinding { key: 's', label: "set/new" },
+            KeyBinding { key: 'd', label: "delete" },
+        ],
+    },
+];
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DiffLineKind {
     FileHeader,
@@ -152,6 +192,7 @@ pub struct BookmarkPickerState {
     pub filter_cursor: usize,
     pub selected_index: usize,
     pub target_rev: String,
+    pub action: BookmarkSelectAction,
 }
 
 impl BookmarkPickerState {
@@ -357,6 +398,16 @@ impl App {
                 ('z', KeyCode::Char('t')) => self.tree.move_cursor_top(),
                 ('z', KeyCode::Char('b')) => self.tree.move_cursor_bottom(),
                 ('z', KeyCode::Char('z')) => self.center_cursor_in_view(viewport_height),
+                // 'b' prefix - bookmark operations
+                ('b', KeyCode::Char('m')) => {
+                    let _ = self.enter_move_bookmark_mode();
+                }
+                ('b', KeyCode::Char('s')) => {
+                    let _ = self.enter_create_bookmark();
+                }
+                ('b', KeyCode::Char('d')) => {
+                    let _ = self.delete_bookmark_with_picker();
+                }
                 // any other key after prefix - ignore
                 _ => {}
             }
@@ -384,6 +435,7 @@ impl App {
             // multi-key sequence prefixes
             KeyCode::Char('g') => self.pending_key = Some('g'),
             KeyCode::Char('z') => self.pending_key = Some('z'),
+            KeyCode::Char('b') => self.pending_key = Some('b'),
 
             KeyCode::Char('f') => self.tree.toggle_full_mode(),
 
@@ -445,17 +497,6 @@ impl App {
             // git push
             KeyCode::Char('p') => {
                 let _ = self.git_push();
-            }
-
-            // bookmark operations
-            KeyCode::Char('m') => {
-                let _ = self.enter_move_bookmark_mode();
-            }
-            KeyCode::Char('b') => {
-                let _ = self.enter_create_bookmark();
-            }
-            KeyCode::Char('B') => {
-                let _ = self.delete_bookmark();
             }
 
             _ => {}
@@ -1521,58 +1562,11 @@ impl App {
         self.bookmark_input_state = Some(BookmarkInputState {
             name: String::new(),
             cursor: 0,
-            target_rev: rev,
+            target_rev: rev.clone(),
             deleting: false,
         });
         self.mode = Mode::BookmarkInput;
-        Ok(())
-    }
-
-    fn delete_bookmark(&mut self) -> Result<()> {
-        // extract data we need before taking any mutable borrows
-        let (bookmark_names, change_id) = match self.tree.current_node() {
-            Some(n) => (n.bookmark_names(), n.change_id.clone()),
-            None => {
-                self.set_status("No revision selected", MessageKind::Error);
-                return Ok(());
-            }
-        };
-
-        if bookmark_names.is_empty() {
-            self.set_status("No bookmarks on this revision", MessageKind::Warning);
-            return Ok(());
-        }
-
-        // if multiple bookmarks, show selection dialog
-        if bookmark_names.len() > 1 {
-            self.bookmark_select_state = Some(BookmarkSelectState {
-                bookmarks: bookmark_names,
-                selected_index: 0,
-                target_rev: change_id,
-                action: BookmarkSelectAction::Delete,
-            });
-            self.mode = Mode::BookmarkSelect;
-            return Ok(());
-        }
-
-        let name = &bookmark_names[0];
-        let op_before = self.get_current_operation_id().unwrap_or_default();
-
-        match cmd!("jj", "bookmark", "delete", name)
-            .stdout_capture()
-            .stderr_capture()
-            .run()
-        {
-            Ok(_) => {
-                self.last_op = Some(op_before);
-                let _ = self.refresh_tree();
-                self.set_status(&format!("Deleted bookmark '{name}'"), MessageKind::Success);
-            }
-            Err(e) => {
-                let error_details = format!("{e}");
-                self.set_error_with_details("Delete bookmark failed", &error_details);
-            }
-        }
+        self.set_status(&format!("Creating bookmark at {}", &rev[..8.min(rev.len())]), MessageKind::Success);
         Ok(())
     }
 
@@ -1778,6 +1772,49 @@ impl App {
             filter_cursor: 0,
             selected_index: 0,
             target_rev,
+            action: BookmarkSelectAction::Move,
+        });
+        self.mode = Mode::BookmarkPicker;
+        Ok(())
+    }
+
+    fn delete_bookmark_with_picker(&mut self) -> Result<()> {
+        let jj_repo = JjRepo::load(None)?;
+        let mut all_bookmarks = jj_repo.all_local_bookmarks();
+
+        if all_bookmarks.is_empty() {
+            self.set_status("No bookmarks in repository", MessageKind::Warning);
+            return Ok(());
+        }
+
+        // get bookmarks on current commit to prioritize them
+        let current_bookmarks: Vec<String> = self
+            .tree
+            .current_node()
+            .map(|n| n.bookmark_names())
+            .unwrap_or_default();
+
+        // reorder: current commit's bookmarks first, then the rest
+        if !current_bookmarks.is_empty() {
+            all_bookmarks.retain(|b| !current_bookmarks.contains(b));
+            let mut reordered = current_bookmarks;
+            reordered.extend(all_bookmarks);
+            all_bookmarks = reordered;
+        }
+
+        let target_rev = self
+            .tree
+            .current_node()
+            .map(|n| n.change_id.clone())
+            .unwrap_or_default();
+
+        self.bookmark_picker_state = Some(BookmarkPickerState {
+            all_bookmarks,
+            filter: String::new(),
+            filter_cursor: 0,
+            selected_index: 0,
+            target_rev,
+            action: BookmarkSelectAction::Delete,
         });
         self.mode = Mode::BookmarkPicker;
         Ok(())
@@ -1802,29 +1839,55 @@ impl App {
                 if let Some(bookmark) = filtered.get(state.selected_index) {
                     let bookmark_name = (*bookmark).clone();
                     let target_rev = state.target_rev.clone();
+                    let action = state.action;
                     self.bookmark_picker_state = None;
 
-                    // Check if this would be a backwards move
-                    if self.is_bookmark_move_backwards(&bookmark_name, &target_rev) {
-                        let op_before = self.get_current_operation_id().unwrap_or_default();
-                        self.confirm_state = Some(ConfirmState {
-                            action: ConfirmAction::MoveBookmarkBackwards {
-                                bookmark_name: bookmark_name.clone(),
-                                dest_rev: target_rev.clone(),
-                                op_before,
-                            },
-                            message: format!(
-                                "Move bookmark '{}' backwards to {}? (This moves the bookmark to an ancestor)",
-                                bookmark_name,
-                                &target_rev[..8.min(target_rev.len())]
-                            ),
-                            revs: vec![],
-                        });
-                        self.mode = Mode::Confirming;
-                    } else {
-                        let op_before = self.get_current_operation_id().unwrap_or_default();
-                        self.do_bookmark_move(&bookmark_name, &target_rev, &op_before, false);
-                        self.mode = Mode::Normal;
+                    match action {
+                        BookmarkSelectAction::Move => {
+                            if self.is_bookmark_move_backwards(&bookmark_name, &target_rev) {
+                                let op_before = self.get_current_operation_id().unwrap_or_default();
+                                self.confirm_state = Some(ConfirmState {
+                                    action: ConfirmAction::MoveBookmarkBackwards {
+                                        bookmark_name: bookmark_name.clone(),
+                                        dest_rev: target_rev.clone(),
+                                        op_before,
+                                    },
+                                    message: format!(
+                                        "Move bookmark '{}' backwards to {}? (This moves the bookmark to an ancestor)",
+                                        bookmark_name,
+                                        &target_rev[..8.min(target_rev.len())]
+                                    ),
+                                    revs: vec![],
+                                });
+                                self.mode = Mode::Confirming;
+                            } else {
+                                let op_before = self.get_current_operation_id().unwrap_or_default();
+                                self.do_bookmark_move(&bookmark_name, &target_rev, &op_before, false);
+                                self.mode = Mode::Normal;
+                            }
+                        }
+                        BookmarkSelectAction::Delete => {
+                            let op_before = self.get_current_operation_id().unwrap_or_default();
+                            match cmd!("jj", "bookmark", "delete", &bookmark_name)
+                                .stdout_capture()
+                                .stderr_capture()
+                                .run()
+                            {
+                                Ok(_) => {
+                                    self.last_op = Some(op_before);
+                                    let _ = self.refresh_tree();
+                                    self.set_status(
+                                        &format!("Deleted bookmark '{bookmark_name}'"),
+                                        MessageKind::Success,
+                                    );
+                                }
+                                Err(e) => {
+                                    let error_details = format!("{e}");
+                                    self.set_error_with_details("Delete bookmark failed", &error_details);
+                                }
+                            }
+                            self.mode = Mode::Normal;
+                        }
                     }
                 } else {
                     self.set_status("No bookmark selected", MessageKind::Warning);
