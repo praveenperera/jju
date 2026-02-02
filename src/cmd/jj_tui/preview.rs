@@ -1,9 +1,5 @@
-use super::tree::{TreeNode, TreeState};
+use super::tree::TreeState;
 use ahash::{HashMap, HashSet};
-use ratatui::{
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-};
 
 /// Unique identifier for a node in the preview tree
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -27,13 +23,6 @@ pub enum NodeRole {
     Shifted, // will shift position due to rebase
 }
 
-/// Mode for rendering markers
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MarkerMode {
-    #[allow(dead_code)]
-    None,
-    Rebase { allow_branches: bool },
-}
 
 /// A slot in the preview display
 #[derive(Debug, Clone)]
@@ -336,110 +325,6 @@ impl<'a> PreviewBuilder<'a> {
             self.dfs_traverse(child, depth + 1, moving_ids, source, dest, slots, visited);
         }
     }
-}
-
-/// Get a TreeNode by NodeId
-pub fn get_node(tree: &TreeState, node_id: NodeId) -> &TreeNode {
-    let entry = &tree.visible_entries[node_id.0];
-    &tree.nodes[entry.node_index]
-}
-
-/// Render a single tree line with preview markers
-pub fn render_tree_line(
-    node: &TreeNode,
-    visual_depth: usize,
-    is_cursor: bool,
-    role: NodeRole,
-    marker_mode: MarkerMode,
-) -> Line<'static> {
-    let indent = "  ".repeat(visual_depth);
-    let connector = if visual_depth > 0 { "├── " } else { "" };
-    let at_marker = if node.is_working_copy { "@ " } else { "" };
-
-    let (prefix, suffix) = node
-        .change_id
-        .split_at(node.unique_prefix_len.min(node.change_id.len()));
-
-    let mut spans = Vec::new();
-
-    // change_id color based on role
-    let prefix_color = match role {
-        NodeRole::Source | NodeRole::Moving => Color::Yellow,
-        _ => Color::Magenta,
-    };
-
-    let dim_color = Color::Reset;
-
-    spans.extend([
-        Span::raw(format!("{indent}{connector}{at_marker}(")),
-        Span::styled(prefix.to_string(), Style::default().fg(prefix_color)),
-        Span::styled(
-            suffix.to_string(),
-            Style::default().add_modifier(Modifier::DIM),
-        ),
-        Span::raw(")"),
-    ]);
-
-    if !node.bookmarks.is_empty() {
-        let bookmark_str = node
-            .bookmarks
-            .iter()
-            .map(|b| {
-                if b.is_diverged {
-                    format!("{}*", b.name)
-                } else {
-                    b.name.clone()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(" ");
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(bookmark_str, Style::default().fg(Color::Cyan)));
-    }
-
-    let desc = if node.description.is_empty() {
-        if node.is_working_copy {
-            "(working copy)".to_string()
-        } else {
-            "(no description)".to_string()
-        }
-    } else {
-        node.description.clone()
-    };
-    spans.push(Span::styled(format!("  {desc}"), Style::default().fg(dim_color)));
-
-    // add markers based on role and mode
-    match (role, marker_mode) {
-        (NodeRole::Source, MarkerMode::Rebase { .. }) => {
-            spans.push(Span::styled("  ← src", Style::default().fg(Color::Yellow)));
-        }
-        (NodeRole::Destination, MarkerMode::Rebase { allow_branches }) => {
-            let mode_hint = if allow_branches { "fork" } else { "inline" };
-            spans.push(Span::styled(
-                format!("  ← dest ({mode_hint})"),
-                Style::default().fg(Color::Cyan),
-            ));
-        }
-        (NodeRole::Moving, MarkerMode::Rebase { .. }) => {
-            spans.push(Span::styled("  ↳", Style::default().fg(Color::Yellow)));
-        }
-        _ => {}
-    }
-
-    let mut line = Line::from(spans);
-
-    // apply styling based on state
-    if is_cursor {
-        line = line.style(
-            Style::default()
-                .bg(Color::Rgb(40, 40, 60))
-                .add_modifier(Modifier::BOLD),
-        );
-    } else if matches!(role, NodeRole::Source | NodeRole::Moving) {
-        line = line.style(Style::default().bg(Color::Rgb(50, 50, 30)));
-    }
-
-    line
 }
 
 #[cfg(test)]

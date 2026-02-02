@@ -1,8 +1,8 @@
+use super::commands;
 use super::tree::TreeState;
 use super::ui;
 use crate::jj_lib_helpers::JjRepo;
 use ahash::{HashSet, HashSetExt};
-use duct::cmd;
 use eyre::Result;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::style::Color;
@@ -53,7 +53,7 @@ pub const PREFIX_MENUS: &[PrefixMenu] = &[
     },
 ];
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffLineKind {
     FileHeader,
     Hunk,
@@ -62,36 +62,47 @@ pub enum DiffLineKind {
     Context,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct StyledSpan {
     pub text: String,
     pub fg: Color,
 }
 
+#[derive(Debug, Clone)]
 pub struct DiffLine {
     pub spans: Vec<StyledSpan>,
     pub kind: DiffLineKind,
 }
 
+#[derive(Debug, Clone)]
 pub struct DiffState {
     pub lines: Vec<DiffLine>,
     pub scroll_offset: usize,
     pub rev: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mode {
+/// Unified mode state - single source of truth for current mode and its associated state
+/// This replaces the old pattern of `Mode` enum + `Option<*State>` fields
+#[derive(Debug, Clone)]
+pub enum ModeState {
     Normal,
     Help,
-    ViewingDiff,
-    Confirming,
+    ViewingDiff(DiffState),
+    Confirming(ConfirmState),
     Selecting,
-    Rebasing,
-    MovingBookmark,
-    BookmarkInput,
-    BookmarkSelect,
-    BookmarkPicker,
-    Squashing,
+    Rebasing(RebaseState),
+    MovingBookmark(MovingBookmarkState),
+    BookmarkInput(BookmarkInputState),
+    BookmarkSelect(BookmarkSelectState),
+    BookmarkPicker(BookmarkPickerState),
+    Squashing(SquashState),
+}
+
+impl ModeState {
+    /// Check if this is Help mode
+    pub fn is_help(&self) -> bool {
+        matches!(self, ModeState::Help)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,13 +146,14 @@ pub enum ConfirmAction {
     },
 }
 
+#[derive(Debug, Clone)]
 pub struct ConfirmState {
     pub action: ConfirmAction,
     pub message: String,
     pub revs: Vec<String>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct RebaseState {
     pub source_rev: String,
     pub rebase_type: RebaseType,
@@ -150,19 +162,21 @@ pub struct RebaseState {
     pub op_before: String,
 }
 
+#[derive(Debug, Clone)]
 pub struct DiffStats {
     pub files_changed: usize,
     pub insertions: usize,
     pub deletions: usize,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct MovingBookmarkState {
     pub bookmark_name: String,
     pub dest_cursor: usize,
     pub op_before: String,
 }
 
+#[derive(Debug, Clone)]
 pub struct BookmarkInputState {
     pub name: String,
     pub cursor: usize,
@@ -170,13 +184,13 @@ pub struct BookmarkInputState {
     pub deleting: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BookmarkSelectAction {
     Move,
     Delete,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct BookmarkSelectState {
     pub bookmarks: Vec<String>,
     pub selected_index: usize,
@@ -185,7 +199,7 @@ pub struct BookmarkSelectState {
 }
 
 /// State for picking a bookmark from all bookmarks with type-to-filter
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct BookmarkPickerState {
     pub all_bookmarks: Vec<String>,
     pub filter: String,
@@ -210,7 +224,7 @@ impl BookmarkPickerState {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SquashState {
     pub source_rev: String,
     pub dest_cursor: usize,
@@ -225,25 +239,17 @@ pub struct PendingSquash {
 
 pub struct App {
     pub tree: TreeState,
-    pub mode: Mode,
+    pub mode: ModeState,
     pub should_quit: bool,
     pub split_view: bool,
-    pub diff_state: Option<DiffState>,
     pub diff_stats_cache: std::collections::HashMap<String, DiffStats>,
     pub status_message: Option<StatusMessage>,
     pub pending_editor: Option<String>,
     pub pending_squash: Option<PendingSquash>,
-    pub confirm_state: Option<ConfirmState>,
-    pub rebase_state: Option<RebaseState>,
-    pub moving_bookmark_state: Option<MovingBookmarkState>,
-    pub bookmark_input_state: Option<BookmarkInputState>,
-    pub bookmark_select_state: Option<BookmarkSelectState>,
-    pub bookmark_picker_state: Option<BookmarkPickerState>,
-    pub squash_state: Option<SquashState>,
     pub last_op: Option<String>,
     pub pending_key: Option<char>,
-    syntax_set: SyntaxSet,
-    theme_set: ThemeSet,
+    pub(crate) syntax_set: SyntaxSet,
+    pub(crate) theme_set: ThemeSet,
 }
 
 impl App {
@@ -255,21 +261,13 @@ impl App {
 
         Ok(Self {
             tree,
-            mode: Mode::Normal,
+            mode: ModeState::Normal,
             should_quit: false,
             split_view: false,
-            diff_state: None,
             diff_stats_cache: std::collections::HashMap::new(),
             status_message: None,
             pending_editor: None,
             pending_squash: None,
-            confirm_state: None,
-            rebase_state: None,
-            moving_bookmark_state: None,
-            bookmark_input_state: None,
-            bookmark_select_state: None,
-            bookmark_picker_state: None,
-            squash_state: None,
             last_op: None,
             pending_key: None,
             syntax_set,
@@ -365,18 +363,18 @@ impl App {
             }
         }
 
-        match self.mode {
-            Mode::Normal => self.handle_normal_key(key, viewport_height),
-            Mode::Help => self.handle_help_key(key.code),
-            Mode::ViewingDiff => self.handle_diff_key(key),
-            Mode::Confirming => self.handle_confirm_key(key.code),
-            Mode::Selecting => self.handle_selecting_key(key, viewport_height),
-            Mode::Rebasing => self.handle_rebasing_key(key.code),
-            Mode::MovingBookmark => self.handle_moving_bookmark_key(key.code),
-            Mode::BookmarkInput => self.handle_bookmark_input_key(key),
-            Mode::BookmarkSelect => self.handle_bookmark_select_key(key.code),
-            Mode::BookmarkPicker => self.handle_bookmark_picker_key(key),
-            Mode::Squashing => self.handle_squashing_key(key.code),
+        match &self.mode {
+            ModeState::Normal => self.handle_normal_key(key, viewport_height),
+            ModeState::Help => self.handle_help_key(key.code),
+            ModeState::ViewingDiff(_) => self.handle_diff_key(key),
+            ModeState::Confirming(_) => self.handle_confirm_key(key.code),
+            ModeState::Selecting => self.handle_selecting_key(key, viewport_height),
+            ModeState::Rebasing(_) => self.handle_rebasing_key(key.code),
+            ModeState::MovingBookmark(_) => self.handle_moving_bookmark_key(key.code),
+            ModeState::BookmarkInput(_) => self.handle_bookmark_input_key(key),
+            ModeState::BookmarkSelect(_) => self.handle_bookmark_select_key(key.code),
+            ModeState::BookmarkPicker(_) => self.handle_bookmark_picker_key(key),
+            ModeState::Squashing(_) => self.handle_squashing_key(key.code),
         }
     }
 
@@ -426,7 +424,7 @@ impl App {
                     self.tree.clear_selection();
                 }
             }
-            KeyCode::Char('?') => self.mode = Mode::Help,
+            KeyCode::Char('?') => self.mode = ModeState::Help,
 
             KeyCode::Char('j') | KeyCode::Down => self.tree.move_cursor_down(),
             KeyCode::Char('k') | KeyCode::Up => self.tree.move_cursor_up(),
@@ -525,11 +523,7 @@ impl App {
         // push all bookmarks on this revision
         let bookmark_names = node.bookmark_names();
         let name = &bookmark_names[0];
-        match cmd!("jj", "git", "push", "--bookmark", name)
-            .stdout_null()
-            .stderr_null()
-            .run()
-        {
+        match commands::git::push_bookmark(name) {
             Ok(_) => {
                 let _ = self.refresh_tree();
                 self.set_status(&format!("Pushed bookmark '{name}'"), MessageKind::Success);
@@ -542,11 +536,7 @@ impl App {
     }
 
     fn git_import(&mut self) -> Result<()> {
-        match cmd!("jj", "git", "import")
-            .stdout_null()
-            .stderr_null()
-            .run()
-        {
+        match commands::git::import() {
             Ok(_) => {
                 let _ = self.refresh_tree();
                 self.set_status("Git import complete", MessageKind::Success);
@@ -559,11 +549,7 @@ impl App {
     }
 
     fn git_export(&mut self) -> Result<()> {
-        match cmd!("jj", "git", "export")
-            .stdout_null()
-            .stderr_null()
-            .run()
-        {
+        match commands::git::export() {
             Ok(_) => {
                 let _ = self.refresh_tree();
                 self.set_status("Git export complete", MessageKind::Success);
@@ -577,7 +563,7 @@ impl App {
 
     fn handle_help_key(&mut self, code: KeyCode) {
         if matches!(code, KeyCode::Char('q' | '?') | KeyCode::Esc) {
-            self.mode = Mode::Normal;
+            self.mode = ModeState::Normal;
         }
     }
 
@@ -586,7 +572,7 @@ impl App {
 
         // handle pending key sequences in diff view
         if let Some(pending) = self.pending_key.take() {
-            if let Some(ref mut state) = self.diff_state {
+            if let ModeState::ViewingDiff(ref mut state) = self.mode {
                 match (pending, code) {
                     ('z', KeyCode::Char('t')) => state.scroll_offset = 0,
                     ('z', KeyCode::Char('b')) => {
@@ -598,7 +584,7 @@ impl App {
             return;
         }
 
-        if let Some(ref mut state) = self.diff_state {
+        if let ModeState::ViewingDiff(ref mut state) = self.mode {
             match code {
                 KeyCode::Char('j') | KeyCode::Down => {
                     state.scroll_offset = state.scroll_offset.saturating_add(1);
@@ -616,29 +602,25 @@ impl App {
                     self.pending_key = Some('z');
                 }
                 KeyCode::Esc | KeyCode::Char('q') => {
-                    self.mode = Mode::Normal;
+                    self.mode = ModeState::Normal;
                 }
                 _ => {}
             }
         } else {
             // no diff state, return to normal
-            self.mode = Mode::Normal;
+            self.mode = ModeState::Normal;
         }
     }
 
     fn enter_diff_view(&mut self) -> Result<()> {
         let rev = self.current_rev();
-        let diff_output = cmd!("jj", "diff", "--git", "-r", &rev)
-            .stdout_capture()
-            .stderr_null()
-            .read()?;
+        let diff_output = commands::diff::get_diff(&rev)?;
         let lines = parse_diff(&diff_output, &self.syntax_set, &self.theme_set);
-        self.diff_state = Some(DiffState {
+        self.mode = ModeState::ViewingDiff(DiffState {
             lines,
             scroll_offset: 0,
             rev: rev.to_string(),
         });
-        self.mode = Mode::ViewingDiff;
         Ok(())
     }
 
@@ -659,10 +641,7 @@ impl App {
     }
 
     fn fetch_diff_stats(&self, change_id: &str) -> Result<DiffStats> {
-        let output = cmd!("jj", "diff", "--stat", "-r", change_id)
-            .stdout_capture()
-            .stderr_null()
-            .read()?;
+        let output = commands::diff::get_stats(change_id)?;
 
         // parse output like: "3 files changed, 45 insertions(+), 12 deletions(-)"
         // or individual file lines and final summary
@@ -764,26 +743,8 @@ impl App {
         };
         let current_change_id = &current_node.change_id;
 
-        // Use jj to check if dest is an ancestor of current position
-        // If `jj log -r "dest & ancestors(current)"` returns output, dest is an ancestor
-        let check_result = cmd!(
-            "jj",
-            "log",
-            "-r",
-            format!("{dest_rev} & ::({current_change_id})"),
-            "--no-graph",
-            "-T",
-            "change_id",
-            "--limit",
-            "1"
-        )
-        .stdout_capture()
-        .stderr_capture()
-        .read();
-
-        check_result
-            .map(|output| !output.trim().is_empty())
-            .unwrap_or(false)
+        // Check if dest is an ancestor of current position
+        commands::is_ancestor(dest_rev, current_change_id).unwrap_or(false)
     }
 
     fn refresh_tree(&mut self) -> Result<()> {
@@ -839,7 +800,7 @@ impl App {
                 return Ok(());
             }
         }
-        match cmd!("jj", "edit", &rev).stdout_null().stderr_null().run() {
+        match commands::revision::edit(&rev) {
             Ok(_) => {
                 self.set_status(&format!("Now editing {rev}"), MessageKind::Success);
                 self.refresh_tree()?;
@@ -851,7 +812,7 @@ impl App {
 
     fn create_new_commit(&mut self) -> Result<()> {
         let rev = self.current_rev();
-        match cmd!("jj", "new", &rev).stdout_null().stderr_null().run() {
+        match commands::revision::new(&rev) {
             Ok(_) => {
                 self.set_status("Created new commit", MessageKind::Success);
                 self.refresh_tree()?;
@@ -883,11 +844,7 @@ impl App {
         } else {
             desc
         };
-        match cmd!("jj", "commit", "-m", &desc)
-            .stdout_null()
-            .stderr_null()
-            .run()
-        {
+        match commands::revision::commit(&desc) {
             Ok(_) => {
                 self.set_status("Changes committed", MessageKind::Success);
                 self.refresh_tree()?;
@@ -906,7 +863,7 @@ impl App {
     fn enter_visual_selection(&mut self) {
         self.tree.selection_anchor = Some(self.tree.cursor);
         self.tree.selected.insert(self.tree.cursor);
-        self.mode = Mode::Selecting;
+        self.mode = ModeState::Selecting;
     }
 
     fn handle_selecting_key(&mut self, key: event::KeyEvent, _viewport_height: usize) {
@@ -920,7 +877,7 @@ impl App {
                 self.extend_selection_to_cursor();
             }
             KeyCode::Esc => {
-                self.mode = Mode::Normal;
+                self.mode = ModeState::Normal;
                 self.tree.selection_anchor = None;
             }
             KeyCode::Char('a') => self.request_abandon(),
@@ -973,12 +930,11 @@ impl App {
             format!("Abandon {} revisions?", count)
         };
 
-        self.confirm_state = Some(ConfirmState {
+        self.mode = ModeState::Confirming(ConfirmState {
             action: ConfirmAction::Abandon,
             message,
             revs,
         });
-        self.mode = Mode::Confirming;
     }
 
     fn handle_confirm_key(&mut self, code: KeyCode) {
@@ -990,15 +946,14 @@ impl App {
     }
 
     fn execute_confirmed_action(&mut self) {
-        if let Some(state) = self.confirm_state.take() {
+        let ModeState::Confirming(state) = std::mem::replace(&mut self.mode, ModeState::Normal)
+        else {
+            return;
+        };
             match state.action {
                 ConfirmAction::Abandon => {
                     let revset = state.revs.join(" | ");
-                    match cmd!("jj", "abandon", &revset)
-                        .stdout_capture()
-                        .stderr_capture()
-                        .run()
-                    {
+                    match commands::revision::abandon(&revset) {
                         Ok(_) => {
                             let count = state.revs.len();
                             let msg = if count == 1 {
@@ -1019,24 +974,14 @@ impl App {
                     let source = self.current_rev();
                     let op_before = self.get_current_operation_id().unwrap_or_default();
 
-                    let mode_flag = match rebase_type {
-                        RebaseType::Single => "-r",
-                        RebaseType::WithDescendants => "-s",
+                    let result = match rebase_type {
+                        RebaseType::Single => commands::rebase::single_onto_trunk(&source),
+                        RebaseType::WithDescendants => {
+                            commands::rebase::with_descendants_onto_trunk(&source)
+                        }
                     };
 
-                    match cmd!(
-                        "jj",
-                        "rebase",
-                        mode_flag,
-                        &source,
-                        "-d",
-                        "trunk()",
-                        "--skip-emptied"
-                    )
-                    .stdout_capture()
-                    .stderr_capture()
-                    .run()
-                    {
+                    match result {
                         Ok(_) => {
                             self.last_op = Some(op_before);
                             let has_conflicts = self.check_conflicts();
@@ -1066,13 +1011,11 @@ impl App {
                 }
             }
             self.tree.clear_selection();
-            self.mode = Mode::Normal;
-        }
+        // mode is already set to Normal by the mem::replace above
     }
 
     fn cancel_confirmation(&mut self) {
-        self.confirm_state = None;
-        self.mode = Mode::Normal;
+        self.mode = ModeState::Normal;
     }
 
     // Description editing
@@ -1084,11 +1027,7 @@ impl App {
     // Rebase operations
 
     fn get_current_operation_id(&self) -> Result<String> {
-        let output = cmd!("jj", "op", "log", "--limit", "1", "-T", "id", "--no-graph")
-            .stdout_capture()
-            .stderr_null()
-            .read()?;
-        Ok(output.trim().to_string())
+        commands::get_current_op_id()
     }
 
     fn enter_rebase_mode(&mut self, rebase_type: RebaseType) -> Result<()> {
@@ -1100,20 +1039,23 @@ impl App {
 
         // capture current operation ID for potential undo
         let op_before = self.get_current_operation_id().unwrap_or_default();
+        let current = self.tree.cursor;
 
-        // temporarily create rebase state to compute moving indices
-        self.rebase_state = Some(RebaseState {
+        // create initial state with cursor at current position
+        let mut state = RebaseState {
             source_rev: source_rev.clone(),
             rebase_type,
-            dest_cursor: self.tree.cursor,
+            dest_cursor: current,
             allow_branches: false,
             op_before,
-        });
+        };
+
+        // temporarily set mode to compute moving indices
+        self.mode = ModeState::Rebasing(state.clone());
 
         // find source's parent so initial preview shows source at its original position
         let moving = self.compute_moving_indices();
         let max = self.tree.visible_count();
-        let current = self.tree.cursor;
 
         // get source's structural depth
         let source_struct_depth = self
@@ -1143,19 +1085,17 @@ impl App {
             }
         }
 
-        if let Some(ref mut state) = self.rebase_state {
-            state.dest_cursor = initial_cursor;
-        }
-
-        self.mode = Mode::Rebasing;
+        state.dest_cursor = initial_cursor;
+        self.mode = ModeState::Rebasing(state);
         Ok(())
     }
 
     fn handle_rebasing_key(&mut self, code: KeyCode) {
-        let Some(state) = self.rebase_state.clone() else {
-            self.mode = Mode::Normal;
+        let ModeState::Rebasing(ref state) = self.mode else {
+            self.mode = ModeState::Normal;
             return;
         };
+        let state = state.clone();
 
         match code {
             KeyCode::Char('j') | KeyCode::Down => {
@@ -1165,7 +1105,7 @@ impl App {
                 self.move_rebase_dest_up();
             }
             KeyCode::Char('b') => {
-                if let Some(ref mut s) = self.rebase_state {
+                if let ModeState::Rebasing(ref mut s) = self.mode {
                     s.allow_branches = !s.allow_branches;
                 }
             }
@@ -1181,7 +1121,7 @@ impl App {
 
     fn move_rebase_dest_up(&mut self) {
         let moving = self.compute_moving_indices();
-        if let Some(ref mut state) = self.rebase_state {
+        if let ModeState::Rebasing(ref mut state) = self.mode {
             let mut next = state.dest_cursor.saturating_sub(1);
             // skip over moving entries
             while next > 0 && moving.contains(&next) {
@@ -1197,7 +1137,7 @@ impl App {
     fn move_rebase_dest_down(&mut self) {
         let moving = self.compute_moving_indices();
         let max = self.tree.visible_count();
-        if let Some(ref mut state) = self.rebase_state {
+        if let ModeState::Rebasing(ref mut state) = self.mode {
             let mut next = state.dest_cursor + 1;
             // skip over moving entries
             while next < max && moving.contains(&next) {
@@ -1218,26 +1158,7 @@ impl App {
     }
 
     fn get_first_child(&self, rev: &str) -> Result<Option<String>> {
-        let output = cmd!(
-            "jj",
-            "log",
-            "-r",
-            format!("children({rev})"),
-            "-T",
-            "change_id",
-            "--no-graph",
-            "--limit",
-            "1"
-        )
-        .stdout_capture()
-        .stderr_null()
-        .read()?;
-        let trimmed = output.trim();
-        if trimmed.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(trimmed.to_string()))
-        }
+        commands::get_first_child(rev)
     }
 
     fn execute_rebase(&mut self, state: &RebaseState) -> Result<()> {
@@ -1253,28 +1174,25 @@ impl App {
             return Ok(());
         }
 
-        let mode_flag = match state.rebase_type {
-            RebaseType::Single => "-r",
-            RebaseType::WithDescendants => "-s",
-        };
-
         let result = if state.allow_branches {
             // simple -A only (creates branch point)
-            cmd!("jj", "rebase", mode_flag, source, "-A", &dest)
-                .stdout_null()
-                .stderr_null()
-                .run()
+            match state.rebase_type {
+                RebaseType::Single => commands::rebase::single(source, &dest),
+                RebaseType::WithDescendants => commands::rebase::with_descendants(source, &dest),
+            }
         } else {
             // clean inline: try to insert between dest and its first child
-            match self.get_first_child(&dest) {
-                Ok(Some(next)) => cmd!("jj", "rebase", mode_flag, source, "-A", &dest, "-B", &next)
-                    .stdout_null()
-                    .stderr_null()
-                    .run(),
-                _ => cmd!("jj", "rebase", mode_flag, source, "-A", &dest)
-                    .stdout_null()
-                    .stderr_null()
-                    .run(),
+            match (state.rebase_type, self.get_first_child(&dest)) {
+                (RebaseType::Single, Ok(Some(next))) => {
+                    commands::rebase::single_with_next(source, &dest, &next)
+                }
+                (RebaseType::Single, _) => commands::rebase::single(source, &dest),
+                (RebaseType::WithDescendants, Ok(Some(next))) => {
+                    commands::rebase::with_descendants_and_next(source, &dest, &next)
+                }
+                (RebaseType::WithDescendants, _) => {
+                    commands::rebase::with_descendants(source, &dest)
+                }
             }
         };
 
@@ -1286,8 +1204,7 @@ impl App {
                 // check for conflicts
                 let has_conflicts = self.check_conflicts();
 
-                self.rebase_state = None;
-                self.mode = Mode::Normal;
+                self.mode = ModeState::Normal;
                 let _ = self.refresh_tree();
 
                 if has_conflicts {
@@ -1307,17 +1224,11 @@ impl App {
     }
 
     fn check_conflicts(&self) -> bool {
-        cmd!("jj", "log", "-r", "@", "-T", r#"if(conflict, "conflict")"#)
-            .stdout_capture()
-            .stderr_null()
-            .read()
-            .map(|s| s.contains("conflict"))
-            .unwrap_or(false)
+        commands::has_conflicts().unwrap_or(false)
     }
 
     fn cancel_rebase(&mut self) {
-        self.rebase_state = None;
-        self.mode = Mode::Normal;
+        self.mode = ModeState::Normal;
     }
 
     fn quick_rebase_onto_trunk(&mut self, rebase_type: RebaseType) -> Result<()> {
@@ -1341,22 +1252,17 @@ impl App {
             mode_flag, short_rev
         );
 
-        self.confirm_state = Some(ConfirmState {
+        self.mode = ModeState::Confirming(ConfirmState {
             action: ConfirmAction::RebaseOntoTrunk(rebase_type),
             message,
             revs: vec![cmd_preview],
         });
-        self.mode = Mode::Confirming;
         Ok(())
     }
 
     fn undo_last_operation(&mut self) -> Result<()> {
         if let Some(ref op_id) = self.last_op.take() {
-            match cmd!("jj", "op", "restore", op_id)
-                .stdout_null()
-                .stderr_null()
-                .run()
-            {
+            match commands::restore_op(op_id) {
                 Ok(_) => {
                     self.set_status("Operation undone", MessageKind::Success);
                     let _ = self.refresh_tree();
@@ -1386,33 +1292,32 @@ impl App {
 
         // if multiple bookmarks, show selection dialog
         if node.bookmarks.len() > 1 {
-            self.bookmark_select_state = Some(BookmarkSelectState {
+            self.mode = ModeState::BookmarkSelect(BookmarkSelectState {
                 bookmarks: node.bookmark_names(),
                 selected_index: 0,
                 target_rev: node.change_id.clone(),
                 action: BookmarkSelectAction::Move,
             });
-            self.mode = Mode::BookmarkSelect;
             return Ok(());
         }
 
         let bookmark_name = node.bookmarks[0].name.clone();
         let op_before = self.get_current_operation_id().unwrap_or_default();
 
-        self.moving_bookmark_state = Some(MovingBookmarkState {
+        self.mode = ModeState::MovingBookmark(MovingBookmarkState {
             bookmark_name,
             dest_cursor: self.tree.cursor,
             op_before,
         });
-        self.mode = Mode::MovingBookmark;
         Ok(())
     }
 
     fn handle_moving_bookmark_key(&mut self, code: KeyCode) {
-        let Some(state) = self.moving_bookmark_state.clone() else {
-            self.mode = Mode::Normal;
+        let ModeState::MovingBookmark(ref state) = self.mode else {
+            self.mode = ModeState::Normal;
             return;
         };
+        let state = state.clone();
 
         match code {
             KeyCode::Char('j') | KeyCode::Down => self.move_bookmark_dest_down(),
@@ -1426,7 +1331,7 @@ impl App {
     }
 
     fn move_bookmark_dest_up(&mut self) {
-        if let Some(ref mut state) = self.moving_bookmark_state {
+        if let ModeState::MovingBookmark(ref mut state) = self.mode {
             if state.dest_cursor > 0 {
                 state.dest_cursor -= 1;
             }
@@ -1434,7 +1339,7 @@ impl App {
     }
 
     fn move_bookmark_dest_down(&mut self) {
-        if let Some(ref mut state) = self.moving_bookmark_state {
+        if let ModeState::MovingBookmark(ref mut state) = self.mode {
             let max = self.tree.visible_count().saturating_sub(1);
             if state.dest_cursor < max {
                 state.dest_cursor += 1;
@@ -1453,7 +1358,7 @@ impl App {
         // Check if this move would be backwards
         if self.is_bookmark_move_backwards(name, &dest) {
             // Show confirmation dialog for backwards move
-            self.confirm_state = Some(ConfirmState {
+            self.mode = ModeState::Confirming(ConfirmState {
                 action: ConfirmAction::MoveBookmarkBackwards {
                     bookmark_name: name.clone(),
                     dest_rev: dest.clone(),
@@ -1465,16 +1370,13 @@ impl App {
                 ),
                 revs: vec![],
             });
-            self.moving_bookmark_state = None;
-            self.mode = Mode::Confirming;
             return Ok(());
         }
 
         // Normal forward move
         self.do_bookmark_move(name, &dest, &state.op_before, false);
 
-        self.moving_bookmark_state = None;
-        self.mode = Mode::Normal;
+        self.mode = ModeState::Normal;
         Ok(())
     }
 
@@ -1487,23 +1389,9 @@ impl App {
         allow_backwards: bool,
     ) {
         let result = if allow_backwards {
-            cmd!(
-                "jj",
-                "bookmark",
-                "set",
-                name,
-                "-r",
-                dest,
-                "--allow-backwards"
-            )
-            .stdout_capture()
-            .stderr_capture()
-            .run()
+            commands::bookmark::set_allow_backwards(name, dest)
         } else {
-            cmd!("jj", "bookmark", "set", name, "-r", dest)
-                .stdout_capture()
-                .stderr_capture()
-                .run()
+            commands::bookmark::set(name, dest)
         };
 
         match result {
@@ -1523,8 +1411,7 @@ impl App {
     }
 
     fn cancel_bookmark_move(&mut self) {
-        self.moving_bookmark_state = None;
-        self.mode = Mode::Normal;
+        self.mode = ModeState::Normal;
     }
 
     fn enter_create_bookmark(&mut self) -> Result<()> {
@@ -1534,19 +1421,18 @@ impl App {
             return Ok(());
         }
 
-        self.bookmark_input_state = Some(BookmarkInputState {
+        self.mode = ModeState::BookmarkInput(BookmarkInputState {
             name: String::new(),
             cursor: 0,
             target_rev: rev.clone(),
             deleting: false,
         });
-        self.mode = Mode::BookmarkInput;
         self.set_status(&format!("Creating bookmark at {}", &rev[..8.min(rev.len())]), MessageKind::Success);
         Ok(())
     }
 
     fn handle_bookmark_input_key(&mut self, key: event::KeyEvent) {
-        if let Some(ref mut state) = self.bookmark_input_state {
+        if let ModeState::BookmarkInput(ref mut state) = self.mode {
             match key.code {
                 KeyCode::Enter => {
                     let name = state.name.clone();
@@ -1555,8 +1441,7 @@ impl App {
                     self.execute_bookmark_input(&name, &target, deleting);
                 }
                 KeyCode::Esc => {
-                    self.bookmark_input_state = None;
-                    self.mode = Mode::Normal;
+                    self.mode = ModeState::Normal;
                 }
                 KeyCode::Char(c) => {
                     state.name.insert(state.cursor, c);
@@ -1604,68 +1489,52 @@ impl App {
     fn execute_bookmark_input(&mut self, name: &str, target: &str, deleting: bool) {
         if name.is_empty() {
             self.set_status("Bookmark name cannot be empty", MessageKind::Error);
-            self.bookmark_input_state = None;
-            self.mode = Mode::Normal;
+            self.mode = ModeState::Normal;
             return;
         }
 
         let op_before = self.get_current_operation_id().unwrap_or_default();
 
         let result = if deleting {
-            cmd!("jj", "bookmark", "delete", name)
-                .stdout_capture()
-                .stderr_capture()
-                .run()
+            commands::bookmark::delete(name)
         } else {
-            // Use bookmark set instead of create - works for both new and existing bookmarks
-            cmd!("jj", "bookmark", "set", name, "-r", target)
-                .stdout_capture()
-                .stderr_capture()
-                .run()
+            commands::bookmark::set(name, target)
         };
 
         match result {
-            Ok(output) => {
+            Ok(()) => {
                 self.last_op = Some(op_before);
                 let _ = self.refresh_tree();
                 let action = if deleting { "Deleted" } else { "Set" };
                 self.set_status(&format!("{action} bookmark '{name}'"), MessageKind::Success);
-
-                // Check if there was any warning in stderr
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                if !stderr.trim().is_empty() {
-                    // There was stderr output but command succeeded - might be a warning
-                    log::warn!("Bookmark command stderr: {}", stderr);
-                }
             }
             Err(e) => {
                 let action = if deleting { "Delete" } else { "Set" };
-                // Try to get stderr from the error for more details
                 let error_details = format!("{e}");
                 self.set_error_with_details(&format!("{action} bookmark failed"), &error_details);
             }
         }
 
-        self.bookmark_input_state = None;
-        self.mode = Mode::Normal;
+        self.mode = ModeState::Normal;
     }
 
     fn handle_bookmark_select_key(&mut self, code: KeyCode) {
-        let Some(state) = self.bookmark_select_state.clone() else {
-            self.mode = Mode::Normal;
+        let ModeState::BookmarkSelect(ref state) = self.mode else {
+            self.mode = ModeState::Normal;
             return;
         };
+        let state = state.clone();
 
         match code {
             KeyCode::Char('j') | KeyCode::Down => {
-                if let Some(ref mut s) = self.bookmark_select_state {
+                if let ModeState::BookmarkSelect(ref mut s) = self.mode {
                     if s.selected_index < s.bookmarks.len().saturating_sub(1) {
                         s.selected_index += 1;
                     }
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                if let Some(ref mut s) = self.bookmark_select_state {
+                if let ModeState::BookmarkSelect(ref mut s) = self.mode {
                     if s.selected_index > 0 {
                         s.selected_index -= 1;
                     }
@@ -1673,25 +1542,19 @@ impl App {
             }
             KeyCode::Enter => {
                 let bookmark = state.bookmarks[state.selected_index].clone();
-                self.bookmark_select_state = None;
 
                 match state.action {
                     BookmarkSelectAction::Move => {
                         let op_before = self.get_current_operation_id().unwrap_or_default();
-                        self.moving_bookmark_state = Some(MovingBookmarkState {
+                        self.mode = ModeState::MovingBookmark(MovingBookmarkState {
                             bookmark_name: bookmark,
                             dest_cursor: self.tree.cursor,
                             op_before,
                         });
-                        self.mode = Mode::MovingBookmark;
                     }
                     BookmarkSelectAction::Delete => {
                         let op_before = self.get_current_operation_id().unwrap_or_default();
-                        match cmd!("jj", "bookmark", "delete", &bookmark)
-                            .stdout_capture()
-                            .stderr_capture()
-                            .run()
-                        {
+                        match commands::bookmark::delete(&bookmark) {
                             Ok(_) => {
                                 self.last_op = Some(op_before);
                                 let _ = self.refresh_tree();
@@ -1708,13 +1571,12 @@ impl App {
                                 );
                             }
                         }
-                        self.mode = Mode::Normal;
+                        self.mode = ModeState::Normal;
                     }
                 }
             }
             KeyCode::Esc => {
-                self.bookmark_select_state = None;
-                self.mode = Mode::Normal;
+                self.mode = ModeState::Normal;
             }
             _ => {}
         }
@@ -1738,7 +1600,7 @@ impl App {
             return Ok(());
         }
 
-        self.bookmark_picker_state = Some(BookmarkPickerState {
+        self.mode = ModeState::BookmarkPicker(BookmarkPickerState {
             all_bookmarks,
             filter: String::new(),
             filter_cursor: 0,
@@ -1746,7 +1608,6 @@ impl App {
             target_rev,
             action: BookmarkSelectAction::Move,
         });
-        self.mode = Mode::BookmarkPicker;
         Ok(())
     }
 
@@ -1780,7 +1641,7 @@ impl App {
             .map(|n| n.change_id.clone())
             .unwrap_or_default();
 
-        self.bookmark_picker_state = Some(BookmarkPickerState {
+        self.mode = ModeState::BookmarkPicker(BookmarkPickerState {
             all_bookmarks,
             filter: String::new(),
             filter_cursor: 0,
@@ -1788,20 +1649,19 @@ impl App {
             target_rev,
             action: BookmarkSelectAction::Delete,
         });
-        self.mode = Mode::BookmarkPicker;
         Ok(())
     }
 
     fn handle_bookmark_picker_key(&mut self, key: event::KeyEvent) {
-        let Some(state) = self.bookmark_picker_state.clone() else {
-            self.mode = Mode::Normal;
+        let ModeState::BookmarkPicker(ref state) = self.mode else {
+            self.mode = ModeState::Normal;
             return;
         };
+        let state = state.clone();
 
         match key.code {
             KeyCode::Esc => {
-                self.bookmark_picker_state = None;
-                self.mode = Mode::Normal;
+                self.mode = ModeState::Normal;
             }
             KeyCode::Enter => {
                 let filtered = state.filtered_bookmarks();
@@ -1809,13 +1669,12 @@ impl App {
                     let bookmark_name = (*bookmark).clone();
                     let target_rev = state.target_rev.clone();
                     let action = state.action;
-                    self.bookmark_picker_state = None;
 
                     match action {
                         BookmarkSelectAction::Move => {
                             if self.is_bookmark_move_backwards(&bookmark_name, &target_rev) {
                                 let op_before = self.get_current_operation_id().unwrap_or_default();
-                                self.confirm_state = Some(ConfirmState {
+                                self.mode = ModeState::Confirming(ConfirmState {
                                     action: ConfirmAction::MoveBookmarkBackwards {
                                         bookmark_name: bookmark_name.clone(),
                                         dest_rev: target_rev.clone(),
@@ -1828,20 +1687,15 @@ impl App {
                                     ),
                                     revs: vec![],
                                 });
-                                self.mode = Mode::Confirming;
                             } else {
                                 let op_before = self.get_current_operation_id().unwrap_or_default();
                                 self.do_bookmark_move(&bookmark_name, &target_rev, &op_before, false);
-                                self.mode = Mode::Normal;
+                                self.mode = ModeState::Normal;
                             }
                         }
                         BookmarkSelectAction::Delete => {
                             let op_before = self.get_current_operation_id().unwrap_or_default();
-                            match cmd!("jj", "bookmark", "delete", &bookmark_name)
-                                .stdout_capture()
-                                .stderr_capture()
-                                .run()
-                            {
+                            match commands::bookmark::delete(&bookmark_name) {
                                 Ok(_) => {
                                     self.last_op = Some(op_before);
                                     let _ = self.refresh_tree();
@@ -1855,17 +1709,16 @@ impl App {
                                     self.set_error_with_details("Delete bookmark failed", &error_details);
                                 }
                             }
-                            self.mode = Mode::Normal;
+                            self.mode = ModeState::Normal;
                         }
                     }
                 } else {
                     self.set_status("No bookmark selected", MessageKind::Warning);
-                    self.bookmark_picker_state = None;
-                    self.mode = Mode::Normal;
+                    self.mode = ModeState::Normal;
                 }
             }
             KeyCode::Down => {
-                if let Some(ref mut s) = self.bookmark_picker_state {
+                if let ModeState::BookmarkPicker(ref mut s) = self.mode {
                     let filtered_count = s.filtered_bookmarks().len();
                     if s.selected_index < filtered_count.saturating_sub(1) {
                         s.selected_index += 1;
@@ -1873,21 +1726,21 @@ impl App {
                 }
             }
             KeyCode::Up => {
-                if let Some(ref mut s) = self.bookmark_picker_state {
+                if let ModeState::BookmarkPicker(ref mut s) = self.mode {
                     if s.selected_index > 0 {
                         s.selected_index -= 1;
                     }
                 }
             }
             KeyCode::Char(c) => {
-                if let Some(ref mut s) = self.bookmark_picker_state {
+                if let ModeState::BookmarkPicker(ref mut s) = self.mode {
                     s.filter.insert(s.filter_cursor, c);
                     s.filter_cursor += c.len_utf8();
                     s.selected_index = 0; // reset selection when filter changes
                 }
             }
             KeyCode::Backspace => {
-                if let Some(ref mut s) = self.bookmark_picker_state {
+                if let ModeState::BookmarkPicker(ref mut s) = self.mode {
                     if s.filter_cursor > 0 {
                         let prev = s.filter[..s.filter_cursor]
                             .char_indices()
@@ -1935,20 +1788,20 @@ impl App {
             initial_cursor -= 1;
         }
 
-        self.squash_state = Some(SquashState {
+        self.mode = ModeState::Squashing(SquashState {
             source_rev,
             dest_cursor: initial_cursor,
             op_before,
         });
-        self.mode = Mode::Squashing;
         Ok(())
     }
 
     fn handle_squashing_key(&mut self, code: KeyCode) {
-        let Some(state) = self.squash_state.clone() else {
-            self.mode = Mode::Normal;
+        let ModeState::Squashing(ref state) = self.mode else {
+            self.mode = ModeState::Normal;
             return;
         };
+        let state = state.clone();
 
         match code {
             KeyCode::Char('j') | KeyCode::Down => self.move_squash_dest_down(),
@@ -1962,7 +1815,7 @@ impl App {
     }
 
     fn move_squash_dest_up(&mut self) {
-        if let Some(ref mut state) = self.squash_state {
+        if let ModeState::Squashing(ref mut state) = self.mode {
             if state.dest_cursor > 0 {
                 state.dest_cursor -= 1;
             }
@@ -1970,7 +1823,7 @@ impl App {
     }
 
     fn move_squash_dest_down(&mut self) {
-        if let Some(ref mut state) = self.squash_state {
+        if let ModeState::Squashing(ref mut state) = self.mode {
             let max = self.tree.visible_count().saturating_sub(1);
             if state.dest_cursor < max {
                 state.dest_cursor += 1;
@@ -1997,21 +1850,19 @@ impl App {
             target_rev: target,
             op_before: state.op_before.clone(),
         });
-        self.squash_state = None;
-        self.mode = Mode::Normal;
+        self.mode = ModeState::Normal;
         Ok(())
     }
 
     fn cancel_squash(&mut self) {
-        self.squash_state = None;
-        self.mode = Mode::Normal;
+        self.mode = ModeState::Normal;
     }
 
     /// Compute indices of entries that will move during rebase
     /// For 's' mode: source + all descendants
     /// For 'r' mode: only source
     pub fn compute_moving_indices(&self) -> HashSet<usize> {
-        let Some(ref state) = self.rebase_state else {
+        let ModeState::Rebasing(ref state) = self.mode else {
             return HashSet::new();
         };
 

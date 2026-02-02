@@ -1,8 +1,11 @@
 mod app;
+mod commands;
 mod keybindings;
 mod preview;
+mod theme;
 mod tree;
 mod ui;
+mod vm;
 
 use eyre::Result;
 
