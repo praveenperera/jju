@@ -83,7 +83,7 @@ pub fn render(frame: &mut Frame, app: &App) {
         .split(frame.area());
 
     match &app.mode {
-        ModeState::ViewingDiff(ref state) => {
+        ModeState::ViewingDiff(state) => {
             render_diff(frame, state, chunks[0]);
         }
         ModeState::Normal
@@ -138,10 +138,10 @@ pub fn render(frame: &mut Frame, app: &App) {
     }
 
     // render toast notification last (on top of everything)
-    if let Some(ref msg) = app.status_message {
-        if std::time::Instant::now() < msg.expires {
-            render_toast(frame, msg);
-        }
+    if let Some(ref msg) = app.status_message
+        && std::time::Instant::now() < msg.expires
+    {
+        render_toast(frame, msg);
     }
 }
 
@@ -416,7 +416,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     // in rebase mode, show source→dest instead of current node
-    let current_info = if let ModeState::Rebasing(ref state) = &app.mode {
+    let current_info = if let ModeState::Rebasing(state) = &app.mode {
         let dest_name = app
             .tree
             .visible_entries
@@ -432,7 +432,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             .unwrap_or_else(|| "?".to_string());
         let src_short: String = state.source_rev.chars().take(8).collect();
         format!(" | {src_short}→{dest_name}")
-    } else if let ModeState::MovingBookmark(ref state) = &app.mode {
+    } else if let ModeState::MovingBookmark(state) = &app.mode {
         let dest_name = app
             .tree
             .visible_entries
@@ -444,7 +444,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             .unwrap_or_else(|| "?".to_string());
         let bm_name: String = state.bookmark_name.chars().take(12).collect();
         format!(" | {bm_name}→{dest_name}")
-    } else if let ModeState::Squashing(ref state) = &app.mode {
+    } else if let ModeState::Squashing(state) = &app.mode {
         let dest_name = app
             .tree
             .visible_entries

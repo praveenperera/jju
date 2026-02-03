@@ -159,10 +159,10 @@ impl TreeState {
             .values()
             .filter(|c| {
                 // always include base as root
-                if let Some(ref bid) = base_id {
-                    if c.change_id == *bid {
-                        return true;
-                    }
+                if let Some(ref bid) = base_id
+                    && c.change_id == *bid
+                {
+                    return true;
                 }
                 c.parent_ids
                     .iter()
@@ -402,14 +402,13 @@ impl TreeState {
         self.recompute_visible_entries();
 
         // restore cursor to the previously focused node
-        if let Some(change_id) = popped_change_id {
-            if let Some(idx) = self
+        if let Some(change_id) = popped_change_id
+            && let Some(idx) = self
                 .visible_entries
                 .iter()
                 .position(|e| self.nodes[e.node_index].change_id == change_id)
-            {
-                self.cursor = idx;
-            }
+        {
+            self.cursor = idx;
         }
     }
 

@@ -199,15 +199,15 @@ fn stack_sync(push: bool, force: bool) -> Result<()> {
         .wrap_err("failed to list tracked bookmarks")?;
 
     for line in tracked.lines() {
-        if line.contains("[deleted]") {
-            if let Some(bookmark) = line.split_whitespace().next() {
-                println!("{}{}", "Deleting merged bookmark: ".dimmed(), bookmark);
-                cmd!("jj", "bookmark", "delete", bookmark)
-                    .stdout_null()
-                    .stderr_null()
-                    .run()
-                    .wrap_err_with(|| format!("failed to delete bookmark {bookmark}"))?;
-            }
+        if line.contains("[deleted]")
+            && let Some(bookmark) = line.split_whitespace().next()
+        {
+            println!("{}{}", "Deleting merged bookmark: ".dimmed(), bookmark);
+            cmd!("jj", "bookmark", "delete", bookmark)
+                .stdout_null()
+                .stderr_null()
+                .run()
+                .wrap_err_with(|| format!("failed to delete bookmark {bookmark}"))?;
         }
     }
 

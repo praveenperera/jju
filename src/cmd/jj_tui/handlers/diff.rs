@@ -19,18 +19,18 @@ pub fn parse_diff_stats(output: &str) -> DiffStats {
             // parse: "N file(s) changed, M insertion(s)(+), K deletion(s)(-)"
             for part in line.split(',') {
                 let part = part.trim();
-                if part.contains("file") {
-                    if let Some(num) = part.split_whitespace().next() {
-                        files_changed = num.parse().unwrap_or(0);
-                    }
-                } else if part.contains("insertion") {
-                    if let Some(num) = part.split_whitespace().next() {
-                        insertions = num.parse().unwrap_or(0);
-                    }
-                } else if part.contains("deletion") {
-                    if let Some(num) = part.split_whitespace().next() {
-                        deletions = num.parse().unwrap_or(0);
-                    }
+                if part.contains("file")
+                    && let Some(num) = part.split_whitespace().next()
+                {
+                    files_changed = num.parse().unwrap_or(0);
+                } else if part.contains("insertion")
+                    && let Some(num) = part.split_whitespace().next()
+                {
+                    insertions = num.parse().unwrap_or(0);
+                } else if part.contains("deletion")
+                    && let Some(num) = part.split_whitespace().next()
+                {
+                    deletions = num.parse().unwrap_or(0);
                 }
             }
         }

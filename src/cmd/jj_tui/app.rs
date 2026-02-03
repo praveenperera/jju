@@ -112,10 +112,10 @@ impl App {
         terminal: &mut DefaultTerminal,
     ) {
         // clear expired status messages
-        if let Some(ref msg) = self.status_message {
-            if msg.is_expired() {
-                self.status_message = None;
-            }
+        if let Some(ref msg) = self.status_message
+            && msg.is_expired()
+        {
+            self.status_message = None;
         }
 
         // build controller context
@@ -246,10 +246,10 @@ impl App {
     }
 
     pub fn get_diff_stats(&mut self, change_id: &str) -> Option<&DiffStats> {
-        if !self.diff_stats_cache.contains_key(change_id) {
-            if let Ok(stats) = self.fetch_diff_stats(change_id) {
-                self.diff_stats_cache.insert(change_id.to_string(), stats);
-            }
+        if !self.diff_stats_cache.contains_key(change_id)
+            && let Ok(stats) = self.fetch_diff_stats(change_id)
+        {
+            self.diff_stats_cache.insert(change_id.to_string(), stats);
         }
         self.diff_stats_cache.get(change_id)
     }

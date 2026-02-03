@@ -347,14 +347,13 @@ fn refresh_tree(
     }
 
     // restore cursor to same change_id if it still exists
-    if let Some(change_id) = current_change_id {
-        if let Some(idx) = tree
+    if let Some(change_id) = current_change_id
+        && let Some(idx) = tree
             .visible_entries
             .iter()
             .position(|e| tree.nodes[e.node_index].change_id == change_id)
-        {
-            tree.cursor = idx;
-        }
+    {
+        tree.cursor = idx;
     }
 
     Ok(())

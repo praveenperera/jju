@@ -106,10 +106,10 @@ impl TreeRelations {
     #[allow(dead_code)]
     fn set_parent(&mut self, child: NodeId, new_parent: NodeId) {
         // remove from old parent's children
-        if let Some(old_parent) = self.parent.get(&child).copied() {
-            if let Some(siblings) = self.children.get_mut(&old_parent) {
-                siblings.retain(|&id| id != child);
-            }
+        if let Some(old_parent) = self.parent.get(&child).copied()
+            && let Some(siblings) = self.children.get_mut(&old_parent)
+        {
+            siblings.retain(|&id| id != child);
         }
 
         // set new parent
@@ -119,10 +119,10 @@ impl TreeRelations {
 
     /// Remove a node from its parent (for reparenting source's children)
     fn remove_from_parent(&mut self, child: NodeId) {
-        if let Some(old_parent) = self.parent.remove(&child) {
-            if let Some(siblings) = self.children.get_mut(&old_parent) {
-                siblings.retain(|&id| id != child);
-            }
+        if let Some(old_parent) = self.parent.remove(&child)
+            && let Some(siblings) = self.children.get_mut(&old_parent)
+        {
+            siblings.retain(|&id| id != child);
         }
     }
 

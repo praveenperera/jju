@@ -285,7 +285,7 @@ pub fn reduce(
                 }
             }
 
-            if let ModeState::Rebasing(ref mut s) = mode {
+            if let ModeState::Rebasing(s) = mode {
                 s.dest_cursor = initial_cursor;
             }
 
@@ -464,7 +464,7 @@ pub fn reduce(
         // Rebase mode navigation
         Action::MoveRebaseDestUp => {
             let moving = compute_moving_indices(tree, mode);
-            if let ModeState::Rebasing(ref mut state) = mode {
+            if let ModeState::Rebasing(state) = mode {
                 let mut next = state.dest_cursor.saturating_sub(1);
                 while next > 0 && moving.contains(&next) {
                     next -= 1;
@@ -478,7 +478,7 @@ pub fn reduce(
         Action::MoveRebaseDestDown => {
             let moving = compute_moving_indices(tree, mode);
             let max = tree.visible_count();
-            if let ModeState::Rebasing(ref mut state) = mode {
+            if let ModeState::Rebasing(state) = mode {
                 let mut next = state.dest_cursor + 1;
                 while next < max && moving.contains(&next) {
                     next += 1;
@@ -490,13 +490,13 @@ pub fn reduce(
         }
 
         Action::ToggleRebaseBranches => {
-            if let ModeState::Rebasing(ref mut state) = mode {
+            if let ModeState::Rebasing(state) = mode {
                 state.allow_branches = !state.allow_branches;
             }
         }
 
         Action::ExecuteRebase => {
-            let ModeState::Rebasing(ref state) = mode else {
+            let ModeState::Rebasing(state) = &*mode else {
                 *mode = ModeState::Normal;
                 return effects;
             };
@@ -529,15 +529,15 @@ pub fn reduce(
 
         // Squash mode navigation
         Action::MoveSquashDestUp => {
-            if let ModeState::Squashing(ref mut state) = mode {
-                if state.dest_cursor > 0 {
-                    state.dest_cursor -= 1;
-                }
+            if let ModeState::Squashing(state) = mode
+                && state.dest_cursor > 0
+            {
+                state.dest_cursor -= 1;
             }
         }
 
         Action::MoveSquashDestDown => {
-            if let ModeState::Squashing(ref mut state) = mode {
+            if let ModeState::Squashing(state) = mode {
                 let max = tree.visible_count().saturating_sub(1);
                 if state.dest_cursor < max {
                     state.dest_cursor += 1;
@@ -546,7 +546,7 @@ pub fn reduce(
         }
 
         Action::ExecuteSquash => {
-            let ModeState::Squashing(ref state) = mode else {
+            let ModeState::Squashing(state) = &*mode else {
                 *mode = ModeState::Normal;
                 return effects;
             };
@@ -578,15 +578,15 @@ pub fn reduce(
 
         // Bookmark modes navigation
         Action::MoveBookmarkDestUp => {
-            if let ModeState::MovingBookmark(ref mut state) = mode {
-                if state.dest_cursor > 0 {
-                    state.dest_cursor -= 1;
-                }
+            if let ModeState::MovingBookmark(state) = mode
+                && state.dest_cursor > 0
+            {
+                state.dest_cursor -= 1;
             }
         }
 
         Action::MoveBookmarkDestDown => {
-            if let ModeState::MovingBookmark(ref mut state) = mode {
+            if let ModeState::MovingBookmark(state) = mode {
                 let max = tree.visible_count().saturating_sub(1);
                 if state.dest_cursor < max {
                     state.dest_cursor += 1;
@@ -595,7 +595,7 @@ pub fn reduce(
         }
 
         Action::ExecuteBookmarkMove => {
-            let ModeState::MovingBookmark(ref state) = mode else {
+            let ModeState::MovingBookmark(state) = &*mode else {
                 *mode = ModeState::Normal;
                 return effects;
             };
@@ -638,23 +638,23 @@ pub fn reduce(
         }
 
         Action::SelectBookmarkUp => {
-            if let ModeState::BookmarkSelect(ref mut state) = mode {
-                if state.selected_index > 0 {
-                    state.selected_index -= 1;
-                }
+            if let ModeState::BookmarkSelect(state) = mode
+                && state.selected_index > 0
+            {
+                state.selected_index -= 1;
             }
         }
 
         Action::SelectBookmarkDown => {
-            if let ModeState::BookmarkSelect(ref mut state) = mode {
-                if state.selected_index < state.bookmarks.len().saturating_sub(1) {
-                    state.selected_index += 1;
-                }
+            if let ModeState::BookmarkSelect(state) = mode
+                && state.selected_index < state.bookmarks.len().saturating_sub(1)
+            {
+                state.selected_index += 1;
             }
         }
 
         Action::ConfirmBookmarkSelect => {
-            let ModeState::BookmarkSelect(ref state) = mode else {
+            let ModeState::BookmarkSelect(state) = &*mode else {
                 *mode = ModeState::Normal;
                 return effects;
             };
@@ -680,15 +680,15 @@ pub fn reduce(
         }
 
         Action::BookmarkPickerUp => {
-            if let ModeState::BookmarkPicker(ref mut state) = mode {
-                if state.selected_index > 0 {
-                    state.selected_index -= 1;
-                }
+            if let ModeState::BookmarkPicker(state) = mode
+                && state.selected_index > 0
+            {
+                state.selected_index -= 1;
             }
         }
 
         Action::BookmarkPickerDown => {
-            if let ModeState::BookmarkPicker(ref mut state) = mode {
+            if let ModeState::BookmarkPicker(state) = mode {
                 let filtered_count = state.filtered_bookmarks().len();
                 if state.selected_index < filtered_count.saturating_sub(1) {
                     state.selected_index += 1;
@@ -697,7 +697,7 @@ pub fn reduce(
         }
 
         Action::BookmarkFilterChar(c) => {
-            if let ModeState::BookmarkPicker(ref mut state) = mode {
+            if let ModeState::BookmarkPicker(state) = mode {
                 state.filter.insert(state.filter_cursor, c);
                 state.filter_cursor += c.len_utf8();
                 state.selected_index = 0;
@@ -705,22 +705,22 @@ pub fn reduce(
         }
 
         Action::BookmarkFilterBackspace => {
-            if let ModeState::BookmarkPicker(ref mut state) = mode {
-                if state.filter_cursor > 0 {
-                    let prev = state.filter[..state.filter_cursor]
-                        .char_indices()
-                        .last()
-                        .map(|(i, _)| i)
-                        .unwrap_or(0);
-                    state.filter.remove(prev);
-                    state.filter_cursor = prev;
-                    state.selected_index = 0;
-                }
+            if let ModeState::BookmarkPicker(state) = mode
+                && state.filter_cursor > 0
+            {
+                let prev = state.filter[..state.filter_cursor]
+                    .char_indices()
+                    .last()
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                state.filter.remove(prev);
+                state.filter_cursor = prev;
+                state.selected_index = 0;
             }
         }
 
         Action::ConfirmBookmarkPicker => {
-            let ModeState::BookmarkPicker(ref state) = mode else {
+            let ModeState::BookmarkPicker(state) = &*mode else {
                 *mode = ModeState::Normal;
                 return effects;
             };
@@ -777,60 +777,60 @@ pub fn reduce(
 
         // Bookmark input
         Action::BookmarkInputChar(c) => {
-            if let ModeState::BookmarkInput(ref mut state) = mode {
+            if let ModeState::BookmarkInput(state) = mode {
                 state.name.insert(state.cursor, c);
                 state.cursor += c.len_utf8();
             }
         }
 
         Action::BookmarkInputBackspace => {
-            if let ModeState::BookmarkInput(ref mut state) = mode {
-                if state.cursor > 0 {
-                    let prev = state.name[..state.cursor]
-                        .char_indices()
-                        .last()
-                        .map(|(i, _)| i)
-                        .unwrap_or(0);
-                    state.name.remove(prev);
-                    state.cursor = prev;
-                }
+            if let ModeState::BookmarkInput(state) = mode
+                && state.cursor > 0
+            {
+                let prev = state.name[..state.cursor]
+                    .char_indices()
+                    .last()
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                state.name.remove(prev);
+                state.cursor = prev;
             }
         }
 
         Action::BookmarkInputDelete => {
-            if let ModeState::BookmarkInput(ref mut state) = mode {
-                if state.cursor < state.name.len() {
-                    state.name.remove(state.cursor);
-                }
+            if let ModeState::BookmarkInput(state) = mode
+                && state.cursor < state.name.len()
+            {
+                state.name.remove(state.cursor);
             }
         }
 
         Action::BookmarkInputCursorLeft => {
-            if let ModeState::BookmarkInput(ref mut state) = mode {
-                if state.cursor > 0 {
-                    state.cursor = state.name[..state.cursor]
-                        .char_indices()
-                        .last()
-                        .map(|(i, _)| i)
-                        .unwrap_or(0);
-                }
+            if let ModeState::BookmarkInput(state) = mode
+                && state.cursor > 0
+            {
+                state.cursor = state.name[..state.cursor]
+                    .char_indices()
+                    .last()
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
             }
         }
 
         Action::BookmarkInputCursorRight => {
-            if let ModeState::BookmarkInput(ref mut state) = mode {
-                if state.cursor < state.name.len() {
-                    state.cursor = state.name[state.cursor..]
-                        .char_indices()
-                        .nth(1)
-                        .map(|(i, _)| state.cursor + i)
-                        .unwrap_or(state.name.len());
-                }
+            if let ModeState::BookmarkInput(state) = mode
+                && state.cursor < state.name.len()
+            {
+                state.cursor = state.name[state.cursor..]
+                    .char_indices()
+                    .nth(1)
+                    .map(|(i, _)| state.cursor + i)
+                    .unwrap_or(state.name.len());
             }
         }
 
         Action::ConfirmBookmarkInput => {
-            let ModeState::BookmarkInput(ref state) = mode else {
+            let ModeState::BookmarkInput(state) = &*mode else {
                 *mode = ModeState::Normal;
                 return effects;
             };
@@ -860,28 +860,28 @@ pub fn reduce(
 
         // Diff view scrolling
         Action::ScrollDiffUp(amount) => {
-            if let ModeState::ViewingDiff(ref mut state) = mode {
+            if let ModeState::ViewingDiff(state) = mode {
                 state.scroll_offset = state.scroll_offset.saturating_sub(amount);
             }
             *pending_key = None;
         }
 
         Action::ScrollDiffDown(amount) => {
-            if let ModeState::ViewingDiff(ref mut state) = mode {
+            if let ModeState::ViewingDiff(state) = mode {
                 state.scroll_offset = state.scroll_offset.saturating_add(amount);
             }
             *pending_key = None;
         }
 
         Action::ScrollDiffTop => {
-            if let ModeState::ViewingDiff(ref mut state) = mode {
+            if let ModeState::ViewingDiff(state) = mode {
                 state.scroll_offset = 0;
             }
             *pending_key = None;
         }
 
         Action::ScrollDiffBottom => {
-            if let ModeState::ViewingDiff(ref mut state) = mode {
+            if let ModeState::ViewingDiff(state) = mode {
                 state.scroll_offset = state.lines.len().saturating_sub(1);
             }
             *pending_key = None;
@@ -890,14 +890,14 @@ pub fn reduce(
         // Commands
         Action::EditWorkingCopy => {
             let rev = current_rev(tree);
-            if let Some(node) = tree.current_node() {
-                if node.is_working_copy {
-                    effects.push(Effect::SetStatus {
-                        text: "Already editing this revision".to_string(),
-                        kind: MessageKind::Warning,
-                    });
-                    return effects;
-                }
+            if let Some(node) = tree.current_node()
+                && node.is_working_copy
+            {
+                effects.push(Effect::SetStatus {
+                    text: "Already editing this revision".to_string(),
+                    kind: MessageKind::Warning,
+                });
+                return effects;
             }
             effects.push(Effect::RunEdit { rev });
             effects.push(Effect::RefreshTree);
@@ -910,14 +910,16 @@ pub fn reduce(
         }
 
         Action::CommitWorkingCopy => {
+            if let Some(node) = tree.current_node()
+                && !node.is_working_copy
+            {
+                effects.push(Effect::SetStatus {
+                    text: "Can only commit from working copy (@)".to_string(),
+                    kind: MessageKind::Warning,
+                });
+                return effects;
+            }
             if let Some(node) = tree.current_node() {
-                if !node.is_working_copy {
-                    effects.push(Effect::SetStatus {
-                        text: "Can only commit from working copy (@)".to_string(),
-                        kind: MessageKind::Warning,
-                    });
-                    return effects;
-                }
                 let message = if node.description.is_empty() {
                     "(no description)".to_string()
                 } else {
@@ -1053,7 +1055,7 @@ fn is_bookmark_move_backwards(tree: &TreeState, bookmark_name: &str, dest_rev: &
 
 /// Compute indices of entries that will move during rebase
 pub fn compute_moving_indices(tree: &TreeState, mode: &ModeState) -> HashSet<usize> {
-    let ModeState::Rebasing(ref state) = mode else {
+    let ModeState::Rebasing(state) = mode else {
         return HashSet::new();
     };
 
