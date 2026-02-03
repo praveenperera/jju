@@ -125,7 +125,7 @@ impl App {
 
             terminal.draw(|frame| ui::render(frame, self))?;
 
-            if event::poll(std::time::Duration::from_millis(40))? {
+            if event::poll(std::time::Duration::from_millis(33))? {
                 if let Event::Key(key) = event::read()? {
                     if key.kind == KeyEventKind::Press {
                         self.handle_key(key, viewport_height, terminal);
