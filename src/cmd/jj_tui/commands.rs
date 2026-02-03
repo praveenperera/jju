@@ -84,10 +84,18 @@ pub mod bookmark {
     }
 
     pub fn set_allow_backwards(name: &str, rev: &str) -> Result<()> {
-        cmd!("jj", "bookmark", "set", name, "-r", rev, "--allow-backwards")
-            .stdout_null()
-            .stderr_capture()
-            .run()?;
+        cmd!(
+            "jj",
+            "bookmark",
+            "set",
+            name,
+            "-r",
+            rev,
+            "--allow-backwards"
+        )
+        .stdout_null()
+        .stderr_capture()
+        .run()?;
         Ok(())
     }
 
@@ -171,19 +179,35 @@ pub mod rebase {
 
     /// Rebase single commit onto trunk()
     pub fn single_onto_trunk(source: &str) -> Result<()> {
-        cmd!("jj", "rebase", "-r", source, "-d", "trunk()", "--skip-emptied")
-            .stdout_null()
-            .stderr_capture()
-            .run()?;
+        cmd!(
+            "jj",
+            "rebase",
+            "-r",
+            source,
+            "-d",
+            "trunk()",
+            "--skip-emptied"
+        )
+        .stdout_null()
+        .stderr_capture()
+        .run()?;
         Ok(())
     }
 
     /// Rebase commit with descendants onto trunk()
     pub fn with_descendants_onto_trunk(source: &str) -> Result<()> {
-        cmd!("jj", "rebase", "-s", source, "-d", "trunk()", "--skip-emptied")
-            .stdout_null()
-            .stderr_capture()
-            .run()?;
+        cmd!(
+            "jj",
+            "rebase",
+            "-s",
+            source,
+            "-d",
+            "trunk()",
+            "--skip-emptied"
+        )
+        .stdout_null()
+        .stderr_capture()
+        .run()?;
         Ok(())
     }
 }
@@ -222,20 +246,40 @@ pub fn has_conflicts() -> Result<bool> {
 /// Check if rev1 is an ancestor of rev2
 pub fn is_ancestor(rev1: &str, rev2: &str) -> Result<bool> {
     let revset = format!("{rev1} & ::({rev2})");
-    let output = cmd!("jj", "log", "-r", revset, "--no-graph", "-T", "change_id", "--limit", "1")
-        .stdout_capture()
-        .stderr_null()
-        .read()?;
+    let output = cmd!(
+        "jj",
+        "log",
+        "-r",
+        revset,
+        "--no-graph",
+        "-T",
+        "change_id",
+        "--limit",
+        "1"
+    )
+    .stdout_capture()
+    .stderr_null()
+    .read()?;
     Ok(!output.trim().is_empty())
 }
 
 /// Get the first child of a revision (if any)
 pub fn get_first_child(rev: &str) -> Result<Option<String>> {
     let revset = format!("children({rev})");
-    let output = cmd!("jj", "log", "-r", revset, "--no-graph", "-T", "change_id", "--limit", "1")
-        .stdout_capture()
-        .stderr_null()
-        .read()?;
+    let output = cmd!(
+        "jj",
+        "log",
+        "-r",
+        revset,
+        "--no-graph",
+        "-T",
+        "change_id",
+        "--limit",
+        "1"
+    )
+    .stdout_capture()
+    .stderr_null()
+    .read()?;
     let trimmed = output.trim();
     if trimmed.is_empty() {
         Ok(None)

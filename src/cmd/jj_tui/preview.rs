@@ -23,7 +23,6 @@ pub enum NodeRole {
     Shifted, // will shift position due to rebase
 }
 
-
 /// A slot in the preview display
 #[derive(Debug, Clone)]
 pub struct DisplaySlot {
@@ -494,10 +493,26 @@ mod tests {
         assert_eq!(preview.slots.len(), 4);
 
         // Find each node's slot
-        let slot_a = preview.slots.iter().find(|s| s.node_id == NodeId(0)).unwrap();
-        let slot_b = preview.slots.iter().find(|s| s.node_id == NodeId(1)).unwrap();
-        let slot_c = preview.slots.iter().find(|s| s.node_id == NodeId(2)).unwrap();
-        let slot_d = preview.slots.iter().find(|s| s.node_id == NodeId(3)).unwrap();
+        let slot_a = preview
+            .slots
+            .iter()
+            .find(|s| s.node_id == NodeId(0))
+            .unwrap();
+        let slot_b = preview
+            .slots
+            .iter()
+            .find(|s| s.node_id == NodeId(1))
+            .unwrap();
+        let slot_c = preview
+            .slots
+            .iter()
+            .find(|s| s.node_id == NodeId(2))
+            .unwrap();
+        let slot_d = preview
+            .slots
+            .iter()
+            .find(|s| s.node_id == NodeId(3))
+            .unwrap();
 
         assert_eq!(slot_a.visual_depth, 0);
         assert_eq!(slot_b.visual_depth, 1);
@@ -599,10 +614,26 @@ mod tests {
         //   C at depth 1 (source, moved to be sibling of B)
         //     D at depth 2 (moving, stays as child of C)
 
-        let slot_a = preview.slots.iter().find(|s| s.node_id == NodeId(0)).unwrap();
-        let slot_b = preview.slots.iter().find(|s| s.node_id == NodeId(1)).unwrap();
-        let slot_c = preview.slots.iter().find(|s| s.node_id == NodeId(2)).unwrap();
-        let slot_d = preview.slots.iter().find(|s| s.node_id == NodeId(3)).unwrap();
+        let slot_a = preview
+            .slots
+            .iter()
+            .find(|s| s.node_id == NodeId(0))
+            .unwrap();
+        let slot_b = preview
+            .slots
+            .iter()
+            .find(|s| s.node_id == NodeId(1))
+            .unwrap();
+        let slot_c = preview
+            .slots
+            .iter()
+            .find(|s| s.node_id == NodeId(2))
+            .unwrap();
+        let slot_d = preview
+            .slots
+            .iter()
+            .find(|s| s.node_id == NodeId(3))
+            .unwrap();
 
         assert_eq!(slot_a.visual_depth, 0);
         assert_eq!(slot_a.role, NodeRole::Destination);
@@ -651,14 +682,36 @@ mod tests {
         );
 
         // Verify the chain is linear with B at the end
-        let slot_a = preview.slots.iter().find(|s| s.node_id == NodeId(0)).unwrap();
-        let slot_b = preview.slots.iter().find(|s| s.node_id == NodeId(1)).unwrap();
-        let slot_c = preview.slots.iter().find(|s| s.node_id == NodeId(2)).unwrap();
-        let slot_d = preview.slots.iter().find(|s| s.node_id == NodeId(3)).unwrap();
+        let slot_a = preview
+            .slots
+            .iter()
+            .find(|s| s.node_id == NodeId(0))
+            .unwrap();
+        let slot_b = preview
+            .slots
+            .iter()
+            .find(|s| s.node_id == NodeId(1))
+            .unwrap();
+        let slot_c = preview
+            .slots
+            .iter()
+            .find(|s| s.node_id == NodeId(2))
+            .unwrap();
+        let slot_d = preview
+            .slots
+            .iter()
+            .find(|s| s.node_id == NodeId(3))
+            .unwrap();
 
         assert_eq!(slot_a.visual_depth, 0, "A should be at depth 0 (dest)");
-        assert_eq!(slot_c.visual_depth, 1, "C should be at depth 1 (source, child of A)");
-        assert_eq!(slot_d.visual_depth, 2, "D should be at depth 2 (child of C)");
+        assert_eq!(
+            slot_c.visual_depth, 1,
+            "C should be at depth 1 (source, child of A)"
+        );
+        assert_eq!(
+            slot_d.visual_depth, 2,
+            "D should be at depth 2 (child of C)"
+        );
         assert_eq!(
             slot_b.visual_depth, 3,
             "B should be at depth 3 (END of chain, child of D)"
@@ -702,13 +755,34 @@ mod tests {
             true, // allow_branches = true (fork mode)
         );
 
-        let slot_b = preview.slots.iter().find(|s| s.node_id == NodeId(1)).unwrap();
-        let slot_c = preview.slots.iter().find(|s| s.node_id == NodeId(2)).unwrap();
-        let slot_d = preview.slots.iter().find(|s| s.node_id == NodeId(3)).unwrap();
+        let slot_b = preview
+            .slots
+            .iter()
+            .find(|s| s.node_id == NodeId(1))
+            .unwrap();
+        let slot_c = preview
+            .slots
+            .iter()
+            .find(|s| s.node_id == NodeId(2))
+            .unwrap();
+        let slot_d = preview
+            .slots
+            .iter()
+            .find(|s| s.node_id == NodeId(3))
+            .unwrap();
 
         // In fork mode, B stays at depth 1 (sibling of C)
-        assert_eq!(slot_b.visual_depth, 1, "B should be at depth 1 (child of A)");
-        assert_eq!(slot_c.visual_depth, 1, "C should be at depth 1 (sibling of B)");
-        assert_eq!(slot_d.visual_depth, 2, "D should be at depth 2 (child of C)");
+        assert_eq!(
+            slot_b.visual_depth, 1,
+            "B should be at depth 1 (child of A)"
+        );
+        assert_eq!(
+            slot_c.visual_depth, 1,
+            "C should be at depth 1 (sibling of B)"
+        );
+        assert_eq!(
+            slot_d.visual_depth, 2,
+            "D should be at depth 2 (child of C)"
+        );
     }
 }

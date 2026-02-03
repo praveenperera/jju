@@ -3,7 +3,7 @@
 /// Note: jj-lib is designed primarily for the jj CLI, so some operations
 /// (especially git fetch/push) are easier to do via the CLI. This module
 /// provides helpers for read operations and simple mutations.
-use eyre::{bail, Context, Result};
+use eyre::{Context, Result, bail};
 use itertools::Itertools;
 use jj_lib::commit::Commit;
 use jj_lib::config::{ConfigLayer, ConfigSource, StackedConfig};
@@ -15,7 +15,7 @@ use jj_lib::revset::{
     SymbolResolver,
 };
 use jj_lib::settings::UserSettings;
-use jj_lib::workspace::{default_working_copy_factories, Workspace};
+use jj_lib::workspace::{Workspace, default_working_copy_factories};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;

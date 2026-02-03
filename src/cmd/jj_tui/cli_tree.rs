@@ -85,9 +85,7 @@ fn print_row(node: &super::tree::TreeNode, visual_depth: usize, hidden_count: us
         node.description.dimmed().to_string()
     };
 
-    println!(
-        "{indent}{connector}{at_marker}({colored_rev}){bookmark_str}{count_str}  {desc}"
-    );
+    println!("{indent}{connector}{at_marker}({colored_rev}){bookmark_str}{count_str}  {desc}");
 }
 
 /// Format bookmarks for CLI output, similar to ui::format_bookmarks_truncated

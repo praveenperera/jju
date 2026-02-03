@@ -424,9 +424,7 @@ impl TreeState {
 
     /// Get the currently focused node (top of the stack)
     pub fn focused_node(&self) -> Option<&TreeNode> {
-        self.focus_stack
-            .last()
-            .and_then(|&idx| self.nodes.get(idx))
+        self.focus_stack.last().and_then(|&idx| self.nodes.get(idx))
     }
 
     pub fn update_scroll(&mut self, viewport_height: usize, cursor_height: usize) {

@@ -180,9 +180,7 @@ pub fn reduce(
         }
 
         Action::ConfirmYes => {
-            let ModeState::Confirming(state) =
-                std::mem::replace(mode, ModeState::Normal)
-            else {
+            let ModeState::Confirming(state) = std::mem::replace(mode, ModeState::Normal) else {
                 return effects;
             };
 
@@ -612,10 +610,7 @@ pub fn reduce(
             }
 
             // normal forward move
-            effects.push(Effect::RunBookmarkSet {
-                name,
-                rev: dest,
-            });
+            effects.push(Effect::RunBookmarkSet { name, rev: dest });
             effects.push(Effect::RefreshTree);
             *mode = ModeState::Normal;
         }
@@ -763,7 +758,9 @@ pub fn reduce(
                 }
                 BookmarkSelectAction::Delete => {
                     effects.push(Effect::SaveOperationForUndo);
-                    effects.push(Effect::RunBookmarkDelete { name: bookmark_name });
+                    effects.push(Effect::RunBookmarkDelete {
+                        name: bookmark_name,
+                    });
                     effects.push(Effect::RefreshTree);
                     *mode = ModeState::Normal;
                 }
@@ -1416,9 +1413,11 @@ mod tests {
 
         let effects = state.reduce(Action::ConfirmBookmarkPicker);
 
-        assert!(effects
-            .iter()
-            .any(|e| matches!(e, Effect::SaveOperationForUndo)));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, Effect::SaveOperationForUndo))
+        );
         assert!(!effects.iter().any(|e| matches!(
             e,
             Effect::RunBookmarkSet { .. } | Effect::RunBookmarkSetBackwards { .. }
@@ -1433,10 +1432,7 @@ mod tests {
 
     #[test]
     fn test_selection_toggle() {
-        let tree = make_tree(vec![
-            make_node("aaaa", 0),
-            make_node("bbbb", 1),
-        ]);
+        let tree = make_tree(vec![make_node("aaaa", 0), make_node("bbbb", 1)]);
         let mut state = TestState::new(tree);
 
         assert!(state.tree.selected.is_empty());

@@ -2,21 +2,21 @@ use super::app::App;
 use super::preview::NodeRole;
 use super::state::{
     BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState,
-    ConfirmState, ConflictsState, DiffLineKind, DiffState, MessageKind, ModeState, RebaseType,
-    StatusMessage, PREFIX_MENUS,
+    ConfirmState, ConflictsState, DiffLineKind, DiffState, MessageKind, ModeState, PREFIX_MENUS,
+    RebaseType, StatusMessage,
 };
 use super::theme;
 use super::tree::BookmarkInfo;
-use super::vm::{build_tree_view, Marker, TreeRowVm};
-use unicode_width::UnicodeWidthStr;
+use super::vm::{Marker, TreeRowVm, build_tree_view};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
-    Frame,
 };
 use tui_popup::Popup;
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone, Copy)]
 struct Panes {
@@ -263,7 +263,11 @@ fn render_tree_with_vms(frame: &mut Frame, app: &App, area: Rect, vms: &[TreeRow
 /// Render a single row from the view model
 fn render_row(vm: &TreeRowVm) -> Line<'static> {
     let indent = "  ".repeat(vm.visual_depth);
-    let connector = if vm.visual_depth > 0 { "├── " } else { "" };
+    let connector = if vm.visual_depth > 0 {
+        "├── "
+    } else {
+        ""
+    };
     let at_marker = if vm.is_working_copy { "@ " } else { "" };
     let selection_marker = if vm.is_selected { "[x] " } else { "" };
     let zoom_marker = if vm.is_zoom_root { "◉ " } else { "" };
@@ -287,7 +291,10 @@ fn render_row(vm: &TreeRowVm) -> Line<'static> {
 
     spans.extend([
         Span::raw(format!("{indent}{connector}{selection_marker}{at_marker}(")),
-        Span::styled(vm.change_id_prefix.clone(), Style::default().fg(prefix_color)),
+        Span::styled(
+            vm.change_id_prefix.clone(),
+            Style::default().fg(prefix_color),
+        ),
         Span::styled(
             vm.change_id_suffix.clone(),
             Style::default().add_modifier(Modifier::DIM),
@@ -306,7 +313,10 @@ fn render_row(vm: &TreeRowVm) -> Line<'static> {
         spans.push(Span::styled(bookmark_str, Style::default().fg(bm_color)));
     }
 
-    spans.push(Span::styled(format!("  {}", vm.description), Style::default().fg(dim_color)));
+    spans.push(Span::styled(
+        format!("  {}", vm.description),
+        Style::default().fg(dim_color),
+    ));
 
     // add markers on the right based on role/marker
     if let Some(ref marker) = vm.marker {
@@ -388,12 +398,26 @@ fn render_commit_details_from_vm(
         Line::from(vec![
             Span::styled(format!("{indent}Changes: "), label_style),
             Span::styled(
-                format!("+{}", details.diff_stats.as_ref().map(|s| s.insertions).unwrap_or(0)),
+                format!(
+                    "+{}",
+                    details
+                        .diff_stats
+                        .as_ref()
+                        .map(|s| s.insertions)
+                        .unwrap_or(0)
+                ),
                 Style::default().fg(Color::Green),
             ),
             Span::raw(" "),
             Span::styled(
-                format!("-{}", details.diff_stats.as_ref().map(|s| s.deletions).unwrap_or(0)),
+                format!(
+                    "-{}",
+                    details
+                        .diff_stats
+                        .as_ref()
+                        .map(|s| s.deletions)
+                        .unwrap_or(0)
+                ),
                 Style::default().fg(Color::Red),
             ),
             Span::styled(format!(" ({stats_str})"), dim),
@@ -401,9 +425,10 @@ fn render_commit_details_from_vm(
     ];
 
     // add description header
-    lines.push(Line::from(vec![
-        Span::styled(format!("{indent}Description:"), label_style),
-    ]));
+    lines.push(Line::from(vec![Span::styled(
+        format!("{indent}Description:"),
+        label_style,
+    )]));
 
     // add multi-line description
     let desc_text = details.full_description.trim();
@@ -572,7 +597,9 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         ModeState::Conflicts(_) => "j/k:nav  R:resolve  q/Esc:exit",
     };
 
-    let left = format!(" {mode_indicator}{full_indicator}{split_indicator}{focus_indicator}{pending_indicator}{selection_indicator}{current_info}");
+    let left = format!(
+        " {mode_indicator}{full_indicator}{split_indicator}{focus_indicator}{pending_indicator}{selection_indicator}{current_info}"
+    );
     let right = format!("{hints} ");
 
     let available = area.width as usize;
@@ -828,8 +855,7 @@ fn render_diff_pane(frame: &mut Frame, _app: &App, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let hint =
-        Paragraph::new("Press d to view diff").style(Style::default().fg(Color::DarkGray));
+    let hint = Paragraph::new("Press d to view diff").style(Style::default().fg(Color::DarkGray));
     frame.render_widget(hint, inner);
 }
 
@@ -839,7 +865,7 @@ mod tests {
     use crate::cmd::jj_tui::state::{DiffLine, DiffLineKind, DiffState, ModeState, StyledSpan};
     use crate::cmd::jj_tui::tree::{TreeNode, TreeState, VisibleEntry};
     use ahash::{HashMap, HashSet};
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
     use syntect::highlighting::ThemeSet;
     use syntect::parsing::SyntaxSet;
 
@@ -1020,7 +1046,6 @@ mod tests {
     }
 }
 
-
 fn render_bookmark_input(frame: &mut Frame, state: &BookmarkInputState) {
     let area = frame.area();
     let popup_width = 50u16.min(area.width.saturating_sub(4));
@@ -1123,11 +1148,7 @@ fn render_bookmark_select(frame: &mut Frame, state: &BookmarkSelectState) {
     frame.render_widget(Clear, popup_area);
 
     let (title, border_color, bg_color) = match state.action {
-        BookmarkSelectAction::Move => (
-            " Select Bookmark to Move ",
-            Color::Cyan,
-            theme::POPUP_BG,
-        ),
+        BookmarkSelectAction::Move => (" Select Bookmark to Move ", Color::Cyan, theme::POPUP_BG),
         BookmarkSelectAction::Delete => (
             " Select Bookmark to Delete ",
             Color::Red,
@@ -1199,16 +1220,8 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
     frame.render_widget(Clear, popup_area);
 
     let (title, border_color, bg_color) = match state.action {
-        BookmarkSelectAction::Move => (
-            " Move Bookmark Here ",
-            Color::Cyan,
-            theme::POPUP_BG,
-        ),
-        BookmarkSelectAction::Delete => (
-            " Delete Bookmark ",
-            Color::Red,
-            theme::POPUP_BG_DELETE,
-        ),
+        BookmarkSelectAction::Move => (" Move Bookmark Here ", Color::Cyan, theme::POPUP_BG),
+        BookmarkSelectAction::Delete => (" Delete Bookmark ", Color::Red, theme::POPUP_BG_DELETE),
     };
 
     let block = Block::default()
@@ -1257,7 +1270,11 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
         )));
     } else {
         for (i, bookmark) in filtered.iter().take(10).enumerate() {
-            let marker = if i == state.selected_index { "> " } else { "  " };
+            let marker = if i == state.selected_index {
+                "> "
+            } else {
+                "  "
+            };
             let style = if i == state.selected_index {
                 Style::default()
                     .fg(Color::Yellow)
@@ -1265,7 +1282,10 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
             } else {
                 Style::default().fg(Color::White)
             };
-            lines.push(Line::from(Span::styled(format!("{marker}{bookmark}"), style)));
+            lines.push(Line::from(Span::styled(
+                format!("{marker}{bookmark}"),
+                style,
+            )));
         }
         // show ellipsis if there are more items
         if filtered.len() > 10 {
@@ -1281,7 +1301,9 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
         BookmarkSelectAction::Move => {
             "type: filter | ↑/↓: navigate | Enter: move (or move away if already here) | Esc: cancel"
         }
-        BookmarkSelectAction::Delete => "type: filter | ↑/↓: navigate | Enter: delete | Esc: cancel",
+        BookmarkSelectAction::Delete => {
+            "type: filter | ↑/↓: navigate | Enter: delete | Esc: cancel"
+        }
     };
     lines.push(Line::from(Span::styled(
         footer,
@@ -1371,7 +1393,12 @@ fn render_prefix_key_popup(frame: &mut Frame, pending_key: char) {
         return;
     };
 
-    let max_label_width = menu.bindings.iter().map(|b| b.label.width()).max().unwrap_or(0);
+    let max_label_width = menu
+        .bindings
+        .iter()
+        .map(|b| b.label.width())
+        .max()
+        .unwrap_or(0);
     let content_width = max_label_width + KEY_SPACING;
     let title_width = menu.title.width() + TITLE_WRAPPER;
     let popup_width = (content_width.max(title_width) + HORIZONTAL_PADDING) as u16;
@@ -1416,7 +1443,9 @@ fn render_prefix_key_popup(frame: &mut Frame, pending_key: char) {
         lines.push(Line::from(vec![
             Span::styled(
                 format!("{}  ", binding.key),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(binding.label, Style::default().fg(Color::White)),
         ]));
@@ -1434,8 +1463,7 @@ fn render_toast(frame: &mut Frame, msg: &StatusMessage) {
         MessageKind::Error => Color::Red,
     };
 
-    let popup =
-        Popup::new(msg.text.clone()).style(Style::default().fg(color).bg(theme::TOAST_BG));
+    let popup = Popup::new(msg.text.clone()).style(Style::default().fg(color).bg(theme::TOAST_BG));
 
     frame.render_widget(popup, frame.area());
 }

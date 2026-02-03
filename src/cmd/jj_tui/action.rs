@@ -98,7 +98,9 @@ pub enum Action {
     CreateNewCommit,
     CommitWorkingCopy,
     EditDescription,
-    ExecuteAbandon { revs: Vec<String> },
+    ExecuteAbandon {
+        revs: Vec<String>,
+    },
     ExecuteRebaseOntoTrunk(RebaseType),
     Undo,
     GitPush,

@@ -1,8 +1,8 @@
 //! View model for tree rows - separates state computation from rendering
 
 use super::app::App;
-use super::state::{DiffStats, ModeState, RebaseType};
 use super::preview::{NodeId, NodeRole, PreviewBuilder, PreviewRebaseType};
+use super::state::{DiffStats, ModeState, RebaseType};
 use super::tree::{BookmarkInfo, TreeNode};
 
 /// Pre-computed view state for a single tree row
@@ -55,15 +55,17 @@ pub enum Marker {
 /// Build the view model for all visible tree rows
 pub fn build_tree_view(app: &App, _viewport_width: usize) -> Vec<TreeRowVm> {
     match &app.mode {
-        ModeState::Rebasing(state) => {
-            build_rebase_view(app, &state.source_rev, state.dest_cursor, state.rebase_type, state.allow_branches)
-        }
+        ModeState::Rebasing(state) => build_rebase_view(
+            app,
+            &state.source_rev,
+            state.dest_cursor,
+            state.rebase_type,
+            state.allow_branches,
+        ),
         ModeState::MovingBookmark(state) => {
             build_bookmark_move_view(app, &state.bookmark_name, state.dest_cursor)
         }
-        ModeState::Squashing(state) => {
-            build_squash_view(app, &state.source_rev, state.dest_cursor)
-        }
+        ModeState::Squashing(state) => build_squash_view(app, &state.source_rev, state.dest_cursor),
         _ => build_normal_view(app),
     }
 }
@@ -82,7 +84,10 @@ fn build_normal_view(app: &App) -> Vec<TreeRowVm> {
             let is_dimmed = is_expanded_mode && !is_cursor && !is_this_expanded;
 
             let details = if is_this_expanded {
-                Some(build_row_details(node, app.diff_stats_cache.get(&node.change_id)))
+                Some(build_row_details(
+                    node,
+                    app.diff_stats_cache.get(&node.change_id),
+                ))
             } else {
                 None
             };
@@ -149,7 +154,11 @@ fn build_rebase_view(
             let marker = match slot.role {
                 NodeRole::Source => Some(Marker::Source),
                 NodeRole::Destination => Some(Marker::Destination {
-                    mode_hint: Some(if allow_branches { "fork".to_string() } else { "inline".to_string() }),
+                    mode_hint: Some(if allow_branches {
+                        "fork".to_string()
+                    } else {
+                        "inline".to_string()
+                    }),
                 }),
                 NodeRole::Moving => Some(Marker::Moving),
                 _ => None,
@@ -202,7 +211,10 @@ fn build_bookmark_move_view(app: &App, bookmark_name: &str, dest_cursor: usize) 
             };
 
             let details = if is_this_expanded {
-                Some(build_row_details(node, app.diff_stats_cache.get(&node.change_id)))
+                Some(build_row_details(
+                    node,
+                    app.diff_stats_cache.get(&node.change_id),
+                ))
             } else {
                 None
             };
@@ -254,7 +266,10 @@ fn build_squash_view(app: &App, source_rev: &str, dest_cursor: usize) -> Vec<Tre
             };
 
             let details = if is_this_expanded {
-                Some(build_row_details(node, app.diff_stats_cache.get(&node.change_id)))
+                Some(build_row_details(
+                    node,
+                    app.diff_stats_cache.get(&node.change_id),
+                ))
             } else {
                 None
             };

@@ -100,9 +100,9 @@ fn handle_pending(pending: char, code: KeyCode, viewport_height: usize) -> Actio
         // 'b' prefix - bookmark operations
         ('b', KeyCode::Char('m')) => Action::EnterMoveBookmarkMode,
         ('b', KeyCode::Char('s')) => Action::EnterCreateBookmark,
-        ('b', KeyCode::Char('d')) => Action::EnterBookmarkPicker(
-            super::super::state::BookmarkSelectAction::Delete,
-        ),
+        ('b', KeyCode::Char('d')) => {
+            Action::EnterBookmarkPicker(super::super::state::BookmarkSelectAction::Delete)
+        }
         // any other key after prefix - clear pending
         _ => Action::ClearPendingKey,
     }

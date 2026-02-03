@@ -14,10 +14,18 @@ pub enum Effect {
     RefreshTree,
 
     // JJ commands
-    RunEdit { rev: String },
-    RunNew { rev: String },
-    RunCommit { message: String },
-    RunAbandon { revset: String },
+    RunEdit {
+        rev: String,
+    },
+    RunNew {
+        rev: String,
+    },
+    RunCommit {
+        message: String,
+    },
+    RunAbandon {
+        revset: String,
+    },
     RunRebase {
         source: String,
         dest: String,
@@ -32,18 +40,32 @@ pub enum Effect {
         source: String,
         target: String,
     },
-    RunUndo { op_id: String },
-    RunGitPush { bookmark: String },
+    RunUndo {
+        op_id: String,
+    },
+    RunGitPush {
+        bookmark: String,
+    },
     RunGitPushAll,
     RunGitFetch,
     RunGitImport,
     RunGitExport,
-    RunBookmarkSet { name: String, rev: String },
-    RunBookmarkSetBackwards { name: String, rev: String },
-    RunBookmarkDelete { name: String },
+    RunBookmarkSet {
+        name: String,
+        rev: String,
+    },
+    RunBookmarkSetBackwards {
+        name: String,
+        rev: String,
+    },
+    RunBookmarkDelete {
+        name: String,
+    },
 
     // Editor launch (requires terminal restore)
-    LaunchDescriptionEditor { rev: String },
+    LaunchDescriptionEditor {
+        rev: String,
+    },
     LaunchSquashEditor {
         source: String,
         target: String,
@@ -51,7 +73,10 @@ pub enum Effect {
     },
 
     // UI
-    SetStatus { text: String, kind: MessageKind },
+    SetStatus {
+        text: String,
+        kind: MessageKind,
+    },
 
     // Operation tracking
     SaveOperationForUndo,

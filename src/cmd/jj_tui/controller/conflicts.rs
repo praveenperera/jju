@@ -15,4 +15,3 @@ pub fn handle(_ctx: &ControllerContext, key: KeyEvent) -> Action {
         _ => Action::Noop,
     }
 }
-

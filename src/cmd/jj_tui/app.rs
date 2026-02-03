@@ -4,20 +4,22 @@
 //! Key handling is delegated to the controller, business logic to the engine,
 //! and IO operations to the runner.
 
+use super::commands;
 use super::controller::{self, ControllerContext};
+use super::effect::Effect;
 use super::engine;
 use super::handlers;
 use super::runner;
-use super::commands;
-use super::effect::Effect;
-use super::state::{DiffStats, MessageKind, ModeState, PendingOperation, PendingSquash, StatusMessage};
+use super::state::{
+    DiffStats, MessageKind, ModeState, PendingOperation, PendingSquash, StatusMessage,
+};
 use super::tree::TreeState;
 use super::ui;
 use super::vm;
 use crate::jj_lib_helpers::JjRepo;
 use eyre::Result;
-use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use ratatui::DefaultTerminal;
+use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
@@ -161,7 +163,9 @@ impl App {
         );
 
         // check if we need to load conflict files before running effects
-        let needs_conflict_load = effects.iter().any(|e| matches!(e, Effect::LoadConflictFiles));
+        let needs_conflict_load = effects
+            .iter()
+            .any(|e| matches!(e, Effect::LoadConflictFiles));
 
         // execute effects
         let result = runner::run_effects(
@@ -196,7 +200,10 @@ impl App {
         }
     }
 
-    fn handle_edit_description_status(&mut self, status: std::io::Result<std::process::ExitStatus>) {
+    fn handle_edit_description_status(
+        &mut self,
+        status: std::io::Result<std::process::ExitStatus>,
+    ) {
         match status {
             Ok(s) if s.success() => {
                 self.set_status("Description updated", MessageKind::Success);

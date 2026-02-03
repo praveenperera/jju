@@ -53,8 +53,7 @@ pub fn run_effects(
                         Some((format!("Now editing {rev}"), MessageKind::Success));
                 }
                 Err(e) => {
-                    result.status_message =
-                        Some((format!("Edit failed: {e}"), MessageKind::Error));
+                    result.status_message = Some((format!("Edit failed: {e}"), MessageKind::Error));
                 }
             },
 
@@ -91,8 +90,10 @@ pub fn run_effects(
                 }
                 Err(e) => {
                     let error_details = format!("{e}");
-                    result.status_message =
-                        Some((set_error_with_details("Abandon failed", &error_details), MessageKind::Error));
+                    result.status_message = Some((
+                        set_error_with_details("Abandon failed", &error_details),
+                        MessageKind::Error,
+                    ));
                 }
             },
 
@@ -170,8 +171,10 @@ pub fn run_effects(
                     }
                     Err(e) => {
                         let error_details = format!("{e}");
-                        result.status_message =
-                            Some((set_error_with_details("Rebase failed", &error_details), MessageKind::Error));
+                        result.status_message = Some((
+                            set_error_with_details("Rebase failed", &error_details),
+                            MessageKind::Error,
+                        ));
                     }
                 }
             }
@@ -218,10 +221,8 @@ pub fn run_effects(
 
             Effect::RunGitPushAll => match commands::git::push_all() {
                 Ok(_) => {
-                    result.status_message = Some((
-                        "Pushed all bookmarks".to_string(),
-                        MessageKind::Success,
-                    ));
+                    result.status_message =
+                        Some(("Pushed all bookmarks".to_string(), MessageKind::Success));
                 }
                 Err(e) => {
                     result.status_message =
@@ -272,8 +273,10 @@ pub fn run_effects(
                 }
                 Err(e) => {
                     let error_details = format!("{e}");
-                    result.status_message =
-                        Some((set_error_with_details("Move bookmark failed", &error_details), MessageKind::Error));
+                    result.status_message = Some((
+                        set_error_with_details("Move bookmark failed", &error_details),
+                        MessageKind::Error,
+                    ));
                 }
             },
 
@@ -288,8 +291,10 @@ pub fn run_effects(
                     }
                     Err(e) => {
                         let error_details = format!("{e}");
-                        result.status_message =
-                            Some((set_error_with_details("Move bookmark failed", &error_details), MessageKind::Error));
+                        result.status_message = Some((
+                            set_error_with_details("Move bookmark failed", &error_details),
+                            MessageKind::Error,
+                        ));
                     }
                 }
             }
@@ -301,8 +306,10 @@ pub fn run_effects(
                 }
                 Err(e) => {
                     let error_details = format!("{e}");
-                    result.status_message =
-                        Some((set_error_with_details("Delete bookmark failed", &error_details), MessageKind::Error));
+                    result.status_message = Some((
+                        set_error_with_details("Delete bookmark failed", &error_details),
+                        MessageKind::Error,
+                    ));
                 }
             },
 
@@ -352,11 +359,7 @@ fn refresh_tree(
 
     // restore focus stack if the focused nodes still exist
     for change_id in focus_stack_change_ids {
-        if let Some(node_idx) = tree
-            .nodes
-            .iter()
-            .position(|n| n.change_id == change_id)
-        {
+        if let Some(node_idx) = tree.nodes.iter().position(|n| n.change_id == change_id) {
             tree.focus_on(node_idx);
         }
     }

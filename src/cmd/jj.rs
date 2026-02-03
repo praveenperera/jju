@@ -3,7 +3,7 @@ use ahash::{HashMap, HashMapExt};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use duct::cmd;
-use eyre::{bail, Context as _, Result};
+use eyre::{Context as _, Result, bail};
 use log::debug;
 use regex::Regex;
 use std::ffi::OsString;
@@ -431,10 +431,22 @@ fn parse_hunk_header(line: &str) -> (usize, usize, usize, usize) {
     // @@ -old_start,old_count +new_start,new_count @@
     let re = Regex::new(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@").unwrap();
     if let Some(caps) = re.captures(line) {
-        let old_start = caps.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(1);
-        let old_count = caps.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(1);
-        let new_start = caps.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(1);
-        let new_count = caps.get(4).and_then(|m| m.as_str().parse().ok()).unwrap_or(1);
+        let old_start = caps
+            .get(1)
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(1);
+        let old_count = caps
+            .get(2)
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(1);
+        let new_start = caps
+            .get(3)
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(1);
+        let new_count = caps
+            .get(4)
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(1);
         (old_start, old_count, new_start, new_count)
     } else {
         (1, 1, 1, 1)
@@ -504,7 +516,9 @@ fn parse_line_ranges(input: &str) -> Result<Vec<(usize, usize)>> {
                 .wrap_err_with(|| format!("invalid range end: {}", part))?;
             ranges.push((start, end));
         } else {
-            let line: usize = part.parse().wrap_err_with(|| format!("invalid line: {}", part))?;
+            let line: usize = part
+                .parse()
+                .wrap_err_with(|| format!("invalid line: {}", part))?;
             ranges.push((line, line));
         }
     }
@@ -531,7 +545,9 @@ fn hunk_overlaps_lines(hunk: &DiffHunk, ranges: &[(usize, usize)]) -> bool {
 }
 
 fn hunk_matches_pattern(hunk: &DiffHunk, pattern: &Regex) -> bool {
-    hunk.lines.iter().any(|line| pattern.is_match(&line.content))
+    hunk.lines
+        .iter()
+        .any(|line| pattern.is_match(&line.content))
 }
 
 fn select_hunks(
@@ -793,11 +809,7 @@ fn split_hunk(
         .run()
         .wrap_err("failed to return to split commit")?;
 
-    println!(
-        "{} {}",
-        "Created split commit:".green(),
-        message.cyan()
-    );
+    println!("{} {}", "Created split commit:".green(), message.cyan());
 
     Ok(())
 }

@@ -23,26 +23,50 @@ pub const PREFIX_MENUS: &[PrefixMenu] = &[
         prefix: 'g',
         title: "git",
         bindings: &[
-            KeyBinding { key: 'i', label: "import" },
-            KeyBinding { key: 'e', label: "export" },
+            KeyBinding {
+                key: 'i',
+                label: "import",
+            },
+            KeyBinding {
+                key: 'e',
+                label: "export",
+            },
         ],
     },
     PrefixMenu {
         prefix: 'z',
         title: "nav",
         bindings: &[
-            KeyBinding { key: 't', label: "top" },
-            KeyBinding { key: 'b', label: "bottom" },
-            KeyBinding { key: 'z', label: "center" },
+            KeyBinding {
+                key: 't',
+                label: "top",
+            },
+            KeyBinding {
+                key: 'b',
+                label: "bottom",
+            },
+            KeyBinding {
+                key: 'z',
+                label: "center",
+            },
         ],
     },
     PrefixMenu {
         prefix: 'b',
         title: "bookmark",
         bindings: &[
-            KeyBinding { key: 'm', label: "move" },
-            KeyBinding { key: 's', label: "set/new" },
-            KeyBinding { key: 'd', label: "delete" },
+            KeyBinding {
+                key: 'm',
+                label: "move",
+            },
+            KeyBinding {
+                key: 's',
+                label: "set/new",
+            },
+            KeyBinding {
+                key: 'd',
+                label: "delete",
+            },
         ],
     },
 ];
