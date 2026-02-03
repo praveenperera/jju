@@ -34,6 +34,7 @@ pub enum Effect {
     },
     RunUndo { op_id: String },
     RunGitPush { bookmark: String },
+    RunGitPushAll,
     RunGitImport,
     RunGitExport,
     RunBookmarkSet { name: String, rev: String },

@@ -216,6 +216,19 @@ pub fn run_effects(
                 }
             },
 
+            Effect::RunGitPushAll => match commands::git::push_all() {
+                Ok(_) => {
+                    result.status_message = Some((
+                        "Pushed all bookmarks".to_string(),
+                        MessageKind::Success,
+                    ));
+                }
+                Err(e) => {
+                    result.status_message =
+                        Some((format!("Push all failed: {e}"), MessageKind::Error));
+                }
+            },
+
             Effect::RunGitImport => match commands::git::import() {
                 Ok(_) => {
                     result.status_message =

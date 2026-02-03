@@ -52,6 +52,14 @@ pub mod git {
             .run()?;
         Ok(())
     }
+
+    pub fn push_all() -> Result<()> {
+        cmd!("jj", "git", "push", "--all")
+            .stdout_null()
+            .stderr_capture()
+            .run()?;
+        Ok(())
+    }
 }
 
 /// Bookmark operations

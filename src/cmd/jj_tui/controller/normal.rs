@@ -77,6 +77,7 @@ pub fn handle(ctx: &ControllerContext, key: KeyEvent) -> Action {
 
         // git push
         KeyCode::Char('p') => Action::GitPush,
+        KeyCode::Char('P') => Action::GitPushAll,
 
         _ => Action::Noop,
     }
