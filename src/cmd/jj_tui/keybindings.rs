@@ -6,6 +6,8 @@
 //! - Prefix (chord) menus
 //! - Help popup content
 
+use std::sync::OnceLock;
+
 use super::action::Action;
 use super::state::{BookmarkSelectAction, ModeState, RebaseType};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -23,6 +25,7 @@ pub enum ModeId {
     BookmarkInput,
     BookmarkSelect,
     BookmarkPicker,
+    PushSelect,
     Conflicts,
 }
 
@@ -39,26 +42,25 @@ pub fn mode_id_from_state(mode: &ModeState) -> ModeId {
         ModeState::BookmarkInput(_) => ModeId::BookmarkInput,
         ModeState::BookmarkSelect(_) => ModeId::BookmarkSelect,
         ModeState::BookmarkPicker(_) => ModeId::BookmarkPicker,
+        ModeState::PushSelect(_) => ModeId::PushSelect,
         ModeState::Conflicts(_) => ModeId::Conflicts,
     }
 }
 
+// ============================================================================
+// Runtime types (used for matching)
+// ============================================================================
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyPattern {
-    Exact {
-        code: KeyCode,
-        required_mods: KeyModifiers,
-    },
+    Exact { code: KeyCode, required_mods: KeyModifiers },
     AnyChar,
 }
 
 impl KeyPattern {
     fn matches(&self, event: &KeyEvent) -> Option<MatchCapture> {
         match self {
-            KeyPattern::Exact {
-                code,
-                required_mods,
-            } => {
+            KeyPattern::Exact { code, required_mods } => {
                 if &event.code == code && event.modifiers.contains(*required_mods) {
                     Some(MatchCapture::None)
                 } else {
@@ -88,9 +90,6 @@ impl MatchCapture {
     }
 }
 
-#[allow(dead_code)]
-pub struct KeySeq(pub &'static [KeyPattern]);
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActionTemplate {
     Fixed(Action),
@@ -99,6 +98,7 @@ pub enum ActionTemplate {
     CenterCursorViewport,
     BookmarkInputChar,
     BookmarkFilterChar,
+    PushSelectFilterChar,
     NormalEscConditional,
 }
 
@@ -111,6 +111,9 @@ impl ActionTemplate {
             ActionTemplate::CenterCursorViewport => Action::CenterCursor(ctx.viewport_height),
             ActionTemplate::BookmarkInputChar => Action::BookmarkInputChar(captured.unwrap_or(' ')),
             ActionTemplate::BookmarkFilterChar => Action::BookmarkFilterChar(captured.unwrap_or(' ')),
+            ActionTemplate::PushSelectFilterChar => {
+                Action::PushSelectFilterChar(captured.unwrap_or(' '))
+            }
             ActionTemplate::NormalEscConditional => {
                 if ctx.has_focus {
                     Action::Unfocus
@@ -137,1308 +140,407 @@ pub struct Binding {
     pub action: ActionTemplate,
     pub display: DisplayKind,
     pub label: &'static str,
+    pub help: Option<(&'static str, &'static str)>,
 }
 
-pub const PREFIX_TITLES: &[(char, &'static str)] = &[('g', "git"), ('z', "nav"), ('b', "bookmark")];
+// ============================================================================
+// Definition types (compact, config-file-ready)
+// ============================================================================
+
+#[derive(Clone, Copy)]
+pub enum KeyDef {
+    Char(char),
+    Ctrl(char),
+    Key(KeyCode),
+    AnyChar,
+}
+
+impl KeyDef {
+    const fn to_pattern(self) -> KeyPattern {
+        match self {
+            KeyDef::Char(c) => KeyPattern::Exact {
+                code: KeyCode::Char(c),
+                required_mods: KeyModifiers::NONE,
+            },
+            KeyDef::Ctrl(c) => KeyPattern::Exact {
+                code: KeyCode::Char(c),
+                required_mods: KeyModifiers::CONTROL,
+            },
+            KeyDef::Key(code) => KeyPattern::Exact {
+                code,
+                required_mods: KeyModifiers::NONE,
+            },
+            KeyDef::AnyChar => KeyPattern::AnyChar,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct BindingDef {
+    pub mode: ModeId,
+    pub prefix: Option<char>,
+    pub key: KeyDef,
+    pub action: ActionTemplate,
+    pub display: DisplayKind,
+    pub label: &'static str,
+    pub help: Option<(&'static str, &'static str)>,
+}
+
+impl BindingDef {
+    pub const fn new(
+        mode: ModeId,
+        key: KeyDef,
+        action: ActionTemplate,
+        label: &'static str,
+    ) -> Self {
+        Self {
+            mode,
+            key,
+            action,
+            label,
+            prefix: None,
+            display: DisplayKind::Primary,
+            help: None,
+        }
+    }
+
+    pub const fn prefix(mut self, prefix: char) -> Self {
+        self.prefix = Some(prefix);
+        self
+    }
+
+    pub const fn alias(mut self) -> Self {
+        self.display = DisplayKind::Alias;
+        self
+    }
+
+    pub const fn help(mut self, section: &'static str, desc: &'static str) -> Self {
+        self.help = Some((section, desc));
+        self
+    }
+
+    fn to_binding(&self) -> Binding {
+        Binding {
+            mode: self.mode,
+            pending_prefix: self.prefix,
+            key: self.key.to_pattern(),
+            action: self.action.clone(),
+            display: self.display,
+            label: self.label,
+            help: self.help,
+        }
+    }
+}
+
+// ============================================================================
+// Binding definitions
+// ============================================================================
+
+use ActionTemplate::*;
+use KeyDef::*;
+use ModeId::*;
+
+macro_rules! act {
+    ($action:ident) => {
+        Fixed(Action::$action)
+    };
+    ($action:ident($($arg:expr),*)) => {
+        Fixed(Action::$action($($arg),*))
+    };
+}
+
+pub const PREFIX_TITLES: &[(char, &str)] = &[('g', "git"), ('z', "nav"), ('b', "bookmark")];
+
+static BINDING_DEFS: &[BindingDef] = &[
+    // ========================================================================
+    // Normal mode
+    // ========================================================================
+    BindingDef::new(Normal, Char('q'), act!(Quit), "quit")
+        .help("General", "Quit"),
+    BindingDef::new(Normal, Ctrl('c'), act!(Quit), "quit")
+        .alias(),
+    BindingDef::new(Normal, Char('Q'), act!(EnterSquashMode), "squash")
+        .help("Rebase", "Squash into target"),
+    BindingDef::new(Normal, Key(KeyCode::Esc), NormalEscConditional, "esc"),
+    BindingDef::new(Normal, Char('?'), act!(EnterHelp), "help")
+        .help("General", "Toggle help"),
+    // Navigation
+    BindingDef::new(Normal, Char('j'), act!(MoveCursorDown), "down")
+        .help("Navigation", "Move cursor down"),
+    BindingDef::new(Normal, Key(KeyCode::Down), act!(MoveCursorDown), "down")
+        .alias(),
+    BindingDef::new(Normal, Char('k'), act!(MoveCursorUp), "up")
+        .help("Navigation", "Move cursor up"),
+    BindingDef::new(Normal, Key(KeyCode::Up), act!(MoveCursorUp), "up")
+        .alias(),
+    BindingDef::new(Normal, Char('@'), act!(JumpToWorkingCopy), "working-copy")
+        .help("Navigation", "Jump to working copy"),
+    BindingDef::new(Normal, Ctrl('u'), PageUpHalfViewport, "page-up")
+        .help("Navigation", "Page up"),
+    BindingDef::new(Normal, Ctrl('d'), PageDownHalfViewport, "page-down")
+        .help("Navigation", "Page down"),
+    // Prefix keys
+    BindingDef::new(Normal, Char('g'), act!(SetPendingKey('g')), "git"),
+    BindingDef::new(Normal, Char('z'), act!(SetPendingKey('z')), "nav"),
+    BindingDef::new(Normal, Char('b'), act!(SetPendingKey('b')), "bookmark"),
+    // View
+    BindingDef::new(Normal, Char('f'), act!(ToggleFullMode), "full")
+        .help("View", "Toggle full mode"),
+    BindingDef::new(Normal, Key(KeyCode::Enter), act!(ToggleFocus), "zoom")
+        .help("Navigation", "Zoom in/out on node"),
+    BindingDef::new(Normal, Key(KeyCode::Tab), act!(ToggleExpanded), "details")
+        .help("View", "Toggle commit details"),
+    BindingDef::new(Normal, Char(' '), act!(ToggleExpanded), "details")
+        .alias(),
+    BindingDef::new(Normal, Char('\\'), act!(ToggleSplitView), "split")
+        .help("View", "Toggle split view"),
+    BindingDef::new(Normal, Char('d'), act!(EnterDiffView), "diff")
+        .help("View", "View diff"),
+    BindingDef::new(Normal, Char('D'), act!(EditDescription), "desc")
+        .help("View", "Edit description"),
+    // Edit operations
+    BindingDef::new(Normal, Char('e'), act!(EditWorkingCopy), "edit")
+        .help("Edit Operations", "Edit working copy (jj edit)"),
+    BindingDef::new(Normal, Char('n'), act!(CreateNewCommit), "new")
+        .help("Edit Operations", "New commit (jj new)"),
+    BindingDef::new(Normal, Char('c'), act!(CommitWorkingCopy), "commit")
+        .help("Edit Operations", "Commit changes (jj commit)"),
+    // Selection
+    BindingDef::new(Normal, Char('x'), act!(ToggleSelection), "toggle")
+        .help("Selection", "Toggle selection"),
+    BindingDef::new(Normal, Char('v'), act!(EnterSelecting), "select")
+        .help("Selection", "Visual select mode"),
+    BindingDef::new(Normal, Char('a'), act!(EnterConfirmAbandon), "abandon")
+        .help("Selection", "Abandon selected"),
+    // Rebase
+    BindingDef::new(Normal, Char('r'), act!(EnterRebaseMode(RebaseType::Single)), "rebase-single")
+        .help("Rebase", "Rebase single (-r)"),
+    BindingDef::new(Normal, Char('s'), act!(EnterRebaseMode(RebaseType::WithDescendants)), "rebase-desc")
+        .help("Rebase", "Rebase + descendants (-s)"),
+    BindingDef::new(Normal, Char('t'), act!(EnterConfirmRebaseOntoTrunk(RebaseType::Single)), "trunk-single")
+        .help("Rebase", "Quick rebase onto trunk"),
+    BindingDef::new(Normal, Char('T'), act!(EnterConfirmRebaseOntoTrunk(RebaseType::WithDescendants)), "trunk-desc")
+        .help("Rebase", "Quick rebase tree onto trunk"),
+    BindingDef::new(Normal, Char('u'), act!(Undo), "undo")
+        .help("Rebase", "Undo last operation"),
+    // Git
+    BindingDef::new(Normal, Char('p'), act!(GitPush), "push")
+        .help("Bookmarks & Git", "Push current bookmark"),
+    BindingDef::new(Normal, Char('P'), act!(GitPushAll), "push-all"),
+    BindingDef::new(Normal, Char('C'), act!(EnterConflicts), "conflicts")
+        .help("Conflicts", "View conflicts panel"),
+    // Normal chords: g (git)
+    BindingDef::new(Normal, Char('f'), act!(GitFetch), "fetch")
+        .prefix('g')
+        .help("Bookmarks & Git", "Git fetch"),
+    BindingDef::new(Normal, Char('i'), act!(GitImport), "import")
+        .prefix('g')
+        .help("Bookmarks & Git", "Git import"),
+    BindingDef::new(Normal, Char('e'), act!(GitExport), "export")
+        .prefix('g')
+        .help("Bookmarks & Git", "Git export"),
+    // Normal chords: z (nav)
+    BindingDef::new(Normal, Char('t'), act!(MoveCursorTop), "top")
+        .prefix('z')
+        .help("Navigation", "Jump to top"),
+    BindingDef::new(Normal, Char('b'), act!(MoveCursorBottom), "bottom")
+        .prefix('z')
+        .help("Navigation", "Jump to bottom"),
+    BindingDef::new(Normal, Char('z'), CenterCursorViewport, "center")
+        .prefix('z')
+        .help("Navigation", "Center current line"),
+    // Normal chords: b (bookmarks)
+    BindingDef::new(Normal, Char('m'), act!(EnterMoveBookmarkMode), "move")
+        .prefix('b')
+        .help("Bookmarks & Git", "Move bookmark"),
+    BindingDef::new(Normal, Char('s'), act!(EnterCreateBookmark), "set/new")
+        .prefix('b')
+        .help("Bookmarks & Git", "Set/create bookmark"),
+    BindingDef::new(Normal, Char('d'), act!(EnterBookmarkPicker(BookmarkSelectAction::Delete)), "delete")
+        .prefix('b')
+        .help("Bookmarks & Git", "Delete bookmark"),
+
+    // ========================================================================
+    // Help mode
+    // ========================================================================
+    BindingDef::new(Help, Char('q'), act!(ExitHelp), "close"),
+    BindingDef::new(Help, Char('?'), act!(ExitHelp), "close")
+        .alias(),
+    BindingDef::new(Help, Key(KeyCode::Esc), act!(ExitHelp), "close")
+        .alias(),
+
+    // ========================================================================
+    // Diff mode
+    // ========================================================================
+    BindingDef::new(Diff, Char('j'), act!(ScrollDiffDown(1)), "scroll-down"),
+    BindingDef::new(Diff, Key(KeyCode::Down), act!(ScrollDiffDown(1)), "scroll-down")
+        .alias(),
+    BindingDef::new(Diff, Char('k'), act!(ScrollDiffUp(1)), "scroll-up"),
+    BindingDef::new(Diff, Key(KeyCode::Up), act!(ScrollDiffUp(1)), "scroll-up")
+        .alias(),
+    BindingDef::new(Diff, Char('d'), act!(ScrollDiffDown(20)), "page-down"),
+    BindingDef::new(Diff, Char('u'), act!(ScrollDiffUp(20)), "page-up"),
+    BindingDef::new(Diff, Char('z'), act!(SetPendingKey('z')), "nav"),
+    BindingDef::new(Diff, Char('q'), act!(ExitDiffView), "close"),
+    BindingDef::new(Diff, Key(KeyCode::Esc), act!(ExitDiffView), "close")
+        .alias(),
+    // Diff chords: z
+    BindingDef::new(Diff, Char('t'), act!(ScrollDiffTop), "top")
+        .prefix('z'),
+    BindingDef::new(Diff, Char('b'), act!(ScrollDiffBottom), "bottom")
+        .prefix('z'),
+
+    // ========================================================================
+    // Confirm mode
+    // ========================================================================
+    BindingDef::new(Confirm, Char('y'), act!(ConfirmYes), "yes"),
+    BindingDef::new(Confirm, Key(KeyCode::Enter), act!(ConfirmYes), "yes")
+        .alias(),
+    BindingDef::new(Confirm, Char('n'), act!(ConfirmNo), "no"),
+    BindingDef::new(Confirm, Key(KeyCode::Esc), act!(ConfirmNo), "no")
+        .alias(),
+
+    // ========================================================================
+    // Selecting mode
+    // ========================================================================
+    BindingDef::new(Selecting, Char('j'), act!(MoveCursorDown), "down"),
+    BindingDef::new(Selecting, Key(KeyCode::Down), act!(MoveCursorDown), "down")
+        .alias(),
+    BindingDef::new(Selecting, Char('k'), act!(MoveCursorUp), "up"),
+    BindingDef::new(Selecting, Key(KeyCode::Up), act!(MoveCursorUp), "up")
+        .alias(),
+    BindingDef::new(Selecting, Key(KeyCode::Esc), act!(ExitSelecting), "exit"),
+    BindingDef::new(Selecting, Char('a'), act!(EnterConfirmAbandon), "abandon"),
+
+    // ========================================================================
+    // Rebase mode
+    // ========================================================================
+    BindingDef::new(Rebase, Char('j'), act!(MoveRebaseDestDown), "dest-down"),
+    BindingDef::new(Rebase, Key(KeyCode::Down), act!(MoveRebaseDestDown), "dest-down")
+        .alias(),
+    BindingDef::new(Rebase, Char('k'), act!(MoveRebaseDestUp), "dest-up"),
+    BindingDef::new(Rebase, Key(KeyCode::Up), act!(MoveRebaseDestUp), "dest-up")
+        .alias(),
+    BindingDef::new(Rebase, Char('b'), act!(ToggleRebaseBranches), "branches"),
+    BindingDef::new(Rebase, Key(KeyCode::Enter), act!(ExecuteRebase), "run"),
+    BindingDef::new(Rebase, Key(KeyCode::Esc), act!(ExitRebaseMode), "cancel"),
+
+    // ========================================================================
+    // Squash mode
+    // ========================================================================
+    BindingDef::new(Squash, Char('j'), act!(MoveSquashDestDown), "dest-down"),
+    BindingDef::new(Squash, Key(KeyCode::Down), act!(MoveSquashDestDown), "dest-down")
+        .alias(),
+    BindingDef::new(Squash, Char('k'), act!(MoveSquashDestUp), "dest-up"),
+    BindingDef::new(Squash, Key(KeyCode::Up), act!(MoveSquashDestUp), "dest-up")
+        .alias(),
+    BindingDef::new(Squash, Key(KeyCode::Enter), act!(ExecuteSquash), "run"),
+    BindingDef::new(Squash, Key(KeyCode::Esc), act!(ExitSquashMode), "cancel"),
+
+    // ========================================================================
+    // MovingBookmark mode
+    // ========================================================================
+    BindingDef::new(MovingBookmark, Char('j'), act!(MoveBookmarkDestDown), "dest-down"),
+    BindingDef::new(MovingBookmark, Key(KeyCode::Down), act!(MoveBookmarkDestDown), "dest-down")
+        .alias(),
+    BindingDef::new(MovingBookmark, Char('k'), act!(MoveBookmarkDestUp), "dest-up"),
+    BindingDef::new(MovingBookmark, Key(KeyCode::Up), act!(MoveBookmarkDestUp), "dest-up")
+        .alias(),
+    BindingDef::new(MovingBookmark, Key(KeyCode::Enter), act!(ExecuteBookmarkMove), "run"),
+    BindingDef::new(MovingBookmark, Key(KeyCode::Esc), act!(ExitBookmarkMode), "cancel"),
+
+    // ========================================================================
+    // BookmarkInput mode
+    // ========================================================================
+    BindingDef::new(BookmarkInput, Key(KeyCode::Enter), act!(ConfirmBookmarkInput), "confirm"),
+    BindingDef::new(BookmarkInput, Key(KeyCode::Esc), act!(ExitBookmarkMode), "cancel"),
+    BindingDef::new(BookmarkInput, Key(KeyCode::Backspace), act!(BookmarkInputBackspace), "backspace")
+        .alias(),
+    BindingDef::new(BookmarkInput, Key(KeyCode::Delete), act!(BookmarkInputDelete), "delete")
+        .alias(),
+    BindingDef::new(BookmarkInput, Key(KeyCode::Left), act!(BookmarkInputCursorLeft), "left")
+        .alias(),
+    BindingDef::new(BookmarkInput, Key(KeyCode::Right), act!(BookmarkInputCursorRight), "right")
+        .alias(),
+    BindingDef::new(BookmarkInput, AnyChar, BookmarkInputChar, "type"),
+
+    // ========================================================================
+    // BookmarkSelect mode
+    // ========================================================================
+    BindingDef::new(BookmarkSelect, Char('j'), act!(SelectBookmarkDown), "down"),
+    BindingDef::new(BookmarkSelect, Key(KeyCode::Down), act!(SelectBookmarkDown), "down")
+        .alias(),
+    BindingDef::new(BookmarkSelect, Char('k'), act!(SelectBookmarkUp), "up"),
+    BindingDef::new(BookmarkSelect, Key(KeyCode::Up), act!(SelectBookmarkUp), "up")
+        .alias(),
+    BindingDef::new(BookmarkSelect, Key(KeyCode::Enter), act!(ConfirmBookmarkSelect), "select"),
+    BindingDef::new(BookmarkSelect, Key(KeyCode::Esc), act!(ExitBookmarkMode), "cancel"),
+
+    // ========================================================================
+    // BookmarkPicker mode
+    // ========================================================================
+    BindingDef::new(BookmarkPicker, Key(KeyCode::Esc), act!(ExitBookmarkMode), "cancel"),
+    BindingDef::new(BookmarkPicker, Key(KeyCode::Enter), act!(ConfirmBookmarkPicker), "confirm"),
+    BindingDef::new(BookmarkPicker, Key(KeyCode::Down), act!(BookmarkPickerDown), "down"),
+    BindingDef::new(BookmarkPicker, Key(KeyCode::Up), act!(BookmarkPickerUp), "up"),
+    BindingDef::new(BookmarkPicker, Key(KeyCode::Backspace), act!(BookmarkFilterBackspace), "backspace")
+        .alias(),
+    BindingDef::new(BookmarkPicker, AnyChar, BookmarkFilterChar, "type"),
+
+    // ========================================================================
+    // PushSelect mode
+    // ========================================================================
+    BindingDef::new(PushSelect, Key(KeyCode::Esc), act!(ExitPushSelect), "cancel"),
+    BindingDef::new(PushSelect, Key(KeyCode::Enter), act!(PushSelectConfirm), "push"),
+    BindingDef::new(PushSelect, Key(KeyCode::Down), act!(PushSelectDown), "down"),
+    BindingDef::new(PushSelect, Key(KeyCode::Up), act!(PushSelectUp), "up"),
+    BindingDef::new(PushSelect, Char(' '), act!(PushSelectToggle), "toggle"),
+    BindingDef::new(PushSelect, Char('a'), act!(PushSelectAll), "all"),
+    BindingDef::new(PushSelect, Char('n'), act!(PushSelectNone), "none"),
+    BindingDef::new(PushSelect, Key(KeyCode::Backspace), act!(PushSelectFilterBackspace), "backspace")
+        .alias(),
+    BindingDef::new(PushSelect, AnyChar, PushSelectFilterChar, "type"),
+
+    // ========================================================================
+    // Conflicts mode
+    // ========================================================================
+    BindingDef::new(Conflicts, Char('j'), act!(ConflictsDown), "down"),
+    BindingDef::new(Conflicts, Key(KeyCode::Down), act!(ConflictsDown), "down")
+        .alias(),
+    BindingDef::new(Conflicts, Char('k'), act!(ConflictsUp), "up"),
+    BindingDef::new(Conflicts, Key(KeyCode::Up), act!(ConflictsUp), "up")
+        .alias(),
+    BindingDef::new(Conflicts, Key(KeyCode::Enter), act!(ConflictsJump), "jump"),
+    BindingDef::new(Conflicts, Char('R'), act!(StartResolveFromConflicts), "resolve"),
+    BindingDef::new(Conflicts, Char('q'), act!(ExitConflicts), "exit"),
+    BindingDef::new(Conflicts, Key(KeyCode::Esc), act!(ExitConflicts), "exit")
+        .alias(),
+];
+
+// ============================================================================
+// Runtime binding access
+// ============================================================================
+
+static BINDINGS: OnceLock<Vec<Binding>> = OnceLock::new();
+
+fn bindings() -> &'static [Binding] {
+    BINDINGS.get_or_init(|| BINDING_DEFS.iter().map(|d| d.to_binding()).collect())
+}
 
 pub fn prefix_title(prefix: char) -> Option<&'static str> {
-    PREFIX_TITLES.iter().find(|(p, _)| *p == prefix).map(|(_, t)| *t)
+    PREFIX_TITLES
+        .iter()
+        .find(|(p, _)| *p == prefix)
+        .map(|(_, t)| *t)
 }
 
 pub fn is_known_prefix(prefix: char) -> bool {
     prefix_title(prefix).is_some()
 }
 
-// The single source of truth for behavior and displayed keys.
-pub static DEFAULT_BINDINGS: &[Binding] = &[
-    // Normal
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('q'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::Quit),
-        display: DisplayKind::Primary,
-        label: "quit",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('c'),
-            required_mods: KeyModifiers::CONTROL,
-        },
-        action: ActionTemplate::Fixed(Action::Quit),
-        display: DisplayKind::Alias,
-        label: "quit",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('Q'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::EnterSquashMode),
-        display: DisplayKind::Primary,
-        label: "squash",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Esc,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::NormalEscConditional,
-        display: DisplayKind::Primary,
-        label: "esc",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('?'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::EnterHelp),
-        display: DisplayKind::Primary,
-        label: "help",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('j'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveCursorDown),
-        display: DisplayKind::Primary,
-        label: "down",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Down,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveCursorDown),
-        display: DisplayKind::Alias,
-        label: "down",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('k'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveCursorUp),
-        display: DisplayKind::Primary,
-        label: "up",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Up,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveCursorUp),
-        display: DisplayKind::Alias,
-        label: "up",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('@'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::JumpToWorkingCopy),
-        display: DisplayKind::Primary,
-        label: "working-copy",
-    },
-    // Prefix keys
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('g'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::SetPendingKey('g')),
-        display: DisplayKind::Primary,
-        label: "git",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('z'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::SetPendingKey('z')),
-        display: DisplayKind::Primary,
-        label: "nav",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('b'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::SetPendingKey('b')),
-        display: DisplayKind::Primary,
-        label: "bookmark",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('f'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ToggleFullMode),
-        display: DisplayKind::Primary,
-        label: "full",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Enter,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ToggleFocus),
-        display: DisplayKind::Primary,
-        label: "zoom",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Tab,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ToggleExpanded),
-        display: DisplayKind::Primary,
-        label: "details",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char(' '),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ToggleExpanded),
-        display: DisplayKind::Alias,
-        label: "details",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('u'),
-            required_mods: KeyModifiers::CONTROL,
-        },
-        action: ActionTemplate::PageUpHalfViewport,
-        display: DisplayKind::Primary,
-        label: "page-up",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('d'),
-            required_mods: KeyModifiers::CONTROL,
-        },
-        action: ActionTemplate::PageDownHalfViewport,
-        display: DisplayKind::Primary,
-        label: "page-down",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('\\'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ToggleSplitView),
-        display: DisplayKind::Primary,
-        label: "split",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('d'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::EnterDiffView),
-        display: DisplayKind::Primary,
-        label: "diff",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('D'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::EditDescription),
-        display: DisplayKind::Primary,
-        label: "desc",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('e'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::EditWorkingCopy),
-        display: DisplayKind::Primary,
-        label: "edit",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('n'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::CreateNewCommit),
-        display: DisplayKind::Primary,
-        label: "new",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('c'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::CommitWorkingCopy),
-        display: DisplayKind::Primary,
-        label: "commit",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('x'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ToggleSelection),
-        display: DisplayKind::Primary,
-        label: "toggle",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('v'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::EnterSelecting),
-        display: DisplayKind::Primary,
-        label: "select",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('a'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::EnterConfirmAbandon),
-        display: DisplayKind::Primary,
-        label: "abandon",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('r'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::EnterRebaseMode(RebaseType::Single)),
-        display: DisplayKind::Primary,
-        label: "rebase-single",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('s'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::EnterRebaseMode(RebaseType::WithDescendants)),
-        display: DisplayKind::Primary,
-        label: "rebase-desc",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('t'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::EnterConfirmRebaseOntoTrunk(RebaseType::Single)),
-        display: DisplayKind::Primary,
-        label: "trunk-single",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('T'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::EnterConfirmRebaseOntoTrunk(RebaseType::WithDescendants)),
-        display: DisplayKind::Primary,
-        label: "trunk-desc",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('u'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::Undo),
-        display: DisplayKind::Primary,
-        label: "undo",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('p'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::GitPush),
-        display: DisplayKind::Primary,
-        label: "push",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('P'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::GitPushAll),
-        display: DisplayKind::Primary,
-        label: "push-all",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('C'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::EnterConflicts),
-        display: DisplayKind::Primary,
-        label: "conflicts",
-    },
-
-    // Normal chords: g
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: Some('g'),
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('f'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::GitFetch),
-        display: DisplayKind::Primary,
-        label: "fetch",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: Some('g'),
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('i'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::GitImport),
-        display: DisplayKind::Primary,
-        label: "import",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: Some('g'),
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('e'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::GitExport),
-        display: DisplayKind::Primary,
-        label: "export",
-    },
-    // Normal chords: z
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: Some('z'),
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('t'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveCursorTop),
-        display: DisplayKind::Primary,
-        label: "top",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: Some('z'),
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('b'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveCursorBottom),
-        display: DisplayKind::Primary,
-        label: "bottom",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: Some('z'),
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('z'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::CenterCursorViewport,
-        display: DisplayKind::Primary,
-        label: "center",
-    },
-    // Normal chords: b (bookmarks)
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: Some('b'),
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('m'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::EnterMoveBookmarkMode),
-        display: DisplayKind::Primary,
-        label: "move",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: Some('b'),
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('s'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::EnterCreateBookmark),
-        display: DisplayKind::Primary,
-        label: "set/new",
-    },
-    Binding {
-        mode: ModeId::Normal,
-        pending_prefix: Some('b'),
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('d'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::EnterBookmarkPicker(BookmarkSelectAction::Delete)),
-        display: DisplayKind::Primary,
-        label: "delete",
-    },
-
-    // Help mode
-    Binding {
-        mode: ModeId::Help,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('q'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExitHelp),
-        display: DisplayKind::Primary,
-        label: "close",
-    },
-    Binding {
-        mode: ModeId::Help,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('?'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExitHelp),
-        display: DisplayKind::Alias,
-        label: "close",
-    },
-    Binding {
-        mode: ModeId::Help,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Esc,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExitHelp),
-        display: DisplayKind::Alias,
-        label: "close",
-    },
-
-    // Diff
-    Binding {
-        mode: ModeId::Diff,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('j'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ScrollDiffDown(1)),
-        display: DisplayKind::Primary,
-        label: "scroll-down",
-    },
-    Binding {
-        mode: ModeId::Diff,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Down,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ScrollDiffDown(1)),
-        display: DisplayKind::Alias,
-        label: "scroll-down",
-    },
-    Binding {
-        mode: ModeId::Diff,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('k'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ScrollDiffUp(1)),
-        display: DisplayKind::Primary,
-        label: "scroll-up",
-    },
-    Binding {
-        mode: ModeId::Diff,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Up,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ScrollDiffUp(1)),
-        display: DisplayKind::Alias,
-        label: "scroll-up",
-    },
-    Binding {
-        mode: ModeId::Diff,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('d'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ScrollDiffDown(20)),
-        display: DisplayKind::Primary,
-        label: "page-down",
-    },
-    Binding {
-        mode: ModeId::Diff,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('u'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ScrollDiffUp(20)),
-        display: DisplayKind::Primary,
-        label: "page-up",
-    },
-    Binding {
-        mode: ModeId::Diff,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('z'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::SetPendingKey('z')),
-        display: DisplayKind::Primary,
-        label: "nav",
-    },
-    Binding {
-        mode: ModeId::Diff,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('q'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExitDiffView),
-        display: DisplayKind::Primary,
-        label: "close",
-    },
-    Binding {
-        mode: ModeId::Diff,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Esc,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExitDiffView),
-        display: DisplayKind::Alias,
-        label: "close",
-    },
-    Binding {
-        mode: ModeId::Diff,
-        pending_prefix: Some('z'),
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('t'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ScrollDiffTop),
-        display: DisplayKind::Primary,
-        label: "top",
-    },
-    Binding {
-        mode: ModeId::Diff,
-        pending_prefix: Some('z'),
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('b'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ScrollDiffBottom),
-        display: DisplayKind::Primary,
-        label: "bottom",
-    },
-
-    // Confirm
-    Binding {
-        mode: ModeId::Confirm,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('y'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ConfirmYes),
-        display: DisplayKind::Primary,
-        label: "yes",
-    },
-    Binding {
-        mode: ModeId::Confirm,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Enter,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ConfirmYes),
-        display: DisplayKind::Alias,
-        label: "yes",
-    },
-    Binding {
-        mode: ModeId::Confirm,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('n'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ConfirmNo),
-        display: DisplayKind::Primary,
-        label: "no",
-    },
-    Binding {
-        mode: ModeId::Confirm,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Esc,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ConfirmNo),
-        display: DisplayKind::Alias,
-        label: "no",
-    },
-
-    // Selecting
-    Binding {
-        mode: ModeId::Selecting,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('j'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveCursorDown),
-        display: DisplayKind::Primary,
-        label: "down",
-    },
-    Binding {
-        mode: ModeId::Selecting,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Down,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveCursorDown),
-        display: DisplayKind::Alias,
-        label: "down",
-    },
-    Binding {
-        mode: ModeId::Selecting,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('k'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveCursorUp),
-        display: DisplayKind::Primary,
-        label: "up",
-    },
-    Binding {
-        mode: ModeId::Selecting,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Up,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveCursorUp),
-        display: DisplayKind::Alias,
-        label: "up",
-    },
-    Binding {
-        mode: ModeId::Selecting,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Esc,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExitSelecting),
-        display: DisplayKind::Primary,
-        label: "exit",
-    },
-    Binding {
-        mode: ModeId::Selecting,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('a'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::EnterConfirmAbandon),
-        display: DisplayKind::Primary,
-        label: "abandon",
-    },
-
-    // Rebase
-    Binding {
-        mode: ModeId::Rebase,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('j'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveRebaseDestDown),
-        display: DisplayKind::Primary,
-        label: "dest-down",
-    },
-    Binding {
-        mode: ModeId::Rebase,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Down,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveRebaseDestDown),
-        display: DisplayKind::Alias,
-        label: "dest-down",
-    },
-    Binding {
-        mode: ModeId::Rebase,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('k'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveRebaseDestUp),
-        display: DisplayKind::Primary,
-        label: "dest-up",
-    },
-    Binding {
-        mode: ModeId::Rebase,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Up,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveRebaseDestUp),
-        display: DisplayKind::Alias,
-        label: "dest-up",
-    },
-    Binding {
-        mode: ModeId::Rebase,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('b'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ToggleRebaseBranches),
-        display: DisplayKind::Primary,
-        label: "branches",
-    },
-    Binding {
-        mode: ModeId::Rebase,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Enter,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExecuteRebase),
-        display: DisplayKind::Primary,
-        label: "run",
-    },
-    Binding {
-        mode: ModeId::Rebase,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Esc,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExitRebaseMode),
-        display: DisplayKind::Primary,
-        label: "cancel",
-    },
-
-    // Squash
-    Binding {
-        mode: ModeId::Squash,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('j'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveSquashDestDown),
-        display: DisplayKind::Primary,
-        label: "dest-down",
-    },
-    Binding {
-        mode: ModeId::Squash,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Down,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveSquashDestDown),
-        display: DisplayKind::Alias,
-        label: "dest-down",
-    },
-    Binding {
-        mode: ModeId::Squash,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('k'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveSquashDestUp),
-        display: DisplayKind::Primary,
-        label: "dest-up",
-    },
-    Binding {
-        mode: ModeId::Squash,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Up,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveSquashDestUp),
-        display: DisplayKind::Alias,
-        label: "dest-up",
-    },
-    Binding {
-        mode: ModeId::Squash,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Enter,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExecuteSquash),
-        display: DisplayKind::Primary,
-        label: "run",
-    },
-    Binding {
-        mode: ModeId::Squash,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Esc,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExitSquashMode),
-        display: DisplayKind::Primary,
-        label: "cancel",
-    },
-
-    // MovingBookmark
-    Binding {
-        mode: ModeId::MovingBookmark,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('j'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveBookmarkDestDown),
-        display: DisplayKind::Primary,
-        label: "dest-down",
-    },
-    Binding {
-        mode: ModeId::MovingBookmark,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Down,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveBookmarkDestDown),
-        display: DisplayKind::Alias,
-        label: "dest-down",
-    },
-    Binding {
-        mode: ModeId::MovingBookmark,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('k'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveBookmarkDestUp),
-        display: DisplayKind::Primary,
-        label: "dest-up",
-    },
-    Binding {
-        mode: ModeId::MovingBookmark,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Up,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::MoveBookmarkDestUp),
-        display: DisplayKind::Alias,
-        label: "dest-up",
-    },
-    Binding {
-        mode: ModeId::MovingBookmark,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Enter,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExecuteBookmarkMove),
-        display: DisplayKind::Primary,
-        label: "run",
-    },
-    Binding {
-        mode: ModeId::MovingBookmark,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Esc,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExitBookmarkMode),
-        display: DisplayKind::Primary,
-        label: "cancel",
-    },
-
-    // BookmarkInput
-    Binding {
-        mode: ModeId::BookmarkInput,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Enter,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ConfirmBookmarkInput),
-        display: DisplayKind::Primary,
-        label: "confirm",
-    },
-    Binding {
-        mode: ModeId::BookmarkInput,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Esc,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExitBookmarkMode),
-        display: DisplayKind::Primary,
-        label: "cancel",
-    },
-    Binding {
-        mode: ModeId::BookmarkInput,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Backspace,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::BookmarkInputBackspace),
-        display: DisplayKind::Alias,
-        label: "backspace",
-    },
-    Binding {
-        mode: ModeId::BookmarkInput,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Delete,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::BookmarkInputDelete),
-        display: DisplayKind::Alias,
-        label: "delete",
-    },
-    Binding {
-        mode: ModeId::BookmarkInput,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Left,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::BookmarkInputCursorLeft),
-        display: DisplayKind::Alias,
-        label: "left",
-    },
-    Binding {
-        mode: ModeId::BookmarkInput,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Right,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::BookmarkInputCursorRight),
-        display: DisplayKind::Alias,
-        label: "right",
-    },
-    Binding {
-        mode: ModeId::BookmarkInput,
-        pending_prefix: None,
-        key: KeyPattern::AnyChar,
-        action: ActionTemplate::BookmarkInputChar,
-        display: DisplayKind::Primary,
-        label: "type",
-    },
-
-    // BookmarkSelect
-    Binding {
-        mode: ModeId::BookmarkSelect,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('j'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::SelectBookmarkDown),
-        display: DisplayKind::Primary,
-        label: "down",
-    },
-    Binding {
-        mode: ModeId::BookmarkSelect,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Down,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::SelectBookmarkDown),
-        display: DisplayKind::Alias,
-        label: "down",
-    },
-    Binding {
-        mode: ModeId::BookmarkSelect,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('k'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::SelectBookmarkUp),
-        display: DisplayKind::Primary,
-        label: "up",
-    },
-    Binding {
-        mode: ModeId::BookmarkSelect,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Up,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::SelectBookmarkUp),
-        display: DisplayKind::Alias,
-        label: "up",
-    },
-    Binding {
-        mode: ModeId::BookmarkSelect,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Enter,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ConfirmBookmarkSelect),
-        display: DisplayKind::Primary,
-        label: "select",
-    },
-    Binding {
-        mode: ModeId::BookmarkSelect,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Esc,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExitBookmarkMode),
-        display: DisplayKind::Primary,
-        label: "cancel",
-    },
-
-    // BookmarkPicker
-    Binding {
-        mode: ModeId::BookmarkPicker,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Esc,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExitBookmarkMode),
-        display: DisplayKind::Primary,
-        label: "cancel",
-    },
-    Binding {
-        mode: ModeId::BookmarkPicker,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Enter,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ConfirmBookmarkPicker),
-        display: DisplayKind::Primary,
-        label: "confirm",
-    },
-    Binding {
-        mode: ModeId::BookmarkPicker,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Down,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::BookmarkPickerDown),
-        display: DisplayKind::Primary,
-        label: "down",
-    },
-    Binding {
-        mode: ModeId::BookmarkPicker,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Up,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::BookmarkPickerUp),
-        display: DisplayKind::Primary,
-        label: "up",
-    },
-    Binding {
-        mode: ModeId::BookmarkPicker,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Backspace,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::BookmarkFilterBackspace),
-        display: DisplayKind::Alias,
-        label: "backspace",
-    },
-    Binding {
-        mode: ModeId::BookmarkPicker,
-        pending_prefix: None,
-        key: KeyPattern::AnyChar,
-        action: ActionTemplate::BookmarkFilterChar,
-        display: DisplayKind::Primary,
-        label: "type",
-    },
-
-    // Conflicts
-    Binding {
-        mode: ModeId::Conflicts,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('j'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ConflictsDown),
-        display: DisplayKind::Primary,
-        label: "down",
-    },
-    Binding {
-        mode: ModeId::Conflicts,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Down,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ConflictsDown),
-        display: DisplayKind::Alias,
-        label: "down",
-    },
-    Binding {
-        mode: ModeId::Conflicts,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('k'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ConflictsUp),
-        display: DisplayKind::Primary,
-        label: "up",
-    },
-    Binding {
-        mode: ModeId::Conflicts,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Up,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ConflictsUp),
-        display: DisplayKind::Alias,
-        label: "up",
-    },
-    Binding {
-        mode: ModeId::Conflicts,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Enter,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ConflictsJump),
-        display: DisplayKind::Primary,
-        label: "jump",
-    },
-    Binding {
-        mode: ModeId::Conflicts,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('R'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::StartResolveFromConflicts),
-        display: DisplayKind::Primary,
-        label: "resolve",
-    },
-    Binding {
-        mode: ModeId::Conflicts,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Char('q'),
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExitConflicts),
-        display: DisplayKind::Primary,
-        label: "exit",
-    },
-    Binding {
-        mode: ModeId::Conflicts,
-        pending_prefix: None,
-        key: KeyPattern::Exact {
-            code: KeyCode::Esc,
-            required_mods: KeyModifiers::NONE,
-        },
-        action: ActionTemplate::Fixed(Action::ExitConflicts),
-        display: DisplayKind::Alias,
-        label: "exit",
-    },
-];
+// ============================================================================
+// Key handling
+// ============================================================================
 
 pub struct ControllerContext<'a> {
     pub mode: &'a ModeState,
@@ -1464,7 +566,7 @@ fn match_binding(
     pending_prefix: Option<char>,
     key: &KeyEvent,
 ) -> Option<Action> {
-    for binding in DEFAULT_BINDINGS {
+    for binding in bindings() {
         if binding.mode != mode || binding.pending_prefix != pending_prefix {
             continue;
         }
@@ -1475,6 +577,10 @@ fn match_binding(
     None
 }
 
+// ============================================================================
+// Prefix menu
+// ============================================================================
+
 #[derive(Debug, Clone)]
 pub struct PrefixMenuView {
     pub title: &'static str,
@@ -1484,17 +590,24 @@ pub struct PrefixMenuView {
 pub fn prefix_menu(mode: ModeId, pending: char) -> Option<PrefixMenuView> {
     let title = prefix_title(pending)?;
     let mut items = Vec::new();
-    for binding in DEFAULT_BINDINGS {
+    for binding in bindings() {
         if binding.mode != mode || binding.pending_prefix != Some(pending) {
             continue;
         }
         if binding.display != DisplayKind::Primary {
             continue;
         }
-        items.push((format_binding_key(binding, KeyFormat::SecondKeyOnly), binding.label));
+        items.push((
+            format_binding_key(binding, KeyFormat::SecondKeyOnly),
+            binding.label,
+        ));
     }
     Some(PrefixMenuView { title, items })
 }
+
+// ============================================================================
+// Key formatting
+// ============================================================================
 
 #[derive(Debug, Clone, Copy)]
 pub enum KeyFormat {
@@ -1504,7 +617,7 @@ pub enum KeyFormat {
 }
 
 pub fn format_binding_key(binding: &Binding, fmt: KeyFormat) -> String {
-    let key = display_key_pattern(&binding.key, binding.display);
+    let key = display_key_pattern(&binding.key);
     match (binding.pending_prefix, fmt) {
         (Some(_prefix), KeyFormat::SecondKeyOnly) => key,
         (Some(prefix), KeyFormat::Space) => format!("{prefix} {key}"),
@@ -1537,12 +650,9 @@ pub fn display_keys_joined(
     )
 }
 
-fn display_key_pattern(key: &KeyPattern, _display: DisplayKind) -> String {
+fn display_key_pattern(key: &KeyPattern) -> String {
     match key {
-        KeyPattern::Exact {
-            code,
-            required_mods,
-        } => display_key_code(*code, *required_mods),
+        KeyPattern::Exact { code, required_mods } => display_key_code(*code, *required_mods),
         KeyPattern::AnyChar => "type".to_string(),
     }
 }
@@ -1569,8 +679,12 @@ fn display_key_code(code: KeyCode, mods: KeyModifiers) -> String {
     }
 }
 
-fn find_bindings(mode: ModeId, pending: Option<char>, label: &str) -> impl Iterator<Item = &'static Binding> {
-    DEFAULT_BINDINGS
+fn find_bindings(
+    mode: ModeId,
+    pending: Option<char>,
+    label: &str,
+) -> impl Iterator<Item = &'static Binding> {
+    bindings()
         .iter()
         .filter(move |b| b.mode == mode && b.pending_prefix == pending && b.label == label)
 }
@@ -1594,10 +708,12 @@ fn keys_for_label(
             continue;
         }
         let k = match (binding.pending_prefix, chord_fmt) {
-            (Some(_), KeyFormat::SecondKeyOnly) => format_binding_key(binding, KeyFormat::SecondKeyOnly),
+            (Some(_), KeyFormat::SecondKeyOnly) => {
+                format_binding_key(binding, KeyFormat::SecondKeyOnly)
+            }
             (Some(_), KeyFormat::Concat) => format_binding_key(binding, KeyFormat::Concat),
             (Some(_), KeyFormat::Space) => format_binding_key(binding, KeyFormat::Space),
-            (None, _) => display_key_pattern(&binding.key, binding.display),
+            (None, _) => display_key_pattern(&binding.key),
         };
         keys.push(k);
     }
@@ -1607,6 +723,10 @@ fn keys_for_label(
 fn join_keys(keys: &[String], sep: &str) -> String {
     keys.join(sep)
 }
+
+// ============================================================================
+// Status bar hints
+// ============================================================================
 
 #[derive(Debug, Clone, Copy)]
 pub struct StatusHintContext {
@@ -1760,6 +880,18 @@ pub fn status_bar_hints(ctx: &StatusHintContext) -> String {
             kv(ModeId::BookmarkPicker, None, "confirm", "select"),
             kv(ModeId::BookmarkPicker, None, "cancel", "cancel"),
         ]),
+        ModeId::PushSelect => join_segments(&[
+            format!(
+                "{}/{}:navigate",
+                key_for_hint(ModeId::PushSelect, None, "up"),
+                key_for_hint(ModeId::PushSelect, None, "down")
+            ),
+            kv(ModeId::PushSelect, None, "toggle", "toggle"),
+            kv(ModeId::PushSelect, None, "all", "all"),
+            kv(ModeId::PushSelect, None, "none", "none"),
+            kv(ModeId::PushSelect, None, "push", "push"),
+            kv(ModeId::PushSelect, None, "cancel", "cancel"),
+        ]),
         ModeId::Conflicts => join_segments(&[
             format!(
                 "{}/{}:nav",
@@ -1799,357 +931,19 @@ fn join_segments(segments: &[String]) -> String {
     segments.join("  ")
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct HelpItemSpec {
-    pub mode: ModeId,
-    pub pending_prefix: Option<char>,
-    pub label: &'static str,
-    pub include_aliases: bool,
-    pub chord_format: KeyFormat,
-    pub description: &'static str,
-}
+// ============================================================================
+// Help view (derived from bindings)
+// ============================================================================
 
-#[derive(Debug, Clone, Copy)]
-pub struct HelpSectionSpec {
-    pub title: &'static str,
-    pub items: &'static [HelpItemSpec],
-}
-
-pub static HELP_SECTIONS: &[HelpSectionSpec] = &[
-    HelpSectionSpec {
-        title: "Navigation",
-        items: &[
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "down",
-                include_aliases: true,
-                chord_format: KeyFormat::Space,
-                description: "Move cursor down",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "up",
-                include_aliases: true,
-                chord_format: KeyFormat::Space,
-                description: "Move cursor up",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "page-down",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Page down",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "page-up",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Page up",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: Some('z'),
-                label: "top",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Jump to top",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: Some('z'),
-                label: "bottom",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Jump to bottom",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: Some('z'),
-                label: "center",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Center current line",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "working-copy",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Jump to working copy",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "zoom",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Zoom in/out on node",
-            },
-        ],
-    },
-    HelpSectionSpec {
-        title: "View",
-        items: &[
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "desc",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Edit description",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "diff",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "View diff",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "details",
-                include_aliases: true,
-                chord_format: KeyFormat::Space,
-                description: "Toggle commit details",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "split",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Toggle split view",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "full",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Toggle full mode",
-            },
-        ],
-    },
-    HelpSectionSpec {
-        title: "Edit Operations",
-        items: &[
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "edit",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Edit working copy (jj edit)",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "new",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "New commit (jj new)",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "commit",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Commit changes (jj commit)",
-            },
-        ],
-    },
-    HelpSectionSpec {
-        title: "Selection",
-        items: &[
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "toggle",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Toggle selection",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "select",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Visual select mode",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "abandon",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Abandon selected",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "esc",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Clear selection (when selected)",
-            },
-        ],
-    },
-    HelpSectionSpec {
-        title: "Rebase",
-        items: &[
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "rebase-single",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Rebase single (-r)",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "rebase-desc",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Rebase + descendants (-s)",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "trunk-single",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Quick rebase onto trunk",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "trunk-desc",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Quick rebase tree onto trunk",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "squash",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Squash into target",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "undo",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Undo last operation",
-            },
-        ],
-    },
-    HelpSectionSpec {
-        title: "Bookmarks & Git",
-        items: &[
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "push",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Push current bookmark",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: Some('b'),
-                label: "move",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Move bookmark",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: Some('b'),
-                label: "set/new",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Set/create bookmark",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: Some('b'),
-                label: "delete",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Delete bookmark",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: Some('g'),
-                label: "fetch",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Git fetch",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: Some('g'),
-                label: "import",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Git import",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: Some('g'),
-                label: "export",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Git export",
-            },
-        ],
-    },
-    HelpSectionSpec {
-        title: "Conflicts",
-        items: &[HelpItemSpec {
-            mode: ModeId::Normal,
-            pending_prefix: None,
-            label: "conflicts",
-            include_aliases: false,
-            chord_format: KeyFormat::Space,
-            description: "View conflicts panel",
-        }],
-    },
-    HelpSectionSpec {
-        title: "General",
-        items: &[
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "help",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Toggle help",
-            },
-            HelpItemSpec {
-                mode: ModeId::Normal,
-                pending_prefix: None,
-                label: "quit",
-                include_aliases: false,
-                chord_format: KeyFormat::Space,
-                description: "Quit",
-            },
-        ],
-    },
+const HELP_SECTION_ORDER: &[&str] = &[
+    "Navigation",
+    "View",
+    "Edit Operations",
+    "Selection",
+    "Rebase",
+    "Bookmarks & Git",
+    "Conflicts",
+    "General",
 ];
 
 #[derive(Debug, Clone)]
@@ -2165,32 +959,68 @@ pub struct HelpSectionView {
 }
 
 pub fn build_help_view() -> Vec<HelpSectionView> {
-    let mut out = Vec::new();
-    for section in HELP_SECTIONS {
-        let mut items = Vec::new();
-        for item in section.items {
-            let keys = if item.pending_prefix.is_some() {
-                keys_for_label(item.mode, item.pending_prefix, item.label, item.include_aliases, item.chord_format)
-            } else {
-                keys_for_label(item.mode, None, item.label, item.include_aliases, item.chord_format)
-            };
-            let keys = if item.include_aliases {
-                join_keys(&keys, "/")
-            } else {
-                keys.into_iter().next().unwrap_or_else(|| "?".to_string())
-            };
-            items.push(HelpItemView {
-                keys,
-                description: item.description,
-            });
-        }
-        out.push(HelpSectionView {
-            title: section.title,
-            items,
-        });
+    use std::collections::HashMap;
+
+    let mut sections: HashMap<&'static str, Vec<HelpItemView>> = HashMap::new();
+
+    for binding in bindings() {
+        let Some((section, description)) = binding.help else {
+            continue;
+        };
+
+        let keys = if binding.pending_prefix.is_some() {
+            format_binding_key(binding, KeyFormat::Space)
+        } else {
+            display_key_pattern(&binding.key)
+        };
+
+        sections
+            .entry(section)
+            .or_default()
+            .push(HelpItemView { keys, description });
     }
+
+    // Also add aliases for items that should show multiple keys
+    let alias_items = [
+        (Normal, None, "down", "Navigation", "Move cursor down"),
+        (Normal, None, "up", "Navigation", "Move cursor up"),
+        (Normal, None, "details", "View", "Toggle commit details"),
+    ];
+
+    for (mode, prefix, label, section, _desc) in alias_items {
+        let keys = keys_for_label(mode, prefix, label, true, KeyFormat::Space);
+        if keys.len() > 1 {
+            let joined = join_keys(&keys, "/");
+            if let Some(items) = sections.get_mut(section) {
+                for item in items.iter_mut() {
+                    if item.keys == keys[0] {
+                        item.keys = joined;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Build final view in order
+    let mut out = Vec::new();
+    for &title in HELP_SECTION_ORDER {
+        if let Some(items) = sections.remove(title) {
+            out.push(HelpSectionView { title, items });
+        }
+    }
+
+    // Add any remaining sections not in the order list
+    for (title, items) in sections {
+        out.push(HelpSectionView { title, items });
+    }
+
     out
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -2201,7 +1031,13 @@ mod tests {
     };
     use ratatui::crossterm::event::KeyEvent;
 
-    fn ctx<'a>(mode: &'a ModeState, pending: Option<char>, vh: usize, focus: bool, sel: bool) -> ControllerContext<'a> {
+    fn ctx<'a>(
+        mode: &'a ModeState,
+        pending: Option<char>,
+        vh: usize,
+        focus: bool,
+        sel: bool,
+    ) -> ControllerContext<'a> {
         ControllerContext {
             mode,
             pending_key: pending,
@@ -2378,7 +1214,15 @@ mod tests {
         assert!(text.contains("g f"), "expected g f; got:\n{text}");
     }
 
-    // Silence unused imports if the file layout changes.
+    // Silence unused imports if the file layout changes
     #[allow(dead_code)]
-    fn _dummy(_d: DiffState, _c: ConfirmState, _r: RebaseState, _s: SquashState, _m: MovingBookmarkState, _a: ConfirmAction) {}
+    fn _dummy(
+        _d: DiffState,
+        _c: ConfirmState,
+        _r: RebaseState,
+        _s: SquashState,
+        _m: MovingBookmarkState,
+        _a: ConfirmAction,
+    ) {
+    }
 }
