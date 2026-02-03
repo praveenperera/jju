@@ -23,8 +23,8 @@ src/cmd/jj_tui/
 ├── effect.rs        # Effect enum (all side effects)
 ├── engine.rs        # Pure reduce() function
 ├── runner.rs        # Effects executor (IO)
-├── controller/      # Key → Action mapping
-│   ├── mod.rs
+├── controller.rs    # Key → Action mapping (dispatcher)
+├── controller/      # Mode-specific key handlers
 │   ├── normal.rs
 │   ├── diff.rs
 │   ├── rebase.rs
