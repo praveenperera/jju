@@ -472,6 +472,18 @@ impl TreeState {
         self.expanded_entry == Some(visible_idx)
     }
 
+    /// Build a map of bookmark names to their visible entry indices
+    pub fn bookmark_to_visible_index(&self) -> HashMap<String, usize> {
+        let mut map = HashMap::default();
+        for (visible_idx, entry) in self.visible_entries.iter().enumerate() {
+            let node = &self.nodes[entry.node_index];
+            for bookmark in &node.bookmarks {
+                map.insert(bookmark.name.clone(), visible_idx);
+            }
+        }
+        map
+    }
+
     pub fn toggle_selected(&mut self, idx: usize) {
         if self.selected.contains(&idx) {
             self.selected.remove(&idx);

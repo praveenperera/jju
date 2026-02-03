@@ -346,7 +346,7 @@ pub fn reduce(
             if node.bookmarks.is_empty() {
                 let target_rev = node.change_id.clone();
                 if let Ok(jj_repo) = JjRepo::load(None) {
-                    let all_bookmarks = jj_repo.all_local_bookmarks();
+                    let mut all_bookmarks = jj_repo.all_local_bookmarks();
                     if all_bookmarks.is_empty() {
                         effects.push(Effect::SetStatus {
                             text: "No bookmarks in repository".to_string(),
@@ -354,6 +354,7 @@ pub fn reduce(
                         });
                         return effects;
                     }
+                    sort_bookmarks_by_proximity(&mut all_bookmarks, tree);
                     *mode = ModeState::BookmarkPicker(BookmarkPickerState {
                         all_bookmarks,
                         filter: String::new(),
@@ -1051,6 +1052,25 @@ fn is_bookmark_move_backwards(tree: &TreeState, bookmark_name: &str, dest_rev: &
 
     // check if dest is an ancestor of current position
     super::commands::is_ancestor(dest_rev, current_change_id).unwrap_or(false)
+}
+
+/// Sort bookmarks by proximity to the current cursor position
+fn sort_bookmarks_by_proximity(bookmarks: &mut [String], tree: &TreeState) {
+    let bookmark_indices = tree.bookmark_to_visible_index();
+    let cursor = tree.cursor;
+
+    bookmarks.sort_by(|a, b| {
+        let dist_a = bookmark_indices
+            .get(a)
+            .map(|&idx| idx.abs_diff(cursor))
+            .unwrap_or(usize::MAX);
+        let dist_b = bookmark_indices
+            .get(b)
+            .map(|&idx| idx.abs_diff(cursor))
+            .unwrap_or(usize::MAX);
+
+        dist_a.cmp(&dist_b).then_with(|| a.cmp(b))
+    });
 }
 
 /// Compute indices of entries that will move during rebase
