@@ -2,9 +2,19 @@
 
 A TUI for [Jujutsu](https://github.com/martinvonz/jj) version control.
 
-> **Note:** Alpha software. I use the TUI daily but make changes constantly. Non-TUI commands might be broken and will probably be removed in the future.
+> **Alpha Software** — I use this TUI daily and it handles my regular workflow well. Expect rough edges and frequent changes.
 
 <!-- TODO: Add terminal recording (asciinema/vhs) -->
+
+## What Works Well
+
+- **Rebasing** — visual rebase preview, single commit (`r`), with descendants (`s`), onto trunk (`t`/`T`)
+- **Daily workflow** — editing, committing, diffing, bookmarks, undo
+- **Navigation** — keyboard-driven with prefix menus and zoom levels
+
+## Work in Progress
+
+- Conflict resolution needs improvement
 
 ## Features
 
@@ -35,31 +45,70 @@ jju
 
 ### Navigation
 
-| Key | Action |
-|-----|--------|
-| `j` / `↓` | Move down |
-| `k` / `↑` | Move up |
-| `Enter` | Select / Expand |
-| `Esc` | Back / Cancel |
-| `q` | Quit |
-
-### Prefix Menus
-
-| Key | Menu |
-|-----|------|
-| `g` | Go to (navigation) |
-| `z` | Zoom controls |
-| `b` | Bookmark actions |
+| Key                 | Action                          |
+| ------------------- | ------------------------------- |
+| `j` / `↓`           | Move down                       |
+| `k` / `↑`           | Move up                         |
+| `Enter`             | Toggle focus / zoom             |
+| `Tab` / `Space`     | Toggle expanded                 |
+| `Esc`               | Back / Cancel / Clear selection |
+| `@`                 | Jump to working copy            |
+| `Ctrl+u` / `Ctrl+d` | Page up / down                  |
+| `q`                 | Quit                            |
 
 ### Actions
 
-| Key | Action |
-|-----|--------|
-| `e` | Edit commit |
-| `d` | Show diff |
-| `r` | Rebase |
-| `n` | New commit |
-| `s` | Split |
+| Key | Action              |
+| --- | ------------------- |
+| `e` | Edit commit         |
+| `d` | Show diff           |
+| `D` | Edit description    |
+| `n` | New commit          |
+| `c` | Commit working copy |
+| `a` | Abandon commit      |
+| `u` | Undo                |
+| `Q` | Squash              |
+
+### Rebase
+
+| Key | Action                               |
+| --- | ------------------------------------ |
+| `r` | Rebase single commit                 |
+| `s` | Rebase with descendants              |
+| `t` | Rebase onto trunk (single)           |
+| `T` | Rebase onto trunk (with descendants) |
+
+### Selection
+
+| Key | Action            |
+| --- | ----------------- |
+| `x` | Toggle selection  |
+| `v` | Enter select mode |
+
+### Git
+
+| Key  | Action                |
+| ---- | --------------------- |
+| `p`  | Push current bookmark |
+| `P`  | Push all bookmarks    |
+| `gi` | Git import            |
+| `ge` | Git export            |
+
+### View
+
+| Key | Action            |
+| --- | ----------------- |
+| `f` | Toggle full mode  |
+| `\` | Toggle split view |
+| `?` | Help              |
+
+### Prefix Menus
+
+| Key | Menu                                                   |
+| --- | ------------------------------------------------------ |
+| `g` | Git operations (`gi` import, `ge` export)              |
+| `z` | Zoom/scroll (`zt` top, `zb` bottom, `zz` center)       |
+| `b` | Bookmark actions (`bm` move, `bs` create, `bd` delete) |
 
 ## Building from Source
 
