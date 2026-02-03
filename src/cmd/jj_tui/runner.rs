@@ -219,6 +219,42 @@ pub fn run_effects(
                 }
             },
 
+            Effect::RunGitPushMultiple { bookmarks } => {
+                let mut succeeded = Vec::new();
+                let mut failed = Vec::new();
+
+                for bookmark in bookmarks {
+                    match commands::git::push_bookmark(&bookmark) {
+                        Ok(_) => succeeded.push(bookmark),
+                        Err(e) => failed.push((bookmark, e.to_string())),
+                    }
+                }
+
+                if failed.is_empty() {
+                    let msg = if succeeded.len() == 1 {
+                        format!("Pushed bookmark '{}'", succeeded[0])
+                    } else {
+                        format!("Pushed {} bookmarks", succeeded.len())
+                    };
+                    result.status_message = Some((msg, MessageKind::Success));
+                } else if succeeded.is_empty() {
+                    let first_err = &failed[0];
+                    let msg = if failed.len() == 1 {
+                        format!("Push failed for '{}': {}", first_err.0, first_err.1)
+                    } else {
+                        format!("Push failed for {} bookmarks", failed.len())
+                    };
+                    result.status_message = Some((msg, MessageKind::Error));
+                } else {
+                    let msg = format!(
+                        "Pushed {} bookmarks, {} failed",
+                        succeeded.len(),
+                        failed.len()
+                    );
+                    result.status_message = Some((msg, MessageKind::Warning));
+                }
+            }
+
             Effect::RunGitPushAll => match commands::git::push_all() {
                 Ok(_) => {
                     result.status_message =

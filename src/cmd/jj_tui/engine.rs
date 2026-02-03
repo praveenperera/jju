@@ -9,7 +9,7 @@ use super::handlers;
 use super::state::{
     BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, ConfirmAction, ConfirmState,
     ConflictsState, DiffState, MessageKind, ModeState, MovingBookmarkState, PendingOperation,
-    PendingSquash, RebaseState, RebaseType, SquashState,
+    PendingSquash, PushSelectState, RebaseState, RebaseType, SquashState,
 };
 use super::tree::TreeState;
 use crate::jj_lib_helpers::JjRepo;
@@ -970,9 +970,24 @@ pub fn reduce(
                 return effects;
             }
 
-            let bookmark = node.bookmarks[0].name.clone();
-            effects.push(Effect::RunGitPush { bookmark });
-            effects.push(Effect::RefreshTree);
+            // single bookmark: push immediately
+            if node.bookmarks.len() == 1 {
+                let bookmark = node.bookmarks[0].name.clone();
+                effects.push(Effect::RunGitPush { bookmark });
+                effects.push(Effect::RefreshTree);
+            } else {
+                // multiple bookmarks: show multi-select picker with all pre-selected
+                let all_bookmarks: Vec<String> =
+                    node.bookmarks.iter().map(|b| b.name.clone()).collect();
+                let selected: HashSet<usize> = (0..all_bookmarks.len()).collect();
+                *mode = ModeState::PushSelect(PushSelectState {
+                    all_bookmarks,
+                    filter: String::new(),
+                    filter_cursor: 0,
+                    cursor_index: 0,
+                    selected,
+                });
+            }
         }
 
         Action::GitPushAll => {
@@ -1034,6 +1049,112 @@ pub fn reduce(
                 *pending_operation = Some(PendingOperation::Resolve { file });
                 *mode = ModeState::Normal;
             }
+        }
+
+        // Push select mode
+        Action::PushSelectUp => {
+            if let ModeState::PushSelect(state) = mode
+                && state.cursor_index > 0
+            {
+                state.cursor_index -= 1;
+            }
+        }
+
+        Action::PushSelectDown => {
+            if let ModeState::PushSelect(state) = mode {
+                let filtered_count = state.filtered_bookmarks().len();
+                if state.cursor_index < filtered_count.saturating_sub(1) {
+                    state.cursor_index += 1;
+                }
+            }
+        }
+
+        Action::PushSelectToggle => {
+            if let ModeState::PushSelect(state) = mode {
+                let filtered = state.filtered_bookmarks();
+                if let Some(&(original_idx, _)) = filtered.get(state.cursor_index) {
+                    if state.selected.contains(&original_idx) {
+                        state.selected.remove(&original_idx);
+                    } else {
+                        state.selected.insert(original_idx);
+                    }
+                }
+            }
+        }
+
+        Action::PushSelectAll => {
+            if let ModeState::PushSelect(state) = mode {
+                // select all in filtered view - collect indices first to avoid borrow conflict
+                let filtered_indices: Vec<usize> =
+                    state.filtered_bookmarks().into_iter().map(|(i, _)| i).collect();
+                for idx in filtered_indices {
+                    state.selected.insert(idx);
+                }
+            }
+        }
+
+        Action::PushSelectNone => {
+            if let ModeState::PushSelect(state) = mode {
+                // deselect all in filtered view - collect indices first to avoid borrow conflict
+                let filtered_indices: Vec<usize> =
+                    state.filtered_bookmarks().into_iter().map(|(i, _)| i).collect();
+                for idx in filtered_indices {
+                    state.selected.remove(&idx);
+                }
+            }
+        }
+
+        Action::PushSelectFilterChar(c) => {
+            if let ModeState::PushSelect(state) = mode {
+                state.filter.insert(state.filter_cursor, c);
+                state.filter_cursor += c.len_utf8();
+                state.cursor_index = 0;
+            }
+        }
+
+        Action::PushSelectFilterBackspace => {
+            if let ModeState::PushSelect(state) = mode
+                && state.filter_cursor > 0
+            {
+                let prev = state.filter[..state.filter_cursor]
+                    .char_indices()
+                    .last()
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                state.filter.remove(prev);
+                state.filter_cursor = prev;
+                state.cursor_index = 0;
+            }
+        }
+
+        Action::PushSelectConfirm => {
+            let ModeState::PushSelect(state) = &*mode else {
+                *mode = ModeState::Normal;
+                return effects;
+            };
+
+            if state.selected.is_empty() {
+                effects.push(Effect::SetStatus {
+                    text: "No bookmarks selected".to_string(),
+                    kind: MessageKind::Warning,
+                });
+                *mode = ModeState::Normal;
+                return effects;
+            }
+
+            let bookmarks: Vec<String> = state
+                .selected
+                .iter()
+                .filter_map(|&idx| state.all_bookmarks.get(idx).cloned())
+                .collect();
+
+            effects.push(Effect::RunGitPushMultiple { bookmarks });
+            effects.push(Effect::RefreshTree);
+            *mode = ModeState::Normal;
+        }
+
+        Action::ExitPushSelect => {
+            *mode = ModeState::Normal;
         }
     }
 
@@ -1536,5 +1657,116 @@ mod tests {
         let effects = state.reduce(Action::RefreshTree);
         assert_eq!(effects.len(), 1);
         assert!(matches!(effects[0], Effect::RefreshTree));
+    }
+
+    #[test]
+    fn test_git_push_single_bookmark_pushes_immediately() {
+        let tree = make_tree(vec![make_node_with_bookmarks("rev0", 0, &["feature"])]);
+        let mut state = TestState::new(tree);
+
+        let effects = state.reduce(Action::GitPush);
+
+        assert!(matches!(state.mode, ModeState::Normal));
+        assert!(effects.iter().any(|e| matches!(e, Effect::RunGitPush { bookmark } if bookmark == "feature")));
+    }
+
+    #[test]
+    fn test_git_push_multiple_bookmarks_enters_push_select_mode() {
+        let tree = make_tree(vec![make_node_with_bookmarks("rev0", 0, &["feature-a", "feature-b"])]);
+        let mut state = TestState::new(tree);
+
+        let effects = state.reduce(Action::GitPush);
+
+        // should enter push select mode, not emit push effect
+        assert!(effects.is_empty());
+        let ModeState::PushSelect(push_state) = &state.mode else {
+            panic!("expected PushSelect mode");
+        };
+        assert_eq!(push_state.all_bookmarks.len(), 2);
+        assert!(push_state.selected.contains(&0));
+        assert!(push_state.selected.contains(&1));
+    }
+
+    #[test]
+    fn test_push_select_toggle_selection() {
+        let tree = make_tree(vec![make_node_with_bookmarks("rev0", 0, &["a", "b", "c"])]);
+        let mut state = TestState::new(tree);
+        state.reduce(Action::GitPush);
+
+        // all should be selected initially
+        let ModeState::PushSelect(push_state) = &state.mode else {
+            panic!("expected PushSelect mode");
+        };
+        assert_eq!(push_state.selected.len(), 3);
+
+        // toggle first one off
+        state.reduce(Action::PushSelectToggle);
+        let ModeState::PushSelect(push_state) = &state.mode else {
+            panic!("expected PushSelect mode");
+        };
+        assert!(!push_state.selected.contains(&0));
+        assert!(push_state.selected.contains(&1));
+        assert!(push_state.selected.contains(&2));
+    }
+
+    #[test]
+    fn test_push_select_confirm_pushes_selected() {
+        let tree = make_tree(vec![make_node_with_bookmarks("rev0", 0, &["a", "b", "c"])]);
+        let mut state = TestState::new(tree);
+        state.reduce(Action::GitPush);
+
+        // deselect "a" (index 0)
+        state.reduce(Action::PushSelectToggle);
+
+        let effects = state.reduce(Action::PushSelectConfirm);
+
+        assert!(matches!(state.mode, ModeState::Normal));
+        let push_effect = effects.iter().find(|e| matches!(e, Effect::RunGitPushMultiple { .. }));
+        assert!(push_effect.is_some());
+        if let Some(Effect::RunGitPushMultiple { bookmarks }) = push_effect {
+            assert_eq!(bookmarks.len(), 2);
+            assert!(bookmarks.contains(&"b".to_string()));
+            assert!(bookmarks.contains(&"c".to_string()));
+            assert!(!bookmarks.contains(&"a".to_string()));
+        }
+    }
+
+    #[test]
+    fn test_push_select_none_clears_all() {
+        let tree = make_tree(vec![make_node_with_bookmarks("rev0", 0, &["a", "b"])]);
+        let mut state = TestState::new(tree);
+        state.reduce(Action::GitPush);
+
+        state.reduce(Action::PushSelectNone);
+
+        let ModeState::PushSelect(push_state) = &state.mode else {
+            panic!("expected PushSelect mode");
+        };
+        assert!(push_state.selected.is_empty());
+    }
+
+    #[test]
+    fn test_push_select_all_selects_all() {
+        let tree = make_tree(vec![make_node_with_bookmarks("rev0", 0, &["a", "b"])]);
+        let mut state = TestState::new(tree);
+        state.reduce(Action::GitPush);
+        state.reduce(Action::PushSelectNone);
+        state.reduce(Action::PushSelectAll);
+
+        let ModeState::PushSelect(push_state) = &state.mode else {
+            panic!("expected PushSelect mode");
+        };
+        assert_eq!(push_state.selected.len(), 2);
+    }
+
+    #[test]
+    fn test_exit_push_select_returns_to_normal() {
+        let tree = make_tree(vec![make_node_with_bookmarks("rev0", 0, &["a", "b"])]);
+        let mut state = TestState::new(tree);
+        state.reduce(Action::GitPush);
+
+        state.reduce(Action::ExitPushSelect);
+
+        assert!(matches!(state.mode, ModeState::Normal));
     }
 }

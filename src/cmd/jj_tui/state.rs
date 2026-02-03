@@ -51,6 +51,7 @@ pub enum ModeState {
     #[allow(dead_code)]
     BookmarkSelect(BookmarkSelectState),
     BookmarkPicker(BookmarkPickerState),
+    PushSelect(PushSelectState),
     Squashing(SquashState),
     Conflicts(ConflictsState),
 }
@@ -204,6 +205,45 @@ impl BookmarkPickerState {
                 .filter(|b| b.to_lowercase().contains(&filter_lower))
                 .collect()
         }
+    }
+}
+
+/// State for multi-select bookmark push
+#[derive(Debug, Clone)]
+pub struct PushSelectState {
+    pub all_bookmarks: Vec<String>,
+    pub filter: String,
+    pub filter_cursor: usize,
+    pub cursor_index: usize,
+    pub selected: ahash::HashSet<usize>, // indices into all_bookmarks (not filtered)
+}
+
+impl PushSelectState {
+    /// Get bookmarks that match the current filter with their original indices
+    pub fn filtered_bookmarks(&self) -> Vec<(usize, &str)> {
+        if self.filter.is_empty() {
+            self.all_bookmarks
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (i, s.as_str()))
+                .collect()
+        } else {
+            let filter_lower = self.filter.to_lowercase();
+            self.all_bookmarks
+                .iter()
+                .enumerate()
+                .filter(|(_, b)| b.to_lowercase().contains(&filter_lower))
+                .map(|(i, s)| (i, s.as_str()))
+                .collect()
+        }
+    }
+
+    /// Count selected bookmarks in the filtered view
+    pub fn selected_filtered_count(&self) -> usize {
+        self.filtered_bookmarks()
+            .iter()
+            .filter(|(idx, _)| self.selected.contains(idx))
+            .count()
     }
 }
 

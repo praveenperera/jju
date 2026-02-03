@@ -46,6 +46,9 @@ pub enum Effect {
     RunGitPush {
         bookmark: String,
     },
+    RunGitPushMultiple {
+        bookmarks: Vec<String>,
+    },
     RunGitPushAll,
     RunGitFetch,
     RunGitImport,

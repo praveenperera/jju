@@ -109,6 +109,17 @@ pub enum Action {
     GitImport,
     GitExport,
 
+    // Push select mode
+    PushSelectUp,
+    PushSelectDown,
+    PushSelectToggle,
+    PushSelectAll,
+    PushSelectNone,
+    PushSelectFilterChar(char),
+    PushSelectFilterBackspace,
+    PushSelectConfirm,
+    ExitPushSelect,
+
     // Prefix keys
     SetPendingKey(char),
     ClearPendingKey,

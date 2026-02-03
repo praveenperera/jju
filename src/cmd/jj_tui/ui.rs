@@ -3,8 +3,8 @@ use super::keybindings;
 use super::preview::NodeRole;
 use super::state::{
     BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState,
-    ConfirmState, ConflictsState, DiffLineKind, DiffState, MessageKind, ModeState, RebaseType,
-    StatusMessage,
+    ConfirmState, ConflictsState, DiffLineKind, DiffState, MessageKind, ModeState, PushSelectState,
+    RebaseType, StatusMessage,
 };
 use super::theme;
 use super::tree::BookmarkInfo;
@@ -196,6 +196,10 @@ pub fn render_with_vms(frame: &mut Frame, app: &App, vms: &[TreeRowVm]) {
 
     if let ModeState::BookmarkPicker(ref state) = app.mode {
         render_bookmark_picker(frame, state);
+    }
+
+    if let ModeState::PushSelect(ref state) = app.mode {
+        render_push_select(frame, state);
     }
 
     if let ModeState::Conflicts(ref state) = app.mode {
@@ -473,6 +477,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         ModeState::BookmarkInput(_) => "BOOKMARK",
         ModeState::BookmarkSelect(_) => "SELECT BM",
         ModeState::BookmarkPicker(_) => "PICK BM",
+        ModeState::PushSelect(_) => "PUSH SELECT",
         ModeState::Squashing(_) => "SQUASH",
         ModeState::Conflicts(_) => "CONFLICTS",
     };
@@ -1346,6 +1351,171 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
     };
     lines.push(Line::from(Span::styled(
         footer,
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, inner);
+}
+
+fn render_push_select(frame: &mut Frame, state: &PushSelectState) {
+    let area = frame.area();
+    let filtered = state.filtered_bookmarks();
+    let list_height = filtered.len().clamp(1, 10);
+    let popup_height = (8 + list_height) as u16;
+    let popup_width = 50u16.min(area.width.saturating_sub(4));
+
+    let popup_area = Rect {
+        x: (area.width.saturating_sub(popup_width)) / 2,
+        y: (area.height.saturating_sub(popup_height)) / 2,
+        width: popup_width,
+        height: popup_height,
+    };
+
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .title(" Push Bookmarks ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let inner = block.inner(popup_area);
+    frame.render_widget(
+        block.style(Style::default().bg(theme::POPUP_BG)),
+        popup_area,
+    );
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // show selection count
+    let selected_count = state.selected_filtered_count();
+    let total_filtered = filtered.len();
+    lines.push(Line::from(Span::styled(
+        format!(
+            "Select bookmarks to push: {}/{} selected",
+            selected_count, total_filtered
+        ),
+        Style::default().fg(Color::Yellow),
+    )));
+    lines.push(Line::from(""));
+
+    // show filter input
+    let filter_display = if state.filter.is_empty() {
+        "type to filter...".to_string()
+    } else {
+        state.filter.clone()
+    };
+    let filter_style = if state.filter.is_empty() {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::White)
+    };
+    lines.push(Line::from(vec![
+        Span::styled("Filter: ", Style::default().fg(Color::Green)),
+        Span::styled(filter_display, filter_style),
+        Span::styled("█", Style::default().fg(Color::Cyan)),
+    ]));
+    lines.push(Line::from(""));
+
+    // show bookmarks with checkboxes
+    if filtered.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  (no matching bookmarks)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for (display_idx, (original_idx, bookmark)) in filtered.iter().take(10).enumerate() {
+            let is_cursor = display_idx == state.cursor_index;
+            let is_selected = state.selected.contains(original_idx);
+
+            let marker = if is_cursor { "> " } else { "  " };
+            let checkbox = if is_selected { "[x] " } else { "[ ] " };
+
+            let style = if is_cursor {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else if is_selected {
+                Style::default().fg(Color::Green)
+            } else {
+                Style::default().fg(Color::White)
+            };
+
+            lines.push(Line::from(Span::styled(
+                format!("{marker}{checkbox}{bookmark}"),
+                style,
+            )));
+        }
+
+        if filtered.len() > 10 {
+            lines.push(Line::from(Span::styled(
+                format!("  ... and {} more", filtered.len() - 10),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+    }
+
+    lines.push(Line::from(""));
+    let up_key = keybindings::display_keys_joined(
+        keybindings::ModeId::PushSelect,
+        None,
+        "up",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let down_key = keybindings::display_keys_joined(
+        keybindings::ModeId::PushSelect,
+        None,
+        "down",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let toggle_key = keybindings::display_keys_joined(
+        keybindings::ModeId::PushSelect,
+        None,
+        "toggle",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let all_key = keybindings::display_keys_joined(
+        keybindings::ModeId::PushSelect,
+        None,
+        "all",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let none_key = keybindings::display_keys_joined(
+        keybindings::ModeId::PushSelect,
+        None,
+        "none",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let push_key = keybindings::display_keys_joined(
+        keybindings::ModeId::PushSelect,
+        None,
+        "push",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let cancel_key = keybindings::display_keys_joined(
+        keybindings::ModeId::PushSelect,
+        None,
+        "cancel",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    lines.push(Line::from(Span::styled(
+        format!(
+            "{up_key}/{down_key}: nav | {toggle_key}: toggle | {all_key}/{none_key}: all/none | {push_key}: push | {cancel_key}: cancel"
+        ),
         Style::default().fg(Color::DarkGray),
     )));
 
