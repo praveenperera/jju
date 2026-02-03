@@ -3,7 +3,7 @@
 //! This module contains all the state enums and structs used by the TUI.
 
 use ratatui::style::Color;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 // Prefix key menu definitions
 
@@ -135,6 +135,20 @@ pub struct StatusMessage {
     pub expires: Instant,
 }
 
+impl StatusMessage {
+    pub fn new(text: String, kind: MessageKind) -> Self {
+        Self {
+            text,
+            kind,
+            expires: Instant::now() + Duration::from_secs(3),
+        }
+    }
+
+    pub fn is_expired(&self) -> bool {
+        Instant::now() > self.expires
+    }
+}
+
 // Confirmation state
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -163,6 +177,7 @@ pub struct RebaseState {
     pub rebase_type: RebaseType,
     pub dest_cursor: usize,
     pub allow_branches: bool,
+    #[allow(dead_code)]
     pub op_before: String,
 }
 
