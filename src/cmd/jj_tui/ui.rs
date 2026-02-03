@@ -593,18 +593,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_help(frame: &mut Frame) {
-    let area = frame.area();
-    let popup_width = 56u16.min(area.width.saturating_sub(4));
-    let popup_height = 50u16.min(area.height.saturating_sub(4));
-
-    let popup_area = Rect {
-        x: (area.width.saturating_sub(popup_width)) / 2,
-        y: (area.height.saturating_sub(popup_height)) / 2,
-        width: popup_width,
-        height: popup_height,
-    };
-
-    frame.render_widget(Clear, popup_area);
+    use unicode_width::UnicodeWidthStr;
 
     let help_text = vec![
         Line::from(Span::styled(
@@ -667,6 +656,7 @@ fn render_help(frame: &mut Frame) {
         Line::from("  b m       Move bookmark"),
         Line::from("  b s       Set/create bookmark"),
         Line::from("  b d       Delete bookmark"),
+        Line::from("  g f       Git fetch"),
         Line::from("  g i       Git import"),
         Line::from("  g e       Git export"),
         Line::from(""),
@@ -683,6 +673,28 @@ fn render_help(frame: &mut Frame) {
         Line::from("  ?         Toggle help"),
         Line::from("  q         Quit"),
     ];
+
+    // calculate dimensions from content
+    let area = frame.area();
+    let content_width = help_text
+        .iter()
+        .map(|line| line.spans.iter().map(|s| s.content.width()).sum::<usize>())
+        .max()
+        .unwrap_or(0) as u16;
+    let content_height = help_text.len() as u16;
+
+    // add padding for borders (2) and some margin (2)
+    let popup_width = (content_width + 4).min(area.width.saturating_sub(4));
+    let popup_height = (content_height + 2).min(area.height.saturating_sub(4));
+
+    let popup_area = Rect {
+        x: (area.width.saturating_sub(popup_width)) / 2,
+        y: (area.height.saturating_sub(popup_height)) / 2,
+        width: popup_width,
+        height: popup_height,
+    };
+
+    frame.render_widget(Clear, popup_area);
 
     let help = Paragraph::new(help_text)
         .block(
