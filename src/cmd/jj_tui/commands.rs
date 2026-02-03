@@ -6,6 +6,21 @@
 use duct::cmd;
 use eyre::Result;
 
+/// Run a command and include stderr in the error message on failure
+fn run_with_stderr(expr: duct::Expression) -> Result<()> {
+    let output = expr.stdout_null().stderr_capture().unchecked().run()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        if stderr.is_empty() {
+            eyre::bail!("command failed with exit code {:?}", output.status.code());
+        } else {
+            eyre::bail!("{}", stderr);
+        }
+    }
+    Ok(())
+}
+
 /// Get the current operation ID for potential undo
 pub fn get_current_op_id() -> Result<String> {
     let output = cmd!("jj", "op", "log", "--limit", "1", "-T", "id", "--no-graph")
@@ -17,74 +32,48 @@ pub fn get_current_op_id() -> Result<String> {
 
 /// Restore to a previous operation (undo)
 pub fn restore_op(op_id: &str) -> Result<()> {
-    cmd!("jj", "op", "restore", op_id)
-        .stdout_null()
-        .stderr_null()
-        .run()?;
-    Ok(())
+    run_with_stderr(cmd!("jj", "op", "restore", op_id))
 }
 
 /// Git operations
 pub mod git {
+    use super::run_with_stderr;
     use duct::cmd;
     use eyre::Result;
 
     pub fn push_bookmark(name: &str) -> Result<()> {
-        cmd!("jj", "git", "push", "--bookmark", name)
-            .stdout_null()
-            .stderr_capture()
-            .run()?;
-        Ok(())
+        run_with_stderr(cmd!("jj", "git", "push", "--bookmark", name))
     }
 
     pub fn import() -> Result<()> {
-        cmd!("jj", "git", "import")
-            .stdout_null()
-            .stderr_capture()
-            .run()?;
-        Ok(())
+        run_with_stderr(cmd!("jj", "git", "import"))
     }
 
     pub fn export() -> Result<()> {
-        cmd!("jj", "git", "export")
-            .stdout_null()
-            .stderr_capture()
-            .run()?;
-        Ok(())
+        run_with_stderr(cmd!("jj", "git", "export"))
     }
 
     pub fn push_all() -> Result<()> {
-        cmd!("jj", "git", "push", "--all")
-            .stdout_null()
-            .stderr_capture()
-            .run()?;
-        Ok(())
+        run_with_stderr(cmd!("jj", "git", "push", "--all"))
     }
 
     pub fn fetch() -> Result<()> {
-        cmd!("jj", "git", "fetch")
-            .stdout_null()
-            .stderr_capture()
-            .run()?;
-        Ok(())
+        run_with_stderr(cmd!("jj", "git", "fetch"))
     }
 }
 
 /// Bookmark operations
 pub mod bookmark {
+    use super::run_with_stderr;
     use duct::cmd;
     use eyre::Result;
 
     pub fn set(name: &str, rev: &str) -> Result<()> {
-        cmd!("jj", "bookmark", "set", name, "-r", rev)
-            .stdout_null()
-            .stderr_capture()
-            .run()?;
-        Ok(())
+        run_with_stderr(cmd!("jj", "bookmark", "set", name, "-r", rev))
     }
 
     pub fn set_allow_backwards(name: &str, rev: &str) -> Result<()> {
-        cmd!(
+        run_with_stderr(cmd!(
             "jj",
             "bookmark",
             "set",
@@ -92,94 +81,62 @@ pub mod bookmark {
             "-r",
             rev,
             "--allow-backwards"
-        )
-        .stdout_null()
-        .stderr_capture()
-        .run()?;
-        Ok(())
+        ))
     }
 
     pub fn delete(name: &str) -> Result<()> {
-        cmd!("jj", "bookmark", "delete", name)
-            .stdout_null()
-            .stderr_capture()
-            .run()?;
-        Ok(())
+        run_with_stderr(cmd!("jj", "bookmark", "delete", name))
     }
 }
 
 /// Revision operations
 pub mod revision {
+    use super::run_with_stderr;
     use duct::cmd;
     use eyre::Result;
 
     pub fn edit(rev: &str) -> Result<()> {
-        cmd!("jj", "edit", rev).stdout_null().stderr_null().run()?;
-        Ok(())
+        run_with_stderr(cmd!("jj", "edit", rev))
     }
 
     pub fn new(rev: &str) -> Result<()> {
-        cmd!("jj", "new", rev).stdout_null().stderr_null().run()?;
-        Ok(())
+        run_with_stderr(cmd!("jj", "new", rev))
     }
 
     pub fn commit(message: &str) -> Result<()> {
-        cmd!("jj", "commit", "-m", message)
-            .stdout_null()
-            .stderr_capture()
-            .run()?;
-        Ok(())
+        run_with_stderr(cmd!("jj", "commit", "-m", message))
     }
 
     pub fn abandon(revset: &str) -> Result<()> {
-        cmd!("jj", "abandon", revset)
-            .stdout_null()
-            .stderr_capture()
-            .run()?;
-        Ok(())
+        run_with_stderr(cmd!("jj", "abandon", revset))
     }
 }
 
 /// Rebase operations
 pub mod rebase {
+    use super::run_with_stderr;
     use duct::cmd;
     use eyre::Result;
 
     pub fn single(source: &str, dest: &str) -> Result<()> {
-        cmd!("jj", "rebase", "-r", source, "-A", dest)
-            .stdout_null()
-            .stderr_capture()
-            .run()?;
-        Ok(())
+        run_with_stderr(cmd!("jj", "rebase", "-r", source, "-A", dest))
     }
 
     pub fn single_with_next(source: &str, dest: &str, next: &str) -> Result<()> {
-        cmd!("jj", "rebase", "-r", source, "-A", dest, "-B", next)
-            .stdout_null()
-            .stderr_capture()
-            .run()?;
-        Ok(())
+        run_with_stderr(cmd!("jj", "rebase", "-r", source, "-A", dest, "-B", next))
     }
 
     pub fn with_descendants(source: &str, dest: &str) -> Result<()> {
-        cmd!("jj", "rebase", "-s", source, "-A", dest)
-            .stdout_null()
-            .stderr_capture()
-            .run()?;
-        Ok(())
+        run_with_stderr(cmd!("jj", "rebase", "-s", source, "-A", dest))
     }
 
     pub fn with_descendants_and_next(source: &str, dest: &str, next: &str) -> Result<()> {
-        cmd!("jj", "rebase", "-s", source, "-A", dest, "-B", next)
-            .stdout_null()
-            .stderr_capture()
-            .run()?;
-        Ok(())
+        run_with_stderr(cmd!("jj", "rebase", "-s", source, "-A", dest, "-B", next))
     }
 
     /// Rebase single commit onto trunk()
     pub fn single_onto_trunk(source: &str) -> Result<()> {
-        cmd!(
+        run_with_stderr(cmd!(
             "jj",
             "rebase",
             "-r",
@@ -187,16 +144,12 @@ pub mod rebase {
             "-d",
             "trunk()",
             "--skip-emptied"
-        )
-        .stdout_null()
-        .stderr_capture()
-        .run()?;
-        Ok(())
+        ))
     }
 
     /// Rebase commit with descendants onto trunk()
     pub fn with_descendants_onto_trunk(source: &str) -> Result<()> {
-        cmd!(
+        run_with_stderr(cmd!(
             "jj",
             "rebase",
             "-s",
@@ -204,11 +157,7 @@ pub mod rebase {
             "-d",
             "trunk()",
             "--skip-emptied"
-        )
-        .stdout_null()
-        .stderr_capture()
-        .run()?;
-        Ok(())
+        ))
     }
 }
 
