@@ -16,6 +16,7 @@ pub struct TreeNode {
     pub full_description: String,
     pub bookmarks: Vec<BookmarkInfo>,
     pub is_working_copy: bool,
+    pub has_conflicts: bool,
     pub parent_ids: Vec<String>,
     pub depth: usize,
     pub author_name: String,
@@ -103,6 +104,7 @@ impl TreeState {
                 .collect();
 
             let is_working_copy = change_id == working_copy_id;
+            let has_conflicts = JjRepo::has_conflict(commit);
 
             let author_name = JjRepo::author_name(commit);
             let author_email = JjRepo::author_email(commit);
@@ -115,6 +117,7 @@ impl TreeState {
                 full_description,
                 bookmarks,
                 is_working_copy,
+                has_conflicts,
                 parent_ids: parent_ids.clone(),
                 depth: 0,
                 author_name,

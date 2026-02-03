@@ -19,6 +19,7 @@ pub struct TreeRowVm {
     pub is_dimmed: bool,
     pub is_zoom_root: bool,
     pub is_working_copy: bool,
+    pub has_conflicts: bool,
 
     // Pre-formatted display data (NOT styled - just strings)
     pub change_id_prefix: String,
@@ -354,6 +355,7 @@ fn build_row_vm(
         is_dimmed,
         is_zoom_root,
         is_working_copy: node.is_working_copy,
+        has_conflicts: node.has_conflicts,
         change_id_prefix: prefix.to_string(),
         change_id_suffix: suffix.to_string(),
         bookmarks: node.bookmarks.clone(),
@@ -380,6 +382,7 @@ mod tests {
             full_description: String::new(),
             bookmarks: vec![],
             is_working_copy: false,
+            has_conflicts: false,
             parent_ids: vec![],
             depth,
             author_name: String::new(),

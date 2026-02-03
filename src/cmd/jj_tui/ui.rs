@@ -290,6 +290,11 @@ fn render_row(vm: &TreeRowVm) -> Line<'static> {
         spans.push(Span::styled(zoom_marker, Style::default().fg(Color::Cyan)));
     }
 
+    // add conflict marker in red
+    if vm.has_conflicts {
+        spans.push(Span::styled("× ", Style::default().fg(Color::Red)));
+    }
+
     spans.extend([
         Span::raw(format!("{indent}{connector}{selection_marker}{at_marker}(")),
         Span::styled(
@@ -833,6 +838,7 @@ mod tests {
             full_description: String::new(),
             bookmarks: vec![],
             is_working_copy: false,
+            has_conflicts: false,
             parent_ids: vec![],
             depth,
             author_name: String::new(),

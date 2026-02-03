@@ -276,6 +276,11 @@ impl JjRepo {
             .wrap_err("failed to get parent commits")
     }
 
+    /// Check if a commit has conflicts in its tree
+    pub fn has_conflict(commit: &Commit) -> bool {
+        commit.has_conflict()
+    }
+
     /// Get the first line of a commit's description
     pub fn description_first_line(commit: &Commit) -> String {
         commit

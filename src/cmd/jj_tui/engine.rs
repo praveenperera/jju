@@ -1203,6 +1203,7 @@ mod tests {
             full_description: String::new(),
             bookmarks: vec![],
             is_working_copy: false,
+            has_conflicts: false,
             parent_ids: vec![],
             depth,
             author_name: String::new(),
