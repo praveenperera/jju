@@ -18,6 +18,83 @@ use ratatui::{
 };
 use tui_popup::Popup;
 
+#[derive(Debug, Clone, Copy)]
+struct Panes {
+    primary: Rect,
+    secondary: Option<Rect>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PaneContent<'a> {
+    Tree,
+    Diff(&'a DiffState),
+    DiffPlaceholder,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PanePlan<'a> {
+    primary: PaneContent<'a>,
+    secondary: Option<PaneContent<'a>>,
+}
+
+fn panes_for(area: Rect, split_view: bool) -> Panes {
+    if split_view {
+        let split = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(area);
+        Panes {
+            primary: split[0],
+            secondary: Some(split[1]),
+        }
+    } else {
+        Panes {
+            primary: area,
+            secondary: None,
+        }
+    }
+}
+
+fn pane_plan<'a>(app: &'a App, has_secondary: bool) -> PanePlan<'a> {
+    if has_secondary {
+        match &app.mode {
+            ModeState::ViewingDiff(state) => PanePlan {
+                primary: PaneContent::Tree,
+                secondary: Some(PaneContent::Diff(state)),
+            },
+            _ => PanePlan {
+                primary: PaneContent::Tree,
+                secondary: Some(PaneContent::DiffPlaceholder),
+            },
+        }
+    } else {
+        match &app.mode {
+            ModeState::ViewingDiff(state) => PanePlan {
+                primary: PaneContent::Diff(state),
+                secondary: None,
+            },
+            _ => PanePlan {
+                primary: PaneContent::Tree,
+                secondary: None,
+            },
+        }
+    }
+}
+
+fn render_pane(
+    frame: &mut Frame,
+    app: &App,
+    vms: &[TreeRowVm],
+    area: Rect,
+    content: PaneContent<'_>,
+) {
+    match content {
+        PaneContent::Tree => render_tree_with_vms(frame, app, area, vms),
+        PaneContent::Diff(state) => render_diff(frame, state, area),
+        PaneContent::DiffPlaceholder => render_diff_pane(frame, app, area),
+    }
+}
+
 /// Format bookmarks to fit within max_width, showing "+N" for overflow
 /// Diverged bookmarks are marked with * suffix
 pub(crate) fn format_bookmarks_truncated(bookmarks: &[BookmarkInfo], max_width: usize) -> String {
@@ -89,31 +166,12 @@ pub fn render_with_vms(frame: &mut Frame, app: &App, vms: &[TreeRowVm]) {
         .constraints([Constraint::Min(0), Constraint::Length(1)])
         .split(frame.area());
 
-    match &app.mode {
-        ModeState::ViewingDiff(state) => {
-            render_diff(frame, state, chunks[0]);
-        }
-        ModeState::Normal
-        | ModeState::Help
-        | ModeState::Selecting
-        | ModeState::Confirming(_)
-        | ModeState::Rebasing(_)
-        | ModeState::MovingBookmark(_)
-        | ModeState::BookmarkInput(_)
-        | ModeState::BookmarkSelect(_)
-        | ModeState::BookmarkPicker(_)
-        | ModeState::Squashing(_) => {
-            if app.split_view {
-                let split = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                    .split(chunks[0]);
-                render_tree_with_vms(frame, app, split[0], vms);
-                render_diff_pane(frame, app, split[1]);
-            } else {
-                render_tree_with_vms(frame, app, chunks[0], vms);
-            }
-        }
+    let panes = panes_for(chunks[0], app.split_view);
+    let plan = pane_plan(app, panes.secondary.is_some());
+
+    render_pane(frame, app, vms, panes.primary, plan.primary);
+    if let (Some(area), Some(content)) = (panes.secondary, plan.secondary) {
+        render_pane(frame, app, vms, area, content);
     }
 
     render_status_bar(frame, app, chunks[1]);
@@ -747,8 +805,195 @@ fn render_diff_pane(frame: &mut Frame, _app: &App, area: Rect) {
     frame.render_widget(block, area);
 
     let hint =
-        Paragraph::new("Press D to view full diff").style(Style::default().fg(Color::DarkGray));
+        Paragraph::new("Press d to view diff").style(Style::default().fg(Color::DarkGray));
     frame.render_widget(hint, inner);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cmd::jj_tui::state::{DiffLine, DiffLineKind, DiffState, ModeState, StyledSpan};
+    use crate::cmd::jj_tui::tree::{TreeNode, TreeState, VisibleEntry};
+    use ahash::{HashMap, HashSet};
+    use ratatui::{backend::TestBackend, Terminal};
+    use syntect::highlighting::ThemeSet;
+    use syntect::parsing::SyntaxSet;
+
+    fn make_node(change_id: &str, depth: usize) -> TreeNode {
+        TreeNode {
+            change_id: change_id.to_string(),
+            unique_prefix_len: 4,
+            description: String::new(),
+            full_description: String::new(),
+            bookmarks: vec![],
+            is_working_copy: false,
+            parent_ids: vec![],
+            depth,
+            author_name: String::new(),
+            author_email: String::new(),
+            timestamp: String::new(),
+        }
+    }
+
+    fn make_tree(nodes: Vec<TreeNode>) -> TreeState {
+        let visible_entries: Vec<VisibleEntry> = nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| VisibleEntry {
+                node_index: i,
+                visual_depth: n.depth,
+            })
+            .collect();
+
+        TreeState {
+            nodes,
+            cursor: 0,
+            scroll_offset: 0,
+            full_mode: true,
+            expanded_entry: None,
+            children_map: HashMap::default(),
+            visible_entries,
+            selected: HashSet::default(),
+            selection_anchor: None,
+            focus_stack: Vec::new(),
+        }
+    }
+
+    fn buffer_to_string(buf: &ratatui::buffer::Buffer) -> String {
+        let mut out = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                out.push_str(buf[(x, y)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    #[test]
+    fn test_split_view_renders_tree_and_diff_when_viewing_diff() {
+        let tree = make_tree(vec![make_node("aaaa", 0)]);
+
+        let diff = DiffState {
+            lines: vec![DiffLine {
+                spans: vec![StyledSpan {
+                    text: "diff content".to_string(),
+                    fg: Color::Reset,
+                }],
+                kind: DiffLineKind::Context,
+            }],
+            scroll_offset: 0,
+            rev: "aaaa".to_string(),
+        };
+
+        let app = App {
+            tree,
+            mode: ModeState::ViewingDiff(diff),
+            should_quit: false,
+            split_view: true,
+            diff_stats_cache: std::collections::HashMap::new(),
+            status_message: None,
+            pending_operation: None,
+            last_op: None,
+            pending_key: None,
+            syntax_set: SyntaxSet::load_defaults_newlines(),
+            theme_set: ThemeSet::load_defaults(),
+        };
+
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).expect("terminal init");
+
+        let vms = build_tree_view(&app, 80);
+        terminal
+            .draw(|frame| render_with_vms(frame, &app, &vms))
+            .expect("terminal draw");
+
+        let screen = buffer_to_string(terminal.backend().buffer());
+        assert!(
+            screen.contains("jj tree"),
+            "expected tree pane title in screen; got:\n{screen}"
+        );
+        assert!(
+            screen.contains("Diff:"),
+            "expected diff pane title in screen; got:\n{screen}"
+        );
+    }
+
+    #[test]
+    fn test_pane_plan_no_secondary_viewing_diff() {
+        let tree = make_tree(vec![make_node("aaaa", 0)]);
+        let diff = DiffState {
+            lines: vec![],
+            scroll_offset: 0,
+            rev: "aaaa".to_string(),
+        };
+        let app = App {
+            tree,
+            mode: ModeState::ViewingDiff(diff),
+            should_quit: false,
+            split_view: false,
+            diff_stats_cache: std::collections::HashMap::new(),
+            status_message: None,
+            pending_operation: None,
+            last_op: None,
+            pending_key: None,
+            syntax_set: SyntaxSet::load_defaults_newlines(),
+            theme_set: ThemeSet::load_defaults(),
+        };
+
+        let plan = pane_plan(&app, false);
+        assert!(matches!(plan.primary, PaneContent::Diff(_)));
+        assert!(plan.secondary.is_none());
+    }
+
+    #[test]
+    fn test_pane_plan_with_secondary_viewing_diff() {
+        let tree = make_tree(vec![make_node("aaaa", 0)]);
+        let diff = DiffState {
+            lines: vec![],
+            scroll_offset: 0,
+            rev: "aaaa".to_string(),
+        };
+        let app = App {
+            tree,
+            mode: ModeState::ViewingDiff(diff),
+            should_quit: false,
+            split_view: true,
+            diff_stats_cache: std::collections::HashMap::new(),
+            status_message: None,
+            pending_operation: None,
+            last_op: None,
+            pending_key: None,
+            syntax_set: SyntaxSet::load_defaults_newlines(),
+            theme_set: ThemeSet::load_defaults(),
+        };
+
+        let plan = pane_plan(&app, true);
+        assert!(matches!(plan.primary, PaneContent::Tree));
+        assert!(matches!(plan.secondary, Some(PaneContent::Diff(_))));
+    }
+
+    #[test]
+    fn test_pane_plan_with_secondary_normal_mode() {
+        let tree = make_tree(vec![make_node("aaaa", 0)]);
+        let app = App {
+            tree,
+            mode: ModeState::Normal,
+            should_quit: false,
+            split_view: true,
+            diff_stats_cache: std::collections::HashMap::new(),
+            status_message: None,
+            pending_operation: None,
+            last_op: None,
+            pending_key: None,
+            syntax_set: SyntaxSet::load_defaults_newlines(),
+            theme_set: ThemeSet::load_defaults(),
+        };
+
+        let plan = pane_plan(&app, true);
+        assert!(matches!(plan.primary, PaneContent::Tree));
+        assert!(matches!(plan.secondary, Some(PaneContent::DiffPlaceholder)));
+    }
 }
 
 
