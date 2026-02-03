@@ -8,7 +8,7 @@ use super::controller::{self, ControllerContext};
 use super::engine;
 use super::handlers;
 use super::runner;
-use super::state::{DiffStats, MessageKind, ModeState, PendingOperation, StatusMessage};
+use super::state::{DiffStats, MessageKind, ModeState, PendingOperation, PendingSquash, StatusMessage};
 use super::tree::TreeState;
 use super::ui;
 use crate::jj_lib_helpers::JjRepo;
@@ -64,57 +64,26 @@ impl App {
     fn run_loop(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.should_quit {
             // handle pending operations that require terminal restoration
-            if let Some(op) = self.pending_operation.take() {
-                match op {
-                    PendingOperation::EditDescription { rev } => {
-                        ratatui::restore();
-                        let status = std::process::Command::new("jj")
-                            .args(["describe", "-r", &rev])
-                            .status();
-                        *terminal = ratatui::init();
-
-                        match status {
-                            Ok(s) if s.success() => {
-                                self.set_status("Description updated", MessageKind::Success);
-                                let _ = self.refresh_tree();
-                            }
-                            Ok(_) => self.set_status("Editor cancelled", MessageKind::Warning),
-                            Err(e) => self.set_status(
-                                &format!("Failed to launch editor: {e}"),
-                                MessageKind::Error,
-                            ),
-                        }
-                    }
-                    PendingOperation::Squash(squash) => {
-                        ratatui::restore();
-                        let status = std::process::Command::new("jj")
-                            .args(["squash", "-f", &squash.source_rev, "-t", &squash.target_rev])
-                            .status();
-                        *terminal = ratatui::init();
-
-                        match status {
-                            Ok(s) if s.success() => {
-                                self.last_op = Some(squash.op_before);
-                                let has_conflicts = self.check_conflicts();
-                                let _ = self.refresh_tree();
-
-                                if has_conflicts {
-                                    self.set_status(
-                                        "Squash created conflicts. Press u to undo",
-                                        MessageKind::Warning,
-                                    );
-                                } else {
-                                    self.set_status("Squash complete", MessageKind::Success);
-                                }
-                            }
-                            Ok(_) => self.set_status("Squash cancelled", MessageKind::Warning),
-                            Err(e) => {
-                                self.set_status(&format!("Squash failed: {e}"), MessageKind::Error)
-                            }
-                        }
-                    }
+            match self.pending_operation.take() {
+                Some(PendingOperation::EditDescription { rev }) => {
+                    ratatui::restore();
+                    let status = std::process::Command::new("jj")
+                        .args(["describe", "-r", &rev])
+                        .status();
+                    *terminal = ratatui::init();
+                    self.handle_edit_description_status(status);
+                    continue;
                 }
-                continue;
+                Some(PendingOperation::Squash(squash)) => {
+                    ratatui::restore();
+                    let status = std::process::Command::new("jj")
+                        .args(["squash", "-f", &squash.source_rev, "-t", &squash.target_rev])
+                        .status();
+                    *terminal = ratatui::init();
+                    self.handle_squash_status(status, squash);
+                    continue;
+                }
+                None => {}
             }
 
             let viewport_height = terminal.size()?.height.saturating_sub(3) as usize;
@@ -125,12 +94,11 @@ impl App {
 
             terminal.draw(|frame| ui::render(frame, self))?;
 
-            if event::poll(std::time::Duration::from_millis(33))? {
-                if let Event::Key(key) = event::read()? {
-                    if key.kind == KeyEventKind::Press {
-                        self.handle_key(key, viewport_height, terminal);
-                    }
-                }
+            if event::poll(std::time::Duration::from_millis(33))?
+                && let Event::Key(key) = event::read()?
+                && key.kind == KeyEventKind::Press
+            {
+                self.handle_key(key, viewport_height, terminal);
             }
         }
 
@@ -191,6 +159,42 @@ impl App {
         }
     }
 
+    fn handle_edit_description_status(&mut self, status: std::io::Result<std::process::ExitStatus>) {
+        match status {
+            Ok(s) if s.success() => {
+                self.set_status("Description updated", MessageKind::Success);
+                let _ = self.refresh_tree();
+            }
+            Ok(_) => self.set_status("Editor cancelled", MessageKind::Warning),
+            Err(e) => self.set_status(&format!("Failed to launch editor: {e}"), MessageKind::Error),
+        }
+    }
+
+    fn handle_squash_status(
+        &mut self,
+        status: std::io::Result<std::process::ExitStatus>,
+        squash: PendingSquash,
+    ) {
+        match status {
+            Ok(s) if s.success() => {
+                self.last_op = Some(squash.op_before);
+                let has_conflicts = self.check_conflicts();
+                let _ = self.refresh_tree();
+
+                if has_conflicts {
+                    self.set_status(
+                        "Squash created conflicts. Press u to undo",
+                        MessageKind::Warning,
+                    );
+                } else {
+                    self.set_status("Squash complete", MessageKind::Success);
+                }
+            }
+            Ok(_) => self.set_status("Squash cancelled", MessageKind::Warning),
+            Err(e) => self.set_status(&format!("Squash failed: {e}"), MessageKind::Error),
+        }
+    }
+
     fn set_status(&mut self, text: &str, kind: MessageKind) {
         self.status_message = Some(StatusMessage::new(text.to_string(), kind));
     }
@@ -228,15 +232,14 @@ impl App {
         }
 
         // restore cursor to same change_id if it still exists
-        if let Some(change_id) = current_change_id {
-            if let Some(idx) = self
+        if let Some(change_id) = current_change_id
+            && let Some(idx) = self
                 .tree
                 .visible_entries
                 .iter()
                 .position(|e| self.tree.nodes[e.node_index].change_id == change_id)
-            {
-                self.tree.cursor = idx;
-            }
+        {
+            self.tree.cursor = idx;
         }
 
         Ok(())
@@ -257,12 +260,12 @@ impl App {
     }
 
     pub fn ensure_expanded_stats(&mut self) {
-        if let Some(entry) = self.tree.current_entry() {
-            if self.tree.is_expanded(self.tree.cursor) {
-                let node = &self.tree.nodes[entry.node_index];
-                let change_id = node.change_id.clone();
-                let _ = self.get_diff_stats(&change_id);
-            }
+        if let Some(entry) = self.tree.current_entry()
+            && self.tree.is_expanded(self.tree.cursor)
+        {
+            let node = &self.tree.nodes[entry.node_index];
+            let change_id = node.change_id.clone();
+            let _ = self.get_diff_stats(&change_id);
         }
     }
 
