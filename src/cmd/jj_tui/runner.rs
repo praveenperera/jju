@@ -229,6 +229,17 @@ pub fn run_effects(
                 }
             },
 
+            Effect::RunGitFetch => match commands::git::fetch() {
+                Ok(_) => {
+                    result.status_message =
+                        Some(("Git fetch complete".to_string(), MessageKind::Success));
+                }
+                Err(e) => {
+                    result.status_message =
+                        Some((format!("Git fetch failed: {e}"), MessageKind::Error));
+                }
+            },
+
             Effect::RunGitImport => match commands::git::import() {
                 Ok(_) => {
                     result.status_message =

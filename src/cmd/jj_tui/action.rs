@@ -103,6 +103,7 @@ pub enum Action {
     Undo,
     GitPush,
     GitPushAll,
+    GitFetch,
     GitImport,
     GitExport,
 

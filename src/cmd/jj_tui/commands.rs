@@ -60,6 +60,14 @@ pub mod git {
             .run()?;
         Ok(())
     }
+
+    pub fn fetch() -> Result<()> {
+        cmd!("jj", "git", "fetch")
+            .stdout_null()
+            .stderr_capture()
+            .run()?;
+        Ok(())
+    }
 }
 
 /// Bookmark operations

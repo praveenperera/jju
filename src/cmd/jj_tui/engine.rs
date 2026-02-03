@@ -983,6 +983,11 @@ pub fn reduce(
             effects.push(Effect::RefreshTree);
         }
 
+        Action::GitFetch => {
+            effects.push(Effect::RunGitFetch);
+            effects.push(Effect::RefreshTree);
+        }
+
         Action::GitImport => {
             effects.push(Effect::RunGitImport);
             effects.push(Effect::RefreshTree);

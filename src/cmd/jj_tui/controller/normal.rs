@@ -90,6 +90,7 @@ pub fn handle(ctx: &ControllerContext, key: KeyEvent) -> Action {
 fn handle_pending(pending: char, code: KeyCode, viewport_height: usize) -> Action {
     match (pending, code) {
         // 'g' prefix - git operations
+        ('g', KeyCode::Char('f')) => Action::GitFetch,
         ('g', KeyCode::Char('i')) => Action::GitImport,
         ('g', KeyCode::Char('e')) => Action::GitExport,
         // 'z' prefix - navigation
