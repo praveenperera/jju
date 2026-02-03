@@ -1,5 +1,6 @@
 mod action;
 mod app;
+pub mod cli_tree;
 mod commands;
 mod controller;
 mod effect;
@@ -10,7 +11,7 @@ mod preview;
 mod runner;
 mod state;
 mod theme;
-mod tree;
+pub mod tree;
 mod ui;
 mod vm;
 

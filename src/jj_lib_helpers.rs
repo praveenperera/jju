@@ -138,22 +138,6 @@ impl JjRepo {
         self.eval_revset_single("@")
     }
 
-    /// Get local bookmarks on a specific commit
-    pub fn bookmarks_at(&self, commit: &Commit) -> Vec<String> {
-        self.repo
-            .view()
-            .local_bookmarks()
-            .filter_map(|(name, target)| {
-                let resolved = target.as_resolved().and_then(|opt| opt.as_ref());
-                if resolved == Some(commit.id()) {
-                    Some(name.as_str().to_string())
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
     /// Get local bookmarks on a specific commit with divergence status
     /// A bookmark is diverged if local differs from origin
     pub fn bookmarks_with_state(&self, commit: &Commit) -> Vec<(String, bool)> {

@@ -20,7 +20,7 @@ use tui_popup::Popup;
 
 /// Format bookmarks to fit within max_width, showing "+N" for overflow
 /// Diverged bookmarks are marked with * suffix
-fn format_bookmarks_truncated(bookmarks: &[BookmarkInfo], max_width: usize) -> String {
+pub(crate) fn format_bookmarks_truncated(bookmarks: &[BookmarkInfo], max_width: usize) -> String {
     if bookmarks.is_empty() {
         return String::new();
     }

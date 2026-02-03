@@ -72,11 +72,16 @@ pub struct TreeState {
 
 impl TreeState {
     pub fn load(jj_repo: &JjRepo) -> Result<Self> {
+        Self::load_with_base(jj_repo, "trunk()")
+    }
+
+    pub fn load_with_base(jj_repo: &JjRepo, base: &str) -> Result<Self> {
         let working_copy = jj_repo.working_copy_commit()?;
         let working_copy_id = jj_repo.shortest_change_id(&working_copy, 4)?;
 
-        // same revset as CLI: base | descendants(roots(base..@)) | @::
-        let commits = jj_repo.eval_revset("trunk() | descendants(roots(trunk()..@)) | @::")?;
+        // revset: base | descendants(roots(base..@)) | @::
+        let revset = format!("{base} | descendants(roots({base}..@)) | @::");
+        let commits = jj_repo.eval_revset(&revset)?;
 
         let mut commit_map: HashMap<String, TreeNode> = HashMap::default();
         let mut children_map: HashMap<String, Vec<String>> = HashMap::default();
@@ -142,20 +147,20 @@ impl TreeState {
             });
         }
 
-        // get trunk change_id for root detection
-        let trunk_id = jj_repo
-            .eval_revset_single("trunk()")
+        // get base change_id for root detection
+        let base_id = jj_repo
+            .eval_revset_single(base)
             .ok()
             .and_then(|c| jj_repo.shortest_change_id(&c, 4).ok());
 
-        // find roots (commits whose parents aren't in our set, OR trunk itself)
+        // find roots (commits whose parents aren't in our set, OR the base itself)
         let revs_in_set: HashSet<&str> = commit_map.keys().map(|s| s.as_str()).collect();
         let mut roots: Vec<String> = commit_map
             .values()
             .filter(|c| {
-                // always include trunk as root
-                if let Some(ref tid) = trunk_id {
-                    if c.change_id == *tid {
+                // always include base as root
+                if let Some(ref bid) = base_id {
+                    if c.change_id == *bid {
                         return true;
                     }
                 }
