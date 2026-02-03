@@ -41,6 +41,14 @@ cargo install jju
 jju
 ```
 
+## Commands
+
+| Command | Alias | Description |
+| --- | --- | --- |
+| `split-hunk` | `sh` | Split hunks from a commit non-interactively |
+| `stack-sync` | `ss` | Sync the current stack with remote trunk |
+| `tree` | `t` | Display the current stack as a tree |
+
 ## Keybindings
 
 ### Navigation
