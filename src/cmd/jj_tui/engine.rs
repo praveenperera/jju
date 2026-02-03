@@ -9,7 +9,7 @@ use super::handlers;
 use super::state::{
     BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState,
     ConfirmAction, ConfirmState, DiffState, MessageKind, ModeState, MovingBookmarkState,
-    PendingSquash, RebaseState, RebaseType, SquashState,
+    PendingOperation, PendingSquash, RebaseState, RebaseType, SquashState,
 };
 use super::tree::TreeState;
 use crate::jj_lib_helpers::JjRepo;
@@ -26,8 +26,7 @@ pub fn reduce(
     should_quit: &mut bool,
     split_view: &mut bool,
     pending_key: &mut Option<char>,
-    pending_editor: &mut Option<String>,
-    pending_squash: &mut Option<PendingSquash>,
+    pending_operation: &mut Option<PendingOperation>,
     syntax_set: &SyntaxSet,
     theme_set: &ThemeSet,
     action: Action,
@@ -569,11 +568,11 @@ pub fn reduce(
             }
 
             // set pending squash - requires terminal restore for editor
-            *pending_squash = Some(PendingSquash {
+            *pending_operation = Some(PendingOperation::Squash(PendingSquash {
                 source_rev: state.source_rev.clone(),
                 target_rev: target,
                 op_before: state.op_before.clone(),
-            });
+            }));
             *mode = ModeState::Normal;
         }
 
@@ -930,7 +929,9 @@ pub fn reduce(
         }
 
         Action::EditDescription => {
-            *pending_editor = Some(current_rev(tree));
+            *pending_operation = Some(PendingOperation::EditDescription {
+                rev: current_rev(tree),
+            });
         }
 
         Action::ExecuteAbandon { ref revs } => {
@@ -1128,8 +1129,7 @@ mod tests {
         should_quit: bool,
         split_view: bool,
         pending_key: Option<char>,
-        pending_editor: Option<String>,
-        pending_squash: Option<PendingSquash>,
+        pending_operation: Option<PendingOperation>,
         syntax_set: SyntaxSet,
         theme_set: ThemeSet,
     }
@@ -1142,8 +1142,7 @@ mod tests {
                 should_quit: false,
                 split_view: false,
                 pending_key: None,
-                pending_editor: None,
-                pending_squash: None,
+                pending_operation: None,
                 syntax_set: SyntaxSet::load_defaults_newlines(),
                 theme_set: ThemeSet::load_defaults(),
             }
@@ -1156,8 +1155,7 @@ mod tests {
                 &mut self.should_quit,
                 &mut self.split_view,
                 &mut self.pending_key,
-                &mut self.pending_editor,
-                &mut self.pending_squash,
+                &mut self.pending_operation,
                 &self.syntax_set,
                 &self.theme_set,
                 action,

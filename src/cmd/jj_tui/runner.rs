@@ -177,7 +177,7 @@ pub fn run_effects(
             }
 
             Effect::RunSquash { source, target } => {
-                // this should be handled via pending_squash in the main loop
+                // this should be handled via pending_operation in the main loop
                 // because it requires terminal restore for the editor
                 result.status_message = Some((
                     format!("Squash {} into {}", source, target),
@@ -283,7 +283,7 @@ pub fn run_effects(
             },
 
             Effect::LaunchDescriptionEditor { rev: _ } => {
-                // handled via pending_editor in the main loop
+                // handled via pending_operation in the main loop
             }
 
             Effect::LaunchSquashEditor {
@@ -291,7 +291,7 @@ pub fn run_effects(
                 target: _,
                 op_before: _,
             } => {
-                // handled via pending_squash in the main loop
+                // handled via pending_operation in the main loop
             }
 
             Effect::SetStatus { text, kind } => {

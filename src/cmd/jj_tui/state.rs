@@ -261,3 +261,9 @@ pub struct PendingSquash {
     pub target_rev: String,
     pub op_before: String,
 }
+
+/// Pending operations that require terminal restoration and external process execution
+pub enum PendingOperation {
+    EditDescription { rev: String },
+    Squash(PendingSquash),
+}

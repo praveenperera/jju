@@ -8,7 +8,7 @@ use super::controller::{self, ControllerContext};
 use super::engine;
 use super::handlers;
 use super::runner;
-use super::state::{DiffStats, MessageKind, ModeState, PendingSquash, StatusMessage};
+use super::state::{DiffStats, MessageKind, ModeState, PendingOperation, StatusMessage};
 use super::tree::TreeState;
 use super::ui;
 use crate::jj_lib_helpers::JjRepo;
@@ -25,8 +25,7 @@ pub struct App {
     pub split_view: bool,
     pub diff_stats_cache: std::collections::HashMap<String, DiffStats>,
     pub status_message: Option<StatusMessage>,
-    pub pending_editor: Option<String>,
-    pub pending_squash: Option<PendingSquash>,
+    pub pending_operation: Option<PendingOperation>,
     pub last_op: Option<String>,
     pub pending_key: Option<char>,
     pub(crate) syntax_set: SyntaxSet,
@@ -47,8 +46,7 @@ impl App {
             split_view: false,
             diff_stats_cache: std::collections::HashMap::new(),
             status_message: None,
-            pending_editor: None,
-            pending_squash: None,
+            pending_operation: None,
             last_op: None,
             pending_key: None,
             syntax_set,
@@ -65,52 +63,56 @@ impl App {
 
     fn run_loop(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.should_quit {
-            // handle pending editor launch
-            if let Some(rev) = self.pending_editor.take() {
-                ratatui::restore();
-                let status = std::process::Command::new("jj")
-                    .args(["describe", "-r", &rev])
-                    .status();
-                *terminal = ratatui::init();
+            // handle pending operations that require terminal restoration
+            if let Some(op) = self.pending_operation.take() {
+                match op {
+                    PendingOperation::EditDescription { rev } => {
+                        ratatui::restore();
+                        let status = std::process::Command::new("jj")
+                            .args(["describe", "-r", &rev])
+                            .status();
+                        *terminal = ratatui::init();
 
-                match status {
-                    Ok(s) if s.success() => {
-                        self.set_status("Description updated", MessageKind::Success);
-                        let _ = self.refresh_tree();
-                    }
-                    Ok(_) => self.set_status("Editor cancelled", MessageKind::Warning),
-                    Err(e) => {
-                        self.set_status(&format!("Failed to launch editor: {e}"), MessageKind::Error)
-                    }
-                }
-                continue;
-            }
-
-            // handle pending squash (may open editor for combined description)
-            if let Some(squash) = self.pending_squash.take() {
-                ratatui::restore();
-                let status = std::process::Command::new("jj")
-                    .args(["squash", "-f", &squash.source_rev, "-t", &squash.target_rev])
-                    .status();
-                *terminal = ratatui::init();
-
-                match status {
-                    Ok(s) if s.success() => {
-                        self.last_op = Some(squash.op_before);
-                        let has_conflicts = self.check_conflicts();
-                        let _ = self.refresh_tree();
-
-                        if has_conflicts {
-                            self.set_status(
-                                "Squash created conflicts. Press u to undo",
-                                MessageKind::Warning,
-                            );
-                        } else {
-                            self.set_status("Squash complete", MessageKind::Success);
+                        match status {
+                            Ok(s) if s.success() => {
+                                self.set_status("Description updated", MessageKind::Success);
+                                let _ = self.refresh_tree();
+                            }
+                            Ok(_) => self.set_status("Editor cancelled", MessageKind::Warning),
+                            Err(e) => self.set_status(
+                                &format!("Failed to launch editor: {e}"),
+                                MessageKind::Error,
+                            ),
                         }
                     }
-                    Ok(_) => self.set_status("Squash cancelled", MessageKind::Warning),
-                    Err(e) => self.set_status(&format!("Squash failed: {e}"), MessageKind::Error),
+                    PendingOperation::Squash(squash) => {
+                        ratatui::restore();
+                        let status = std::process::Command::new("jj")
+                            .args(["squash", "-f", &squash.source_rev, "-t", &squash.target_rev])
+                            .status();
+                        *terminal = ratatui::init();
+
+                        match status {
+                            Ok(s) if s.success() => {
+                                self.last_op = Some(squash.op_before);
+                                let has_conflicts = self.check_conflicts();
+                                let _ = self.refresh_tree();
+
+                                if has_conflicts {
+                                    self.set_status(
+                                        "Squash created conflicts. Press u to undo",
+                                        MessageKind::Warning,
+                                    );
+                                } else {
+                                    self.set_status("Squash complete", MessageKind::Success);
+                                }
+                            }
+                            Ok(_) => self.set_status("Squash cancelled", MessageKind::Warning),
+                            Err(e) => {
+                                self.set_status(&format!("Squash failed: {e}"), MessageKind::Error)
+                            }
+                        }
+                    }
                 }
                 continue;
             }
@@ -123,7 +125,7 @@ impl App {
 
             terminal.draw(|frame| ui::render(frame, self))?;
 
-            if event::poll(std::time::Duration::from_millis(100))? {
+            if event::poll(std::time::Duration::from_millis(40))? {
                 if let Event::Key(key) = event::read()? {
                     if key.kind == KeyEventKind::Press {
                         self.handle_key(key, viewport_height, terminal);
@@ -167,8 +169,7 @@ impl App {
             &mut self.should_quit,
             &mut self.split_view,
             &mut self.pending_key,
-            &mut self.pending_editor,
-            &mut self.pending_squash,
+            &mut self.pending_operation,
             &self.syntax_set,
             &self.theme_set,
             action,
