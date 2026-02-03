@@ -1,9 +1,10 @@
 use super::app::App;
+use super::keybindings;
 use super::preview::NodeRole;
 use super::state::{
     BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState,
-    ConfirmState, ConflictsState, DiffLineKind, DiffState, MessageKind, ModeState, PREFIX_MENUS,
-    RebaseType, StatusMessage,
+    ConfirmState, ConflictsState, DiffLineKind, DiffState, MessageKind, ModeState, RebaseType,
+    StatusMessage,
 };
 use super::theme;
 use super::tree::BookmarkInfo;
@@ -203,7 +204,7 @@ pub fn render_with_vms(frame: &mut Frame, app: &App, vms: &[TreeRowVm]) {
 
     // render prefix key popup when waiting for second key in sequence
     if let Some(pending) = app.pending_key {
-        render_prefix_key_popup(frame, pending);
+        render_prefix_key_popup(frame, keybindings::mode_id_from_state(&app.mode), pending);
     }
 
     // render toast notification last (on top of everything)
@@ -495,9 +496,8 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 
     // show pending key when waiting for second key in sequence
     let pending_indicator = match app.pending_key {
-        Some('g') => " g-",
-        Some('z') => " z-",
-        _ => "",
+        Some(p) if keybindings::is_known_prefix(p) => format!(" {p}-"),
+        _ => String::new(),
     };
 
     // show selection count when there are selected items
@@ -566,36 +566,18 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             .unwrap_or_default()
     };
 
-    let hints = match &app.mode {
-        ModeState::Normal => {
-            if !app.tree.selected.is_empty() {
-                "a:abandon  x:toggle  Esc:clear"
-            } else if app.tree.is_focused() {
-                "Enter:unfocus f:toggle-full ?:help q:quit"
-            } else if app.current_has_bookmark() {
-                "p:push b:bookmark r:rebase ?:help q:quit"
-            } else {
-                "r/s:rebase t:trunk d:desc b:bookmark g:git z:nav ?:help q:quit"
-            }
-        }
-        ModeState::Help => "q/Esc:close",
-        ModeState::ViewingDiff(_) => "j/k:scroll  d/u:page  zt/zb:top/bottom  q/Esc:close",
-        ModeState::Confirming(_) => "y/Enter:yes  n/Esc:no",
-        ModeState::Selecting => "j/k:extend  a:abandon  Esc:exit",
-        ModeState::Rebasing(state) => {
-            if state.allow_branches {
-                "j/k:dest  b:inline  Enter:run  Esc:cancel"
-            } else {
-                "j/k:dest  b:branch  Enter:run  Esc:cancel"
-            }
-        }
-        ModeState::MovingBookmark(_) => "j/k:dest  Enter:run  Esc:cancel",
-        ModeState::BookmarkInput(_) => "Enter:confirm  Esc:cancel",
-        ModeState::BookmarkSelect(_) => "j/k:navigate  Enter:select  Esc:cancel",
-        ModeState::BookmarkPicker(_) => "type:filter  j/k:navigate  Enter:select  Esc:cancel",
-        ModeState::Squashing(_) => "j/k:dest  Enter:run  Esc:cancel",
-        ModeState::Conflicts(_) => "j/k:nav  R:resolve  q/Esc:exit",
+    let mode_id = keybindings::mode_id_from_state(&app.mode);
+    let rebase_allow_branches = match &app.mode {
+        ModeState::Rebasing(state) => Some(state.allow_branches),
+        _ => None,
     };
+    let hints = keybindings::status_bar_hints(&keybindings::StatusHintContext {
+        mode: mode_id,
+        has_selection: !app.tree.selected.is_empty(),
+        has_focus: app.tree.is_focused(),
+        current_has_bookmark: app.current_has_bookmark(),
+        rebase_allow_branches,
+    });
 
     let left = format!(
         " {mode_indicator}{full_indicator}{split_indicator}{focus_indicator}{pending_indicator}{selection_indicator}{current_info}"
@@ -622,84 +604,33 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 fn render_help(frame: &mut Frame) {
     use unicode_width::UnicodeWidthStr;
 
-    let help_text = vec![
-        Line::from(Span::styled(
-            "Navigation",
+    let view = keybindings::build_help_view();
+    let key_col_width = view
+        .iter()
+        .flat_map(|s| s.items.iter().map(|i| i.keys.width()))
+        .max()
+        .unwrap_or(9)
+        .max(9);
+
+    let mut help_text: Vec<Line> = Vec::new();
+    for (section_idx, section) in view.iter().enumerate() {
+        if section_idx > 0 {
+            help_text.push(Line::from(""));
+        }
+        help_text.push(Line::from(Span::styled(
+            section.title,
             Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  j/↓       Move cursor down"),
-        Line::from("  k/↑       Move cursor up"),
-        Line::from("  Ctrl+d    Page down"),
-        Line::from("  Ctrl+u    Page up"),
-        Line::from("  z t       Jump to top"),
-        Line::from("  z b       Jump to bottom"),
-        Line::from("  z z       Center current line"),
-        Line::from("  @         Jump to working copy"),
-        Line::from("  Enter     Zoom in/out on node"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "View",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  D         View diff"),
-        Line::from("  Tab       Toggle commit details"),
-        Line::from("  \\         Toggle split view"),
-        Line::from("  f         Toggle full mode"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Edit Operations",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  d         Edit description"),
-        Line::from("  e         Edit working copy (jj edit)"),
-        Line::from("  n         New commit (jj new)"),
-        Line::from("  c         Commit changes (jj commit)"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Selection",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  x         Toggle selection"),
-        Line::from("  v         Visual select mode"),
-        Line::from("  a         Abandon selected"),
-        Line::from("  Esc       Clear selection"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Rebase",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  r         Rebase single (-r)"),
-        Line::from("  s         Rebase + descendants (-s)"),
-        Line::from("  t         Quick rebase onto trunk"),
-        Line::from("  T         Quick rebase tree onto trunk"),
-        Line::from("  Q         Squash into target"),
-        Line::from("  u         Undo last operation"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Bookmarks & Git",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  p         Push current bookmark"),
-        Line::from("  b m       Move bookmark"),
-        Line::from("  b s       Set/create bookmark"),
-        Line::from("  b d       Delete bookmark"),
-        Line::from("  g f       Git fetch"),
-        Line::from("  g i       Git import"),
-        Line::from("  g e       Git export"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Conflicts",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  C         View conflicts panel"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "General",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from("  ?         Toggle help"),
-        Line::from("  q         Quit"),
-    ];
+        )));
+
+        for item in &section.items {
+            let pad_len = key_col_width.saturating_sub(item.keys.width());
+            let pad = " ".repeat(pad_len);
+            help_text.push(Line::from(format!(
+                "  {}{}  {}",
+                item.keys, pad, item.description
+            )));
+        }
+    }
 
     // calculate dimensions from content
     let area = frame.area();
@@ -783,17 +714,33 @@ fn render_confirmation(frame: &mut Frame, state: &ConfirmState) {
     }
 
     lines.push(Line::from(""));
+    let yes_keys = keybindings::display_keys_joined(
+        keybindings::ModeId::Confirm,
+        None,
+        "yes",
+        true,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let no_keys = keybindings::display_keys_joined(
+        keybindings::ModeId::Confirm,
+        None,
+        "no",
+        true,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
     lines.push(Line::from(vec![
         Span::raw("  Press "),
         Span::styled(
-            "y",
+            yes_keys,
             Style::default()
                 .fg(Color::Green)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" to confirm or "),
         Span::styled(
-            "n",
+            no_keys,
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         ),
         Span::raw(" to cancel"),
@@ -855,7 +802,16 @@ fn render_diff_pane(frame: &mut Frame, _app: &App, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let hint = Paragraph::new("Press d to view diff").style(Style::default().fg(Color::DarkGray));
+    let diff_key = keybindings::display_keys_joined(
+        keybindings::ModeId::Normal,
+        None,
+        "diff",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let hint = Paragraph::new(format!("Press {diff_key} to view diff"))
+        .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(hint, inner);
 }
 
@@ -1112,10 +1068,26 @@ fn render_bookmark_input(frame: &mut Frame, state: &BookmarkInputState) {
         Span::styled(target_short, Style::default().fg(Color::DarkGray)),
     ]);
 
+    let confirm_key = keybindings::display_keys_joined(
+        keybindings::ModeId::BookmarkInput,
+        None,
+        "confirm",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let cancel_key = keybindings::display_keys_joined(
+        keybindings::ModeId::BookmarkInput,
+        None,
+        "cancel",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
     let help_text = if state.deleting {
-        "Enter: delete  |  Esc: cancel"
+        format!("{confirm_key}: delete  |  {cancel_key}: cancel")
     } else {
-        "Enter: create  |  Esc: cancel"
+        format!("{confirm_key}: create  |  {cancel_key}: cancel")
     };
 
     let lines = vec![
@@ -1123,10 +1095,7 @@ fn render_bookmark_input(frame: &mut Frame, state: &BookmarkInputState) {
         Line::from(""),
         target_line,
         Line::from(""),
-        Line::from(Span::styled(
-            help_text,
-            Style::default().fg(Color::DarkGray),
-        )),
+        Line::from(Span::styled(help_text, Style::default().fg(Color::DarkGray))),
     ];
 
     let paragraph = Paragraph::new(lines);
@@ -1194,8 +1163,40 @@ fn render_bookmark_select(frame: &mut Frame, state: &BookmarkSelectState) {
     }
 
     lines.push(Line::from(""));
+    let down_key = keybindings::display_keys_joined(
+        keybindings::ModeId::BookmarkSelect,
+        None,
+        "down",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let up_key = keybindings::display_keys_joined(
+        keybindings::ModeId::BookmarkSelect,
+        None,
+        "up",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let select_key = keybindings::display_keys_joined(
+        keybindings::ModeId::BookmarkSelect,
+        None,
+        "select",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let cancel_key = keybindings::display_keys_joined(
+        keybindings::ModeId::BookmarkSelect,
+        None,
+        "cancel",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
     lines.push(Line::from(Span::styled(
-        "j/k: navigate | Enter: select | Esc: cancel",
+        format!("{down_key}/{up_key}: navigate | {select_key}: select | {cancel_key}: cancel"),
         Style::default().fg(Color::DarkGray),
     )));
 
@@ -1297,13 +1298,45 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
     }
 
     lines.push(Line::from(""));
+    let up_key = keybindings::display_keys_joined(
+        keybindings::ModeId::BookmarkPicker,
+        None,
+        "up",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let down_key = keybindings::display_keys_joined(
+        keybindings::ModeId::BookmarkPicker,
+        None,
+        "down",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let confirm_key = keybindings::display_keys_joined(
+        keybindings::ModeId::BookmarkPicker,
+        None,
+        "confirm",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let cancel_key = keybindings::display_keys_joined(
+        keybindings::ModeId::BookmarkPicker,
+        None,
+        "cancel",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
     let footer = match state.action {
-        BookmarkSelectAction::Move => {
-            "type: filter | ↑/↓: navigate | Enter: move (or move away if already here) | Esc: cancel"
-        }
-        BookmarkSelectAction::Delete => {
-            "type: filter | ↑/↓: navigate | Enter: delete | Esc: cancel"
-        }
+        BookmarkSelectAction::Move => format!(
+            "type: filter | {up_key}/{down_key}: navigate | {confirm_key}: move (or move away if already here) | {cancel_key}: cancel"
+        ),
+        BookmarkSelectAction::Delete => format!(
+            "type: filter | {up_key}/{down_key}: navigate | {confirm_key}: delete | {cancel_key}: cancel"
+        ),
     };
     lines.push(Line::from(Span::styled(
         footer,
@@ -1373,8 +1406,40 @@ fn render_conflicts_panel(frame: &mut Frame, state: &ConflictsState) {
     }
 
     lines.push(Line::from(""));
+    let down_key = keybindings::display_keys_joined(
+        keybindings::ModeId::Conflicts,
+        None,
+        "down",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let up_key = keybindings::display_keys_joined(
+        keybindings::ModeId::Conflicts,
+        None,
+        "up",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let resolve_key = keybindings::display_keys_joined(
+        keybindings::ModeId::Conflicts,
+        None,
+        "resolve",
+        false,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
+    let exit_keys = keybindings::display_keys_joined(
+        keybindings::ModeId::Conflicts,
+        None,
+        "exit",
+        true,
+        keybindings::KeyFormat::Space,
+        "/",
+    );
     lines.push(Line::from(Span::styled(
-        "j/k: navigate | R: resolve | q/Esc: exit",
+        format!("{down_key}/{up_key}: navigate | {resolve_key}: resolve | {exit_keys}: exit"),
         Style::default().fg(Color::DarkGray),
     )));
 
@@ -1382,27 +1447,22 @@ fn render_conflicts_panel(frame: &mut Frame, state: &ConflictsState) {
     frame.render_widget(paragraph, inner);
 }
 
-fn render_prefix_key_popup(frame: &mut Frame, pending_key: char) {
+fn render_prefix_key_popup(frame: &mut Frame, mode: keybindings::ModeId, pending_key: char) {
     const KEY_SPACING: usize = 3; // "k  " (key char + 2 spaces)
     const TITLE_WRAPPER: usize = 4; // "g ()" around title
     const HORIZONTAL_PADDING: usize = 4;
     const FIXED_HEIGHT_LINES: usize = 4; // title + separator + 2 border lines
     const EDGE_MARGIN: u16 = 2;
 
-    let Some(menu) = PREFIX_MENUS.iter().find(|m| m.prefix == pending_key) else {
+    let Some(menu) = keybindings::prefix_menu(mode, pending_key) else {
         return;
     };
 
-    let max_label_width = menu
-        .bindings
-        .iter()
-        .map(|b| b.label.width())
-        .max()
-        .unwrap_or(0);
+    let max_label_width = menu.items.iter().map(|(_, label)| label.width()).max().unwrap_or(0);
     let content_width = max_label_width + KEY_SPACING;
     let title_width = menu.title.width() + TITLE_WRAPPER;
     let popup_width = (content_width.max(title_width) + HORIZONTAL_PADDING) as u16;
-    let popup_height = (menu.bindings.len() + FIXED_HEIGHT_LINES) as u16;
+    let popup_height = (menu.items.len() + FIXED_HEIGHT_LINES) as u16;
 
     let area = frame.area();
     let popup_area = Rect {
@@ -1439,15 +1499,13 @@ fn render_prefix_key_popup(frame: &mut Frame, pending_key: char) {
     )));
 
     // key bindings
-    for binding in menu.bindings {
+    for (key, label) in menu.items {
         lines.push(Line::from(vec![
             Span::styled(
-                format!("{}  ", binding.key),
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
+                format!("{key}  "),
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(binding.label, Style::default().fg(Color::White)),
+            Span::styled(label, Style::default().fg(Color::White)),
         ]));
     }
 
