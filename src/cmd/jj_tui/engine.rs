@@ -1126,21 +1126,38 @@ fn build_move_bookmark_picker_list(
 }
 
 /// Sort bookmarks by proximity to the current cursor position
+/// Prefers bookmarks above the cursor (lower index = ancestors), so moving
+/// bookmarks forward to newer commits is prioritized
 fn sort_bookmarks_by_proximity(bookmarks: &mut [String], tree: &TreeState) {
     let bookmark_indices = tree.bookmark_to_visible_index();
     let cursor = tree.cursor;
 
     bookmarks.sort_by(|a, b| {
-        let dist_a = bookmark_indices
-            .get(a)
-            .map(|&idx| idx.abs_diff(cursor))
-            .unwrap_or(usize::MAX);
-        let dist_b = bookmark_indices
-            .get(b)
-            .map(|&idx| idx.abs_diff(cursor))
-            .unwrap_or(usize::MAX);
+        let idx_a = bookmark_indices.get(a).copied();
+        let idx_b = bookmark_indices.get(b).copied();
 
-        dist_a.cmp(&dist_b).then_with(|| a.cmp(b))
+        // bookmarks not in visible tree go last
+        match (idx_a, idx_b) {
+            (None, None) => a.cmp(b),
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (Some(idx_a), Some(idx_b)) => {
+                let above_a = idx_a < cursor;
+                let above_b = idx_b < cursor;
+
+                // prefer bookmarks above cursor
+                match (above_a, above_b) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => {
+                        // both above or both below: sort by distance, then alphabetically
+                        let dist_a = idx_a.abs_diff(cursor);
+                        let dist_b = idx_b.abs_diff(cursor);
+                        dist_a.cmp(&dist_b).then_with(|| a.cmp(b))
+                    }
+                }
+            }
+        }
     });
 }
 
