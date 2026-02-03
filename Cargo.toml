@@ -49,3 +49,6 @@ syntect = { version = "5.3.0", default-features = false, features = ["default-fa
 
 # hash maps
 ahash = "0.8.12"
+
+# regex
+regex = "1"
