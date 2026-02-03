@@ -5,6 +5,7 @@
 
 mod bookmark;
 mod confirm;
+mod conflicts;
 mod diff;
 mod normal;
 mod rebase;
@@ -38,5 +39,6 @@ pub fn handle_key(ctx: &ControllerContext, key: KeyEvent) -> Action {
         ModeState::BookmarkSelect(_) => bookmark::handle_select(key),
         ModeState::BookmarkPicker(_) => bookmark::handle_picker(key),
         ModeState::Squashing(_) => squash::handle(key),
+        ModeState::Conflicts(_) => conflicts::handle(ctx, key),
     }
 }

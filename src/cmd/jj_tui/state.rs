@@ -94,6 +94,7 @@ pub enum ModeState {
     BookmarkSelect(BookmarkSelectState),
     BookmarkPicker(BookmarkPickerState),
     Squashing(SquashState),
+    Conflicts(ConflictsState),
 }
 
 impl ModeState {
@@ -267,4 +268,13 @@ pub struct PendingSquash {
 pub enum PendingOperation {
     EditDescription { rev: String },
     Squash(PendingSquash),
+    Resolve { file: String },
+}
+
+// Conflicts state
+
+#[derive(Debug, Clone, Default)]
+pub struct ConflictsState {
+    pub files: Vec<String>,
+    pub selected_index: usize,
 }

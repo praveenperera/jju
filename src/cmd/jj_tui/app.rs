@@ -8,6 +8,8 @@ use super::controller::{self, ControllerContext};
 use super::engine;
 use super::handlers;
 use super::runner;
+use super::commands;
+use super::effect::Effect;
 use super::state::{DiffStats, MessageKind, ModeState, PendingOperation, PendingSquash, StatusMessage};
 use super::tree::TreeState;
 use super::ui;
@@ -84,6 +86,13 @@ impl App {
                     self.handle_squash_status(status, squash);
                     continue;
                 }
+                Some(PendingOperation::Resolve { file }) => {
+                    ratatui::restore();
+                    let status = commands::resolve::resolve_file(&file);
+                    *terminal = ratatui::init();
+                    self.handle_resolve_status(status, &file);
+                    continue;
+                }
                 None => {}
             }
 
@@ -151,6 +160,9 @@ impl App {
             viewport_height,
         );
 
+        // check if we need to load conflict files before running effects
+        let needs_conflict_load = effects.iter().any(|e| matches!(e, Effect::LoadConflictFiles));
+
         // execute effects
         let result = runner::run_effects(
             effects,
@@ -160,9 +172,27 @@ impl App {
             terminal,
         );
 
+        // load conflict files if needed
+        if needs_conflict_load {
+            self.load_conflict_files();
+        }
+
         // apply result
         if let Some((text, kind)) = result.status_message {
             self.set_status(&text, kind);
+        }
+    }
+
+    fn load_conflict_files(&mut self) {
+        let files = commands::list_conflict_files().unwrap_or_default();
+        if let ModeState::Conflicts(ref mut state) = self.mode {
+            state.files = files.clone();
+            state.selected_index = 0;
+        }
+
+        if files.is_empty() {
+            self.set_status("No conflicts in working copy", MessageKind::Success);
+            self.mode = ModeState::Normal;
         }
     }
 
@@ -199,6 +229,25 @@ impl App {
             }
             Ok(_) => self.set_status("Squash cancelled", MessageKind::Warning),
             Err(e) => self.set_status(&format!("Squash failed: {e}"), MessageKind::Error),
+        }
+    }
+
+    fn handle_resolve_status(&mut self, status: eyre::Result<()>, file: &str) {
+        match status {
+            Ok(()) => {
+                let has_conflicts = self.check_conflicts();
+                let _ = self.refresh_tree();
+
+                if has_conflicts {
+                    self.set_status(
+                        &format!("Resolved {}. More conflicts remain", file),
+                        MessageKind::Warning,
+                    );
+                } else {
+                    self.set_status("All conflicts resolved", MessageKind::Success);
+                }
+            }
+            Err(e) => self.set_status(&format!("Resolve failed: {e}"), MessageKind::Error),
         }
     }
 

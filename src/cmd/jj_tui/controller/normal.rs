@@ -79,6 +79,9 @@ pub fn handle(ctx: &ControllerContext, key: KeyEvent) -> Action {
         KeyCode::Char('p') => Action::GitPush,
         KeyCode::Char('P') => Action::GitPushAll,
 
+        // conflicts panel
+        KeyCode::Char('C') => Action::EnterConflicts,
+
         _ => Action::Noop,
     }
 }

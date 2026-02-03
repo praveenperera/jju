@@ -310,6 +310,10 @@ pub fn run_effects(
             Effect::SetStatus { text, kind } => {
                 result.status_message = Some((text, kind));
             }
+
+            Effect::LoadConflictFiles => {
+                // handled specially by the app - update mode state with conflict files
+            }
         }
     }
 

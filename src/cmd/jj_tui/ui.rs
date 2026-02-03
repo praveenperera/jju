@@ -2,8 +2,8 @@ use super::app::App;
 use super::preview::NodeRole;
 use super::state::{
     BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState,
-    ConfirmState, DiffLineKind, DiffState, MessageKind, ModeState, RebaseType, StatusMessage,
-    PREFIX_MENUS,
+    ConfirmState, ConflictsState, DiffLineKind, DiffState, MessageKind, ModeState, RebaseType,
+    StatusMessage, PREFIX_MENUS,
 };
 use super::theme;
 use super::tree::BookmarkInfo;
@@ -195,6 +195,10 @@ pub fn render_with_vms(frame: &mut Frame, app: &App, vms: &[TreeRowVm]) {
 
     if let ModeState::BookmarkPicker(ref state) = app.mode {
         render_bookmark_picker(frame, state);
+    }
+
+    if let ModeState::Conflicts(ref state) = app.mode {
+        render_conflicts_panel(frame, state);
     }
 
     // render prefix key popup when waiting for second key in sequence
@@ -439,6 +443,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         ModeState::BookmarkSelect(_) => "SELECT BM",
         ModeState::BookmarkPicker(_) => "PICK BM",
         ModeState::Squashing(_) => "SQUASH",
+        ModeState::Conflicts(_) => "CONFLICTS",
     };
 
     let full_indicator = if app.tree.full_mode { " [FULL]" } else { "" };
@@ -564,6 +569,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         ModeState::BookmarkSelect(_) => "j/k:navigate  Enter:select  Esc:cancel",
         ModeState::BookmarkPicker(_) => "type:filter  j/k:navigate  Enter:select  Esc:cancel",
         ModeState::Squashing(_) => "j/k:dest  Enter:run  Esc:cancel",
+        ModeState::Conflicts(_) => "j/k:nav  R:resolve  q/Esc:exit",
     };
 
     let left = format!(" {mode_indicator}{full_indicator}{split_indicator}{focus_indicator}{pending_indicator}{selection_indicator}{current_info}");
@@ -663,6 +669,12 @@ fn render_help(frame: &mut Frame) {
         Line::from("  b d       Delete bookmark"),
         Line::from("  g i       Git import"),
         Line::from("  g e       Git export"),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Conflicts",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from("  C         View conflicts panel"),
         Line::from(""),
         Line::from(Span::styled(
             "General",
@@ -1261,6 +1273,74 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
     };
     lines.push(Line::from(Span::styled(
         footer,
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, inner);
+}
+
+fn render_conflicts_panel(frame: &mut Frame, state: &ConflictsState) {
+    let area = frame.area();
+    let list_height = state.files.len().clamp(1, 15);
+    let popup_height = (5 + list_height) as u16;
+    let popup_width = 60u16.min(area.width.saturating_sub(4));
+
+    let popup_area = Rect {
+        x: (area.width.saturating_sub(popup_width)) / 2,
+        y: (area.height.saturating_sub(popup_height)) / 2,
+        width: popup_width,
+        height: popup_height,
+    };
+
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .title(" Conflicted Files ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Red));
+
+    let inner = block.inner(popup_area);
+    frame.render_widget(
+        block.style(Style::default().bg(theme::POPUP_BG)),
+        popup_area,
+    );
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    if state.files.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  No conflicts found",
+            Style::default().fg(Color::Green),
+        )));
+    } else {
+        for (i, file) in state.files.iter().take(15).enumerate() {
+            let marker = if i == state.selected_index {
+                "> "
+            } else {
+                "  "
+            };
+            let style = if i == state.selected_index {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            lines.push(Line::from(Span::styled(format!("{marker}{file}"), style)));
+        }
+
+        if state.files.len() > 15 {
+            lines.push(Line::from(Span::styled(
+                format!("  ... and {} more", state.files.len() - 15),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "j/k: navigate | R: resolve | q/Esc: exit",
         Style::default().fg(Color::DarkGray),
     )));
 

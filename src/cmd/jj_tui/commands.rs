@@ -235,3 +235,30 @@ pub fn get_first_child(rev: &str) -> Result<Option<String>> {
         Ok(Some(trimmed.to_string()))
     }
 }
+
+/// List files with conflicts in the working copy
+pub fn list_conflict_files() -> Result<Vec<String>> {
+    let template = r#"conflict_files.map(|x| x ++ "\n").join("")"#;
+    let output = cmd!("jj", "log", "-r", "@", "-T", template, "--no-graph")
+        .stdout_capture()
+        .stderr_null()
+        .read()?;
+    let files: Vec<String> = output
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    Ok(files)
+}
+
+/// Resolve operations
+pub mod resolve {
+    use eyre::Result;
+    use std::process::Command;
+
+    /// Run jj resolve on a specific file (interactive, requires terminal)
+    pub fn resolve_file(file: &str) -> Result<()> {
+        Command::new("jj").args(["resolve", file]).status()?;
+        Ok(())
+    }
+}

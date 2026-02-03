@@ -54,4 +54,7 @@ pub enum Effect {
 
     // Operation tracking
     SaveOperationForUndo,
+
+    // Conflicts
+    LoadConflictFiles,
 }

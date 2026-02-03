@@ -110,6 +110,14 @@ pub enum Action {
     SetPendingKey(char),
     ClearPendingKey,
 
+    // Conflicts panel
+    EnterConflicts,
+    ExitConflicts,
+    ConflictsUp,
+    ConflictsDown,
+    ConflictsJump,
+    StartResolveFromConflicts,
+
     // Lifecycle
     Quit,
     RefreshTree,

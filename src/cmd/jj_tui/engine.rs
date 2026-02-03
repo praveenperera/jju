@@ -8,8 +8,8 @@ use super::effect::Effect;
 use super::handlers;
 use super::state::{
     BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, ConfirmAction, ConfirmState,
-    DiffState, MessageKind, ModeState, MovingBookmarkState, PendingOperation, PendingSquash,
-    RebaseState, RebaseType, SquashState,
+    ConflictsState, DiffState, MessageKind, ModeState, MovingBookmarkState, PendingOperation,
+    PendingSquash, RebaseState, RebaseType, SquashState,
 };
 use super::tree::TreeState;
 use crate::jj_lib_helpers::JjRepo;
@@ -991,6 +991,47 @@ pub fn reduce(
         Action::GitExport => {
             effects.push(Effect::RunGitExport);
             effects.push(Effect::RefreshTree);
+        }
+
+        // Conflicts panel
+        Action::EnterConflicts => {
+            *mode = ModeState::Conflicts(ConflictsState::default());
+            effects.push(Effect::LoadConflictFiles);
+        }
+
+        Action::ExitConflicts => {
+            *mode = ModeState::Normal;
+        }
+
+        Action::ConflictsUp => {
+            if let ModeState::Conflicts(state) = mode
+                && state.selected_index > 0
+            {
+                state.selected_index -= 1;
+            }
+        }
+
+        Action::ConflictsDown => {
+            if let ModeState::Conflicts(state) = mode {
+                let max = state.files.len().saturating_sub(1);
+                if state.selected_index < max {
+                    state.selected_index += 1;
+                }
+            }
+        }
+
+        Action::ConflictsJump => {
+            // jump to the file in the tree if applicable - for now just exit
+            *mode = ModeState::Normal;
+        }
+
+        Action::StartResolveFromConflicts => {
+            if let ModeState::Conflicts(state) = mode
+                && let Some(file) = state.files.get(state.selected_index).cloned()
+            {
+                *pending_operation = Some(PendingOperation::Resolve { file });
+                *mode = ModeState::Normal;
+            }
         }
     }
 
