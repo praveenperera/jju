@@ -31,9 +31,6 @@ colored = "3.1.1"
 env_logger = "0.11.8"
 log = "0.4.29"
 
-# regex
-regex = "1.12.2"
-
 # datetime
 chrono = { version = "0.4.43", features = ["serde"] }
 

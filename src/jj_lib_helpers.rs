@@ -73,11 +73,6 @@ impl JjRepo {
         })
     }
 
-    /// Start a transaction for making changes
-    pub fn start_transaction(&self) -> jj_lib::transaction::Transaction {
-        self.repo.start_transaction()
-    }
-
     /// Evaluate a revset string and return matching commits
     pub fn eval_revset(&self, revset_str: &str) -> Result<Vec<Commit>> {
         let mut diagnostics = RevsetDiagnostics::new();
@@ -201,23 +196,6 @@ impl JjRepo {
             .local_bookmarks()
             .map(|(name, _target)| name.as_str().to_string())
             .collect()
-    }
-
-    /// Abandon a commit
-    pub fn abandon(&self, commit: &Commit) -> Result<Arc<ReadonlyRepo>> {
-        let mut tx = self.start_transaction();
-        tx.repo_mut().record_abandoned_commit(commit);
-        let repo = tx
-            .commit("abandon commit")
-            .wrap_err("failed to commit transaction")?;
-        Ok(repo)
-    }
-
-    /// Check if a commit is empty (no changes from parent)
-    pub fn is_commit_empty(&self, commit: &Commit) -> Result<bool> {
-        let parent_tree = commit.parent_tree(self.repo.as_ref())?;
-        let commit_tree = commit.tree();
-        Ok(commit_tree.tree_ids() == parent_tree.tree_ids())
     }
 
     /// Get the shortest unique change_id prefix for a commit (minimum `min_len` chars)
