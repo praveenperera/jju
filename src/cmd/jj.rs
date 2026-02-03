@@ -730,6 +730,18 @@ fn split_hunk(
         return Ok(());
     }
 
+    // save the original file contents before any operations
+    // we'll restore these after rebasing to make the diff show only remaining hunks
+    let mut original_contents: HashMap<String, String> = HashMap::new();
+    for file in &files {
+        let content = cmd!("jj", "file", "show", "-r", &revision, &file.path)
+            .stdout_capture()
+            .stderr_capture()
+            .read()
+            .unwrap_or_default();
+        original_contents.insert(file.path.clone(), content);
+    }
+
     // create a new commit with selected changes
     let message = message.unwrap();
 
@@ -741,7 +753,7 @@ fn split_hunk(
         .run()
         .wrap_err("failed to create new commit")?;
 
-    // write the new file contents
+    // write the new file contents (parent + selected hunks)
     for (path, content) in &new_contents {
         std::fs::write(path, content).wrap_err_with(|| format!("failed to write {}", path))?;
     }
@@ -753,12 +765,33 @@ fn split_hunk(
         .run()
         .wrap_err("failed to set commit message")?;
 
-    // rebase the original revision on top
-    cmd!("jj", "rebase", "-r", &revision, "-d", "@")
+    // rebase the original revision AND its descendants onto the new split commit
+    // using -s (source) instead of -r to include descendants
+    cmd!("jj", "rebase", "-s", &revision, "-d", "@")
         .stdout_null()
         .stderr_null()
         .run()
         .wrap_err("failed to rebase original revision")?;
+
+    // edit the rebased original to restore its full content
+    // this makes the diff show only remaining hunks (since parent now has selected hunks)
+    cmd!("jj", "edit", &revision)
+        .stdout_null()
+        .stderr_null()
+        .run()
+        .wrap_err("failed to edit original revision")?;
+
+    // restore the original file contents
+    for (path, content) in &original_contents {
+        std::fs::write(path, content).wrap_err_with(|| format!("failed to restore {}", path))?;
+    }
+
+    // return to the new split commit (which is now parent of original)
+    cmd!("jj", "prev")
+        .stdout_null()
+        .stderr_null()
+        .run()
+        .wrap_err("failed to return to split commit")?;
 
     println!(
         "{} {}",

@@ -90,6 +90,7 @@ pub enum ModeState {
     Rebasing(RebaseState),
     MovingBookmark(MovingBookmarkState),
     BookmarkInput(BookmarkInputState),
+    #[allow(dead_code)]
     BookmarkSelect(BookmarkSelectState),
     BookmarkPicker(BookmarkPickerState),
     Squashing(SquashState),

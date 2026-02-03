@@ -7,9 +7,9 @@ use super::action::Action;
 use super::effect::Effect;
 use super::handlers;
 use super::state::{
-    BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState,
-    ConfirmAction, ConfirmState, DiffState, MessageKind, ModeState, MovingBookmarkState,
-    PendingOperation, PendingSquash, RebaseState, RebaseType, SquashState,
+    BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, ConfirmAction, ConfirmState,
+    DiffState, MessageKind, ModeState, MovingBookmarkState, PendingOperation, PendingSquash,
+    RebaseState, RebaseType, SquashState,
 };
 use super::tree::TreeState;
 use crate::jj_lib_helpers::JjRepo;
@@ -342,50 +342,32 @@ pub fn reduce(
                 return effects;
             };
 
-            // if no bookmarks on this revision, enter picker mode to select any bookmark
-            if node.bookmarks.is_empty() {
-                let target_rev = node.change_id.clone();
-                if let Ok(jj_repo) = JjRepo::load(None) {
-                    let mut all_bookmarks = jj_repo.all_local_bookmarks();
-                    if all_bookmarks.is_empty() {
-                        effects.push(Effect::SetStatus {
-                            text: "No bookmarks in repository".to_string(),
-                            kind: MessageKind::Warning,
-                        });
-                        return effects;
-                    }
-                    sort_bookmarks_by_proximity(&mut all_bookmarks, tree);
-                    *mode = ModeState::BookmarkPicker(BookmarkPickerState {
-                        all_bookmarks,
-                        filter: String::new(),
-                        filter_cursor: 0,
-                        selected_index: 0,
-                        target_rev,
-                        action: BookmarkSelectAction::Move,
-                    });
-                }
-                return effects;
-            }
+            let target_rev = node.change_id.clone();
 
-            // if multiple bookmarks, show selection dialog
-            if node.bookmarks.len() > 1 {
-                *mode = ModeState::BookmarkSelect(BookmarkSelectState {
-                    bookmarks: node.bookmark_names(),
+            // Always enter picker mode so you can move any bookmark onto this revision.
+            // Bookmarks already on this revision are pinned at the top.
+            if let Ok(jj_repo) = JjRepo::load(None) {
+                let all_bookmarks = jj_repo.all_local_bookmarks();
+                if all_bookmarks.is_empty() {
+                    effects.push(Effect::SetStatus {
+                        text: "No bookmarks in repository".to_string(),
+                        kind: MessageKind::Warning,
+                    });
+                    return effects;
+                }
+
+                let pinned = node.bookmark_names();
+                let all_bookmarks = build_move_bookmark_picker_list(all_bookmarks, pinned, tree);
+
+                *mode = ModeState::BookmarkPicker(BookmarkPickerState {
+                    all_bookmarks,
+                    filter: String::new(),
+                    filter_cursor: 0,
                     selected_index: 0,
-                    target_rev: node.change_id.clone(),
+                    target_rev,
                     action: BookmarkSelectAction::Move,
                 });
-                return effects;
             }
-
-            // single bookmark - enter moving mode directly
-            let bookmark_name = node.bookmarks[0].name.clone();
-            *mode = ModeState::MovingBookmark(MovingBookmarkState {
-                bookmark_name,
-                dest_cursor: tree.cursor,
-                op_before: String::new(), // will be filled by runner
-            });
-            effects.push(Effect::SaveOperationForUndo);
         }
 
         Action::EnterCreateBookmark => {
@@ -742,6 +724,18 @@ pub fn reduce(
 
             match action {
                 BookmarkSelectAction::Move => {
+                    // If the selected bookmark is already on this revision, enter the
+                    // destination-selection flow to move it elsewhere (keep existing behavior).
+                    if bookmark_is_on_rev(tree, &bookmark_name, &target_rev) {
+                        *mode = ModeState::MovingBookmark(MovingBookmarkState {
+                            bookmark_name,
+                            dest_cursor: tree.cursor,
+                            op_before: String::new(), // will be filled by runner
+                        });
+                        effects.push(Effect::SaveOperationForUndo);
+                        return effects;
+                    }
+
                     if is_bookmark_move_backwards(tree, &bookmark_name, &target_rev) {
                         let short_dest = &target_rev[..8.min(target_rev.len())];
                         *mode = ModeState::Confirming(ConfirmState {
@@ -1054,6 +1048,37 @@ fn is_bookmark_move_backwards(tree: &TreeState, bookmark_name: &str, dest_rev: &
     super::commands::is_ancestor(dest_rev, current_change_id).unwrap_or(false)
 }
 
+fn bookmark_is_on_rev(tree: &TreeState, bookmark_name: &str, rev: &str) -> bool {
+    tree.nodes
+        .iter()
+        .any(|n| n.change_id == rev && n.has_bookmark(bookmark_name))
+}
+
+fn build_move_bookmark_picker_list(
+    all_bookmarks: Vec<String>,
+    pinned: Vec<String>,
+    tree: &TreeState,
+) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut pinned_unique = Vec::new();
+    for name in pinned {
+        if seen.insert(name.clone()) {
+            pinned_unique.push(name);
+        }
+    }
+
+    let pinned_set = seen;
+    let mut rest: Vec<String> = all_bookmarks
+        .into_iter()
+        .filter(|b| !pinned_set.contains(b))
+        .collect();
+    sort_bookmarks_by_proximity(&mut rest, tree);
+
+    let mut ordered = pinned_unique;
+    ordered.extend(rest);
+    ordered
+}
+
 /// Sort bookmarks by proximity to the current cursor position
 fn sort_bookmarks_by_proximity(bookmarks: &mut [String], tree: &TreeState) {
     let bookmark_indices = tree.bookmark_to_visible_index();
@@ -1124,6 +1149,18 @@ mod tests {
             author_email: String::new(),
             timestamp: String::new(),
         }
+    }
+
+    fn make_node_with_bookmarks(change_id: &str, depth: usize, bookmarks: &[&str]) -> TreeNode {
+        let mut node = make_node(change_id, depth);
+        node.bookmarks = bookmarks
+            .iter()
+            .map(|&name| crate::cmd::jj_tui::tree::BookmarkInfo {
+                name: name.to_string(),
+                is_diverged: false,
+            })
+            .collect();
+        node
     }
 
     fn make_tree(nodes: Vec<TreeNode>) -> TreeState {
@@ -1264,6 +1301,71 @@ mod tests {
 
         state.reduce(Action::ClearPendingKey);
         assert!(state.pending_key.is_none());
+    }
+
+    #[test]
+    fn test_move_bookmark_picker_pins_current_bookmarks_and_sorts_rest_by_proximity() {
+        let mut tree = make_tree(vec![
+            make_node_with_bookmarks("rev0", 0, &["pin2", "pin1"]),
+            make_node_with_bookmarks("rev1", 1, &["near1"]),
+            make_node("rev2", 1),
+            make_node_with_bookmarks("rev3", 1, &["near2"]),
+            make_node_with_bookmarks("rev4", 1, &["far"]),
+        ]);
+        tree.cursor = 0;
+
+        let all_bookmarks = vec![
+            "near2".to_string(),
+            "pin1".to_string(),
+            "far".to_string(),
+            "near1".to_string(),
+            "pin2".to_string(),
+        ];
+        let pinned = tree.nodes[0].bookmark_names();
+
+        let ordered = build_move_bookmark_picker_list(all_bookmarks, pinned, &tree);
+        assert_eq!(
+            ordered,
+            vec![
+                "pin2".to_string(),
+                "pin1".to_string(),
+                "near1".to_string(),
+                "near2".to_string(),
+                "far".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_confirm_bookmark_picker_move_already_here_enters_move_away_flow() {
+        let mut tree = make_tree(vec![make_node_with_bookmarks("rev0", 0, &["a"])]);
+        tree.cursor = 0;
+
+        let mut state = TestState::new(tree);
+        state.mode = ModeState::BookmarkPicker(BookmarkPickerState {
+            all_bookmarks: vec!["a".to_string()],
+            filter: String::new(),
+            filter_cursor: 0,
+            selected_index: 0,
+            target_rev: "rev0".to_string(),
+            action: BookmarkSelectAction::Move,
+        });
+
+        let effects = state.reduce(Action::ConfirmBookmarkPicker);
+
+        assert!(effects
+            .iter()
+            .any(|e| matches!(e, Effect::SaveOperationForUndo)));
+        assert!(!effects.iter().any(|e| matches!(
+            e,
+            Effect::RunBookmarkSet { .. } | Effect::RunBookmarkSetBackwards { .. }
+        )));
+
+        assert!(matches!(
+            state.mode,
+            ModeState::MovingBookmark(ref s)
+                if s.bookmark_name == "a" && s.dest_cursor == 0
+        ));
     }
 
     #[test]

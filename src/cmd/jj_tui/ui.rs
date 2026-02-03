@@ -1253,8 +1253,14 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
     }
 
     lines.push(Line::from(""));
+    let footer = match state.action {
+        BookmarkSelectAction::Move => {
+            "type: filter | ↑/↓: navigate | Enter: move (or move away if already here) | Esc: cancel"
+        }
+        BookmarkSelectAction::Delete => "type: filter | ↑/↓: navigate | Enter: delete | Esc: cancel",
+    };
     lines.push(Line::from(Span::styled(
-        "type: filter | ↑/↓: navigate | Enter: select | Esc: cancel",
+        footer,
         Style::default().fg(Color::DarkGray),
     )));
 
