@@ -429,14 +429,16 @@ impl TreeState {
             .and_then(|&idx| self.nodes.get(idx))
     }
 
-    pub fn update_scroll(&mut self, viewport_height: usize) {
+    pub fn update_scroll(&mut self, viewport_height: usize, cursor_height: usize) {
         if viewport_height == 0 {
             return;
         }
+
         if self.cursor < self.scroll_offset {
             self.scroll_offset = self.cursor;
-        } else if self.cursor >= self.scroll_offset + viewport_height {
-            self.scroll_offset = self.cursor - viewport_height + 1;
+        } else if self.cursor + cursor_height > self.scroll_offset + viewport_height {
+            // scroll so cursor row + its expanded content fits
+            self.scroll_offset = (self.cursor + cursor_height).saturating_sub(viewport_height);
         }
     }
 

@@ -31,6 +31,9 @@ pub struct TreeRowVm {
 
     // Optional expanded details
     pub details: Option<RowDetails>,
+
+    // Visual height in terminal lines (1 for collapsed, more for expanded)
+    pub height: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -287,6 +290,18 @@ fn build_row_details(node: &TreeNode, stats: Option<&DiffStats>) -> RowDetails {
     }
 }
 
+/// Calculate visual height for a row based on its details
+/// From render_commit_details_from_vm: 4 metadata lines + 1 description header + N description lines
+fn row_height(details: &Option<RowDetails>) -> usize {
+    match details {
+        None => 1,
+        Some(d) => {
+            let desc_lines = d.full_description.trim().lines().count().max(1);
+            1 + 4 + 1 + desc_lines // row + metadata + header + description
+        }
+    }
+}
+
 /// Build a single row view model
 #[allow(clippy::too_many_arguments)]
 fn build_row_vm(
@@ -314,6 +329,8 @@ fn build_row_vm(
         node.description.clone()
     };
 
+    let height = row_height(&details);
+
     TreeRowVm {
         visual_depth,
         role,
@@ -328,6 +345,7 @@ fn build_row_vm(
         description,
         marker,
         details,
+        height,
     }
 }
 

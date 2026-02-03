@@ -11,6 +11,7 @@ use super::runner;
 use super::state::{DiffStats, MessageKind, ModeState, PendingOperation, PendingSquash, StatusMessage};
 use super::tree::TreeState;
 use super::ui;
+use super::vm;
 use crate::jj_lib_helpers::JjRepo;
 use eyre::Result;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
@@ -86,13 +87,19 @@ impl App {
                 None => {}
             }
 
-            let viewport_height = terminal.size()?.height.saturating_sub(3) as usize;
-            self.tree.update_scroll(viewport_height);
+            let size = terminal.size()?;
+            let viewport_height = size.height.saturating_sub(3) as usize;
+            let viewport_width = size.width.saturating_sub(2) as usize;
 
             // fetch diff stats for expanded entry if needed
             self.ensure_expanded_stats();
 
-            terminal.draw(|frame| ui::render(frame, self))?;
+            // build view models first to get accurate cursor height
+            let vms = vm::build_tree_view(self, viewport_width);
+            let cursor_height = vms.get(self.tree.cursor).map_or(1, |vm| vm.height);
+            self.tree.update_scroll(viewport_height, cursor_height);
+
+            terminal.draw(|frame| ui::render_with_vms(frame, self, &vms))?;
 
             if event::poll(std::time::Duration::from_millis(33))?
                 && let Event::Key(key) = event::read()?

@@ -76,7 +76,14 @@ pub(crate) fn format_bookmarks_truncated(bookmarks: &[BookmarkInfo], max_width: 
     result
 }
 
+#[allow(dead_code)]
 pub fn render(frame: &mut Frame, app: &App) {
+    let vms = build_tree_view(app, frame.area().width as usize);
+    render_with_vms(frame, app, &vms);
+}
+
+/// Render with pre-built view models (avoids rebuilding when caller already has them)
+pub fn render_with_vms(frame: &mut Frame, app: &App, vms: &[TreeRowVm]) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(0), Constraint::Length(1)])
@@ -101,10 +108,10 @@ pub fn render(frame: &mut Frame, app: &App) {
                     .direction(Direction::Horizontal)
                     .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                     .split(chunks[0]);
-                render_tree(frame, app, split[0]);
+                render_tree_with_vms(frame, app, split[0], vms);
                 render_diff_pane(frame, app, split[1]);
             } else {
-                render_tree(frame, app, chunks[0]);
+                render_tree_with_vms(frame, app, chunks[0], vms);
             }
         }
     }
@@ -145,7 +152,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     }
 }
 
-fn render_tree(frame: &mut Frame, app: &App, area: Rect) {
+fn render_tree_with_vms(frame: &mut Frame, app: &App, area: Rect, vms: &[TreeRowVm]) {
     let block = Block::default()
         .title(" jj tree ")
         .borders(Borders::ALL)
@@ -162,9 +169,6 @@ fn render_tree(frame: &mut Frame, app: &App, area: Rect) {
 
     let viewport_height = inner.height as usize;
     let scroll_offset = app.tree.scroll_offset;
-
-    // build view model for all rows
-    let vms = build_tree_view(app, inner.width as usize);
 
     let mut lines: Vec<Line> = Vec::new();
     let mut line_count = 0;
