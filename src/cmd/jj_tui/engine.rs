@@ -1075,3 +1075,279 @@ pub fn compute_moving_indices(tree: &TreeState, mode: &ModeState) -> HashSet<usi
 
     indices
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cmd::jj_tui::tree::{TreeNode, VisibleEntry};
+    use ahash::HashMap;
+
+    fn make_node(change_id: &str, depth: usize) -> TreeNode {
+        TreeNode {
+            change_id: change_id.to_string(),
+            unique_prefix_len: 4,
+            description: String::new(),
+            full_description: String::new(),
+            bookmarks: vec![],
+            is_working_copy: false,
+            parent_ids: vec![],
+            depth,
+            author_name: String::new(),
+            author_email: String::new(),
+            timestamp: String::new(),
+        }
+    }
+
+    fn make_tree(nodes: Vec<TreeNode>) -> TreeState {
+        let visible_entries: Vec<VisibleEntry> = nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| VisibleEntry {
+                node_index: i,
+                visual_depth: n.depth,
+            })
+            .collect();
+
+        TreeState {
+            nodes,
+            cursor: 0,
+            scroll_offset: 0,
+            full_mode: true,
+            expanded_entry: None,
+            children_map: HashMap::default(),
+            visible_entries,
+            selected: HashSet::default(),
+            selection_anchor: None,
+            focus_stack: Vec::new(),
+        }
+    }
+
+    struct TestState {
+        tree: TreeState,
+        mode: ModeState,
+        should_quit: bool,
+        split_view: bool,
+        pending_key: Option<char>,
+        pending_editor: Option<String>,
+        pending_squash: Option<PendingSquash>,
+        syntax_set: SyntaxSet,
+        theme_set: ThemeSet,
+    }
+
+    impl TestState {
+        fn new(tree: TreeState) -> Self {
+            Self {
+                tree,
+                mode: ModeState::Normal,
+                should_quit: false,
+                split_view: false,
+                pending_key: None,
+                pending_editor: None,
+                pending_squash: None,
+                syntax_set: SyntaxSet::load_defaults_newlines(),
+                theme_set: ThemeSet::load_defaults(),
+            }
+        }
+
+        fn reduce(&mut self, action: Action) -> Vec<Effect> {
+            reduce(
+                &mut self.tree,
+                &mut self.mode,
+                &mut self.should_quit,
+                &mut self.split_view,
+                &mut self.pending_key,
+                &mut self.pending_editor,
+                &mut self.pending_squash,
+                &self.syntax_set,
+                &self.theme_set,
+                action,
+                20, // viewport_height
+            )
+        }
+    }
+
+    #[test]
+    fn test_cursor_movement() {
+        let tree = make_tree(vec![
+            make_node("aaaa", 0),
+            make_node("bbbb", 1),
+            make_node("cccc", 2),
+        ]);
+        let mut state = TestState::new(tree);
+
+        assert_eq!(state.tree.cursor, 0);
+
+        state.reduce(Action::MoveCursorDown);
+        assert_eq!(state.tree.cursor, 1);
+
+        state.reduce(Action::MoveCursorDown);
+        assert_eq!(state.tree.cursor, 2);
+
+        // should not go past end
+        state.reduce(Action::MoveCursorDown);
+        assert_eq!(state.tree.cursor, 2);
+
+        state.reduce(Action::MoveCursorUp);
+        assert_eq!(state.tree.cursor, 1);
+
+        state.reduce(Action::MoveCursorTop);
+        assert_eq!(state.tree.cursor, 0);
+
+        state.reduce(Action::MoveCursorBottom);
+        assert_eq!(state.tree.cursor, 2);
+    }
+
+    #[test]
+    fn test_mode_transitions() {
+        let tree = make_tree(vec![make_node("aaaa", 0)]);
+        let mut state = TestState::new(tree);
+
+        assert!(matches!(state.mode, ModeState::Normal));
+
+        state.reduce(Action::EnterHelp);
+        assert!(matches!(state.mode, ModeState::Help));
+
+        state.reduce(Action::ExitHelp);
+        assert!(matches!(state.mode, ModeState::Normal));
+
+        state.reduce(Action::EnterSelecting);
+        assert!(matches!(state.mode, ModeState::Selecting));
+
+        state.reduce(Action::ExitSelecting);
+        assert!(matches!(state.mode, ModeState::Normal));
+    }
+
+    #[test]
+    fn test_quit_action() {
+        let tree = make_tree(vec![make_node("aaaa", 0)]);
+        let mut state = TestState::new(tree);
+
+        assert!(!state.should_quit);
+        state.reduce(Action::Quit);
+        assert!(state.should_quit);
+    }
+
+    #[test]
+    fn test_pending_key() {
+        let tree = make_tree(vec![make_node("aaaa", 0)]);
+        let mut state = TestState::new(tree);
+
+        assert!(state.pending_key.is_none());
+
+        state.reduce(Action::SetPendingKey('g'));
+        assert_eq!(state.pending_key, Some('g'));
+
+        state.reduce(Action::ClearPendingKey);
+        assert!(state.pending_key.is_none());
+    }
+
+    #[test]
+    fn test_selection_toggle() {
+        let tree = make_tree(vec![
+            make_node("aaaa", 0),
+            make_node("bbbb", 1),
+        ]);
+        let mut state = TestState::new(tree);
+
+        assert!(state.tree.selected.is_empty());
+
+        state.reduce(Action::ToggleSelection);
+        assert!(state.tree.selected.contains(&0));
+
+        state.reduce(Action::ToggleSelection);
+        assert!(!state.tree.selected.contains(&0));
+
+        state.tree.cursor = 1;
+        state.reduce(Action::ToggleSelection);
+        assert!(state.tree.selected.contains(&1));
+
+        state.reduce(Action::ClearSelection);
+        assert!(state.tree.selected.is_empty());
+    }
+
+    #[test]
+    fn test_split_view_toggle() {
+        let tree = make_tree(vec![make_node("aaaa", 0)]);
+        let mut state = TestState::new(tree);
+
+        assert!(!state.split_view);
+        state.reduce(Action::ToggleSplitView);
+        assert!(state.split_view);
+        state.reduce(Action::ToggleSplitView);
+        assert!(!state.split_view);
+    }
+
+    #[test]
+    fn test_selection_mode_extends_on_move() {
+        let tree = make_tree(vec![
+            make_node("aaaa", 0),
+            make_node("bbbb", 1),
+            make_node("cccc", 2),
+        ]);
+        let mut state = TestState::new(tree);
+
+        // enter selection mode
+        state.reduce(Action::EnterSelecting);
+        assert!(matches!(state.mode, ModeState::Selecting));
+        assert!(state.tree.selected.contains(&0));
+        assert_eq!(state.tree.selection_anchor, Some(0));
+
+        // move down should extend selection
+        state.reduce(Action::MoveCursorDown);
+        assert!(state.tree.selected.contains(&0));
+        assert!(state.tree.selected.contains(&1));
+
+        state.reduce(Action::MoveCursorDown);
+        assert!(state.tree.selected.contains(&0));
+        assert!(state.tree.selected.contains(&1));
+        assert!(state.tree.selected.contains(&2));
+    }
+
+    #[test]
+    fn test_page_navigation() {
+        let tree = make_tree(vec![
+            make_node("a", 0),
+            make_node("b", 0),
+            make_node("c", 0),
+            make_node("d", 0),
+            make_node("e", 0),
+            make_node("f", 0),
+            make_node("g", 0),
+            make_node("h", 0),
+            make_node("i", 0),
+            make_node("j", 0),
+        ]);
+        let mut state = TestState::new(tree);
+
+        state.reduce(Action::PageDown(5));
+        assert_eq!(state.tree.cursor, 5);
+
+        state.reduce(Action::PageUp(3));
+        assert_eq!(state.tree.cursor, 2);
+
+        state.reduce(Action::PageUp(10)); // should clamp to 0
+        assert_eq!(state.tree.cursor, 0);
+
+        state.reduce(Action::PageDown(100)); // should clamp to max
+        assert_eq!(state.tree.cursor, 9);
+    }
+
+    #[test]
+    fn test_noop_produces_no_effects() {
+        let tree = make_tree(vec![make_node("aaaa", 0)]);
+        let mut state = TestState::new(tree);
+
+        let effects = state.reduce(Action::Noop);
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn test_refresh_tree_produces_effect() {
+        let tree = make_tree(vec![make_node("aaaa", 0)]);
+        let mut state = TestState::new(tree);
+
+        let effects = state.reduce(Action::RefreshTree);
+        assert_eq!(effects.len(), 1);
+        assert!(matches!(effects[0], Effect::RefreshTree));
+    }
+}
