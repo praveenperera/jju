@@ -20,6 +20,7 @@ pub struct TreeRowVm {
     pub is_zoom_root: bool,
     pub is_working_copy: bool,
     pub has_conflicts: bool,
+    pub is_divergent: bool,
 
     // Pre-formatted display data (NOT styled - just strings)
     pub change_id_prefix: String,
@@ -300,10 +301,9 @@ fn build_row_details(node: &TreeNode, stats: Option<&DiffStats>) -> RowDetails {
         format!("{} <{}>", node.author_name, node.author_email)
     };
 
-    let (commit_prefix, commit_suffix) = node.commit_id.split_at(
-        node.unique_commit_prefix_len
-            .min(node.commit_id.len()),
-    );
+    let (commit_prefix, commit_suffix) = node
+        .commit_id
+        .split_at(node.unique_commit_prefix_len.min(node.commit_id.len()));
 
     RowDetails {
         commit_id_prefix: commit_prefix.to_string(),
@@ -365,6 +365,7 @@ fn build_row_vm(
         is_zoom_root,
         is_working_copy: node.is_working_copy,
         has_conflicts: node.has_conflicts,
+        is_divergent: node.is_divergent,
         change_id_prefix: prefix.to_string(),
         change_id_suffix: suffix.to_string(),
         bookmarks: node.bookmarks.clone(),
@@ -394,6 +395,8 @@ mod tests {
             bookmarks: vec![],
             is_working_copy: false,
             has_conflicts: false,
+            is_divergent: false,
+            divergent_versions: vec![],
             parent_ids: vec![],
             depth,
             author_name: String::new(),

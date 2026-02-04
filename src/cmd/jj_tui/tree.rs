@@ -1,11 +1,19 @@
 use crate::jj_lib_helpers::JjRepo;
 use ahash::{HashMap, HashSet};
 use eyre::Result;
+use jj_lib::object_id::ObjectId;
 
 #[derive(Clone, Debug)]
 pub struct BookmarkInfo {
     pub name: String,
     pub is_diverged: bool,
+}
+
+/// Information about a divergent version of a commit
+#[derive(Clone, Debug)]
+pub struct DivergentVersion {
+    pub commit_id: String,
+    pub is_local: bool, // heuristic: has working copy or newest timestamp
 }
 
 #[derive(Clone, Debug)]
@@ -19,6 +27,8 @@ pub struct TreeNode {
     pub bookmarks: Vec<BookmarkInfo>,
     pub is_working_copy: bool,
     pub has_conflicts: bool,
+    pub is_divergent: bool,
+    pub divergent_versions: Vec<DivergentVersion>, // all versions if divergent
     pub parent_ids: Vec<String>,
     pub depth: usize,
     pub author_name: String,
@@ -114,6 +124,28 @@ impl TreeState {
             let author_email = JjRepo::author_email(commit);
             let timestamp = JjRepo::author_timestamp_relative(commit);
 
+            // check for divergence
+            let is_divergent = jj_repo.is_commit_divergent(commit);
+            let divergent_versions = if is_divergent {
+                jj_repo
+                    .get_divergent_commits(commit)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(idx, c)| {
+                        let c_id = c.id().hex();
+                        // heuristic: index 0 is newest (local), or has working copy
+                        let is_local = idx == 0 || c_id == commit.id().hex() && is_working_copy;
+                        DivergentVersion {
+                            commit_id: c_id,
+                            is_local,
+                        }
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
             let node = TreeNode {
                 change_id: change_id.clone(),
                 unique_prefix_len,
@@ -124,6 +156,8 @@ impl TreeState {
                 bookmarks,
                 is_working_copy,
                 has_conflicts,
+                is_divergent,
+                divergent_versions,
                 parent_ids: parent_ids.clone(),
                 depth: 0,
                 author_name,

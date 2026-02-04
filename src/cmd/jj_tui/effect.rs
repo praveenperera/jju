@@ -64,6 +64,10 @@ pub enum Effect {
     RunBookmarkDelete {
         name: String,
     },
+    RunResolveDivergence {
+        keep_commit_id: String,
+        abandon_commit_ids: Vec<String>,
+    },
 
     // Editor launch (requires terminal restore)
     LaunchDescriptionEditor {

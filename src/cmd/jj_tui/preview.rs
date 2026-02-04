@@ -343,6 +343,8 @@ mod tests {
             bookmarks: vec![],
             is_working_copy: false,
             has_conflicts: false,
+            is_divergent: false,
+            divergent_versions: vec![],
             parent_ids: vec![],
             depth,
             author_name: String::new(),

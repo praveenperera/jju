@@ -1085,8 +1085,11 @@ pub fn reduce(
         Action::PushSelectAll => {
             if let ModeState::PushSelect(state) = mode {
                 // select all in filtered view - collect indices first to avoid borrow conflict
-                let filtered_indices: Vec<usize> =
-                    state.filtered_bookmarks().into_iter().map(|(i, _)| i).collect();
+                let filtered_indices: Vec<usize> = state
+                    .filtered_bookmarks()
+                    .into_iter()
+                    .map(|(i, _)| i)
+                    .collect();
                 for idx in filtered_indices {
                     state.selected.insert(idx);
                 }
@@ -1096,8 +1099,11 @@ pub fn reduce(
         Action::PushSelectNone => {
             if let ModeState::PushSelect(state) = mode {
                 // deselect all in filtered view - collect indices first to avoid borrow conflict
-                let filtered_indices: Vec<usize> =
-                    state.filtered_bookmarks().into_iter().map(|(i, _)| i).collect();
+                let filtered_indices: Vec<usize> = state
+                    .filtered_bookmarks()
+                    .into_iter()
+                    .map(|(i, _)| i)
+                    .collect();
                 for idx in filtered_indices {
                     state.selected.remove(&idx);
                 }
@@ -1155,6 +1161,57 @@ pub fn reduce(
 
         Action::ExitPushSelect => {
             *mode = ModeState::Normal;
+        }
+
+        Action::ResolveDivergence => {
+            let Some(node) = tree.current_node() else {
+                effects.push(Effect::SetStatus {
+                    text: "No revision selected".to_string(),
+                    kind: MessageKind::Error,
+                });
+                return effects;
+            };
+
+            if !node.is_divergent {
+                effects.push(Effect::SetStatus {
+                    text: "This revision is not divergent".to_string(),
+                    kind: MessageKind::Warning,
+                });
+                return effects;
+            }
+
+            if node.divergent_versions.is_empty() {
+                effects.push(Effect::SetStatus {
+                    text: "No divergent versions found".to_string(),
+                    kind: MessageKind::Error,
+                });
+                return effects;
+            }
+
+            // find the local version (first one, typically newest/has working copy)
+            // and the others to abandon
+            let local_version = &node.divergent_versions[0];
+            let abandon_ids: Vec<String> = node
+                .divergent_versions
+                .iter()
+                .skip(1)
+                .map(|v| v.commit_id.clone())
+                .collect();
+
+            if abandon_ids.is_empty() {
+                effects.push(Effect::SetStatus {
+                    text: "Only one version exists, nothing to resolve".to_string(),
+                    kind: MessageKind::Warning,
+                });
+                return effects;
+            }
+
+            effects.push(Effect::SaveOperationForUndo);
+            effects.push(Effect::RunResolveDivergence {
+                keep_commit_id: local_version.commit_id.clone(),
+                abandon_commit_ids: abandon_ids,
+            });
+            effects.push(Effect::RefreshTree);
         }
     }
 
@@ -1327,6 +1384,8 @@ mod tests {
             bookmarks: vec![],
             is_working_copy: false,
             has_conflicts: false,
+            is_divergent: false,
+            divergent_versions: vec![],
             parent_ids: vec![],
             depth,
             author_name: String::new(),
@@ -1669,12 +1728,20 @@ mod tests {
         let effects = state.reduce(Action::GitPush);
 
         assert!(matches!(state.mode, ModeState::Normal));
-        assert!(effects.iter().any(|e| matches!(e, Effect::RunGitPush { bookmark } if bookmark == "feature")));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, Effect::RunGitPush { bookmark } if bookmark == "feature"))
+        );
     }
 
     #[test]
     fn test_git_push_multiple_bookmarks_enters_push_select_mode() {
-        let tree = make_tree(vec![make_node_with_bookmarks("rev0", 0, &["feature-a", "feature-b"])]);
+        let tree = make_tree(vec![make_node_with_bookmarks(
+            "rev0",
+            0,
+            &["feature-a", "feature-b"],
+        )]);
         let mut state = TestState::new(tree);
 
         let effects = state.reduce(Action::GitPush);
@@ -1723,7 +1790,9 @@ mod tests {
         let effects = state.reduce(Action::PushSelectConfirm);
 
         assert!(matches!(state.mode, ModeState::Normal));
-        let push_effect = effects.iter().find(|e| matches!(e, Effect::RunGitPushMultiple { .. }));
+        let push_effect = effects
+            .iter()
+            .find(|e| matches!(e, Effect::RunGitPushMultiple { .. }));
         assert!(push_effect.is_some());
         if let Some(Effect::RunGitPushMultiple { bookmarks }) = push_effect {
             assert_eq!(bookmarks.len(), 2);

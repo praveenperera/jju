@@ -349,6 +349,36 @@ pub fn run_effects(
                 }
             },
 
+            Effect::RunResolveDivergence {
+                keep_commit_id,
+                abandon_commit_ids,
+            } => {
+                // abandon all the other versions to resolve divergence
+                let revset = abandon_commit_ids.join(" | ");
+                match commands::revision::abandon(&revset) {
+                    Ok(_) => {
+                        let count = abandon_commit_ids.len();
+                        let short_keep = &keep_commit_id[..keep_commit_id.len().min(8)];
+                        result.status_message = Some((
+                            format!(
+                                "Divergence resolved: kept {}, abandoned {} version{}",
+                                short_keep,
+                                count,
+                                if count == 1 { "" } else { "s" }
+                            ),
+                            MessageKind::Success,
+                        ));
+                    }
+                    Err(e) => {
+                        let error_details = format!("{e}");
+                        result.status_message = Some((
+                            set_error_with_details("Resolve divergence failed", &error_details),
+                            MessageKind::Error,
+                        ));
+                    }
+                }
+            }
+
             Effect::LaunchDescriptionEditor { rev: _ } => {
                 // handled via pending_operation in the main loop
             }

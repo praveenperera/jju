@@ -6,9 +6,9 @@
 use eyre::{Context, Result, bail};
 use itertools::Itertools;
 use jj_lib::commit::Commit;
-use jj_lib::object_id::ObjectId;
 use jj_lib::config::{ConfigLayer, ConfigSource, StackedConfig};
 use jj_lib::id_prefix::IdPrefixContext;
+use jj_lib::object_id::ObjectId;
 use jj_lib::ref_name::{RemoteName, RemoteRefSymbol};
 use jj_lib::repo::{ReadonlyRepo, Repo, StoreFactories};
 use jj_lib::revset::{
@@ -346,6 +346,59 @@ impl JjRepo {
         let full_id = commit.id().hex();
         let display_len = unique_prefix_len.max(min_len).min(full_id.len());
         Ok((full_id[..display_len].to_string(), unique_prefix_len))
+    }
+
+    /// Check if a commit is divergent (same change_id, multiple visible commits)
+    pub fn is_commit_divergent(&self, commit: &Commit) -> bool {
+        self.repo
+            .resolve_change_id(commit.change_id())
+            .ok()
+            .flatten()
+            .map(|targets| targets.is_divergent())
+            .unwrap_or(false)
+    }
+
+    /// Get all visible commit IDs for a divergent change_id
+    /// Returns empty vec if not divergent (single commit for change_id)
+    pub fn get_divergent_commit_ids(&self, commit: &Commit) -> Vec<jj_lib::backend::CommitId> {
+        let Some(targets) = self
+            .repo
+            .resolve_change_id(commit.change_id())
+            .ok()
+            .flatten()
+        else {
+            return Vec::new();
+        };
+        if targets.is_divergent() {
+            targets
+                .visible_with_offsets()
+                .map(|(_, id)| id.clone())
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Get divergent commits for a change_id, sorted by timestamp (newest first)
+    pub fn get_divergent_commits(&self, commit: &Commit) -> Result<Vec<Commit>> {
+        let commit_ids = self.get_divergent_commit_ids(commit);
+        if commit_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut commits: Vec<Commit> = commit_ids
+            .into_iter()
+            .filter_map(|id| self.repo.store().get_commit(&id).ok())
+            .collect();
+
+        // sort by timestamp descending (newest first)
+        commits.sort_by(|a, b| {
+            let ts_a = a.author().timestamp.timestamp.0;
+            let ts_b = b.author().timestamp.timestamp.0;
+            ts_b.cmp(&ts_a)
+        });
+
+        Ok(commits)
     }
 
     /// Get the author timestamp formatted as a relative time string with absolute date

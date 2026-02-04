@@ -132,6 +132,9 @@ pub enum Action {
     ConflictsJump,
     StartResolveFromConflicts,
 
+    // Divergence resolution
+    ResolveDivergence,
+
     // Lifecycle
     Quit,
     RefreshTree,

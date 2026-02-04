@@ -299,6 +299,11 @@ fn render_row(vm: &TreeRowVm) -> Line<'static> {
         spans.push(Span::styled("× ", Style::default().fg(Color::Red)));
     }
 
+    // add divergent marker in yellow
+    if vm.is_divergent {
+        spans.push(Span::styled("?? ", Style::default().fg(Color::Yellow)));
+    }
+
     spans.extend([
         Span::raw(format!("{indent}{connector}{selection_marker}{at_marker}(")),
         Span::styled(
@@ -857,6 +862,8 @@ mod tests {
             bookmarks: vec![],
             is_working_copy: false,
             has_conflicts: false,
+            is_divergent: false,
+            divergent_versions: vec![],
             parent_ids: vec![],
             depth,
             author_name: String::new(),
@@ -1119,7 +1126,10 @@ fn render_bookmark_input(frame: &mut Frame, state: &BookmarkInputState) {
         Line::from(""),
         target_line,
         Line::from(""),
-        Line::from(Span::styled(help_text, Style::default().fg(Color::DarkGray))),
+        Line::from(Span::styled(
+            help_text,
+            Style::default().fg(Color::DarkGray),
+        )),
     ];
 
     let paragraph = Paragraph::new(lines);
@@ -1647,7 +1657,12 @@ fn render_prefix_key_popup(frame: &mut Frame, mode: keybindings::ModeId, pending
         return;
     };
 
-    let max_label_width = menu.items.iter().map(|(_, label)| label.width()).max().unwrap_or(0);
+    let max_label_width = menu
+        .items
+        .iter()
+        .map(|(_, label)| label.width())
+        .max()
+        .unwrap_or(0);
     let content_width = max_label_width + KEY_SPACING;
     let title_width = menu.title.width() + TITLE_WRAPPER;
     let popup_width = (content_width.max(title_width) + HORIZONTAL_PADDING) as u16;
@@ -1692,7 +1707,9 @@ fn render_prefix_key_popup(frame: &mut Frame, mode: keybindings::ModeId, pending
         lines.push(Line::from(vec![
             Span::styled(
                 format!("{key}  "),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(label, Style::default().fg(Color::White)),
         ]));
