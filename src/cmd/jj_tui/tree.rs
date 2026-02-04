@@ -12,6 +12,8 @@ pub struct BookmarkInfo {
 pub struct TreeNode {
     pub change_id: String,
     pub unique_prefix_len: usize,
+    pub commit_id: String,
+    pub unique_commit_prefix_len: usize,
     pub description: String,
     pub full_description: String,
     pub bookmarks: Vec<BookmarkInfo>,
@@ -89,6 +91,8 @@ impl TreeState {
 
         for commit in &commits {
             let (change_id, unique_prefix_len) = jj_repo.change_id_with_prefix_len(commit, 4)?;
+            let (commit_id, unique_commit_prefix_len) =
+                jj_repo.commit_id_with_prefix_len(commit, 7)?;
             let bookmarks: Vec<BookmarkInfo> = jj_repo
                 .bookmarks_with_state(commit)
                 .into_iter()
@@ -113,6 +117,8 @@ impl TreeState {
             let node = TreeNode {
                 change_id: change_id.clone(),
                 unique_prefix_len,
+                commit_id,
+                unique_commit_prefix_len,
                 description,
                 full_description,
                 bookmarks,

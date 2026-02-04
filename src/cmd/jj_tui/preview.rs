@@ -336,6 +336,8 @@ mod tests {
         TreeNode {
             change_id: change_id.to_string(),
             unique_prefix_len: 4,
+            commit_id: format!("{change_id}000000"),
+            unique_commit_prefix_len: 7,
             description: String::new(),
             full_description: String::new(),
             bookmarks: vec![],

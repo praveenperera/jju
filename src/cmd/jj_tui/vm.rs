@@ -39,6 +39,8 @@ pub struct TreeRowVm {
 
 #[derive(Debug, Clone)]
 pub struct RowDetails {
+    pub commit_id_prefix: String,
+    pub commit_id_suffix: String,
     pub author: String,
     pub timestamp: String,
     pub full_description: String,
@@ -298,7 +300,14 @@ fn build_row_details(node: &TreeNode, stats: Option<&DiffStats>) -> RowDetails {
         format!("{} <{}>", node.author_name, node.author_email)
     };
 
+    let (commit_prefix, commit_suffix) = node.commit_id.split_at(
+        node.unique_commit_prefix_len
+            .min(node.commit_id.len()),
+    );
+
     RowDetails {
+        commit_id_prefix: commit_prefix.to_string(),
+        commit_id_suffix: commit_suffix.to_string(),
         author,
         timestamp: node.timestamp.clone(),
         full_description: node.full_description.clone(),
@@ -307,13 +316,13 @@ fn build_row_details(node: &TreeNode, stats: Option<&DiffStats>) -> RowDetails {
 }
 
 /// Calculate visual height for a row based on its details
-/// From render_commit_details_from_vm: 4 metadata lines + 1 description header + N description lines
+/// From render_commit_details_from_vm: 5 metadata lines + 1 description header + N description lines
 fn row_height(details: &Option<RowDetails>) -> usize {
     match details {
         None => 1,
         Some(d) => {
             let desc_lines = d.full_description.trim().lines().count().max(1);
-            1 + 4 + 1 + desc_lines // row + metadata + header + description
+            1 + 5 + 1 + desc_lines // row + metadata (incl commit) + header + description
         }
     }
 }
@@ -378,6 +387,8 @@ mod tests {
         TreeNode {
             change_id: change_id.to_string(),
             unique_prefix_len: 4,
+            commit_id: format!("{change_id}000000"),
+            unique_commit_prefix_len: 7,
             description: String::new(),
             full_description: String::new(),
             bookmarks: vec![],

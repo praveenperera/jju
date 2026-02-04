@@ -398,6 +398,17 @@ fn render_commit_details_from_vm(
             Span::styled(change_id, dim),
         ]),
         Line::from(vec![
+            Span::styled(format!("{indent}Commit: "), label_style),
+            Span::styled(
+                details.commit_id_prefix.clone(),
+                Style::default().fg(Color::Blue),
+            ),
+            Span::styled(
+                details.commit_id_suffix.clone(),
+                Style::default().add_modifier(Modifier::DIM),
+            ),
+        ]),
+        Line::from(vec![
             Span::styled(format!("{indent}Author: "), label_style),
             Span::styled(details.author.clone(), dim),
         ]),
@@ -839,6 +850,8 @@ mod tests {
         TreeNode {
             change_id: change_id.to_string(),
             unique_prefix_len: 4,
+            commit_id: format!("{change_id}000000"),
+            unique_commit_prefix_len: 7,
             description: String::new(),
             full_description: String::new(),
             bookmarks: vec![],
