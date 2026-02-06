@@ -60,6 +60,11 @@ pub mod git {
     pub fn fetch() -> Result<()> {
         run_with_stderr(cmd!("jj", "git", "fetch"))
     }
+
+    pub fn create_pr(bookmark: &str) -> Result<()> {
+        push_bookmark(bookmark)?;
+        run_with_stderr(cmd!("gh", "pr", "create", "--head", bookmark, "--web"))
+    }
 }
 
 /// Bookmark operations

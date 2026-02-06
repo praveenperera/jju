@@ -108,6 +108,7 @@ pub enum Action {
     GitFetch,
     GitImport,
     GitExport,
+    CreatePR,
 
     // Push select mode
     PushSelectUp,

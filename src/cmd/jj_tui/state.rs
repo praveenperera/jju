@@ -172,6 +172,7 @@ pub struct BookmarkInputState {
 pub enum BookmarkSelectAction {
     Move,
     Delete,
+    CreatePR,
 }
 
 #[derive(Debug, Clone)]

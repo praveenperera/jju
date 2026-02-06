@@ -68,6 +68,9 @@ pub enum Effect {
         keep_commit_id: String,
         abandon_commit_ids: Vec<String>,
     },
+    RunCreatePR {
+        bookmark: String,
+    },
 
     // Editor launch (requires terminal restore)
     LaunchDescriptionEditor {

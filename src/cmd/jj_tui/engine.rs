@@ -654,6 +654,10 @@ pub fn reduce(
                     effects.push(Effect::RefreshTree);
                     *mode = ModeState::Normal;
                 }
+                BookmarkSelectAction::CreatePR => {
+                    effects.push(Effect::RunCreatePR { bookmark });
+                    *mode = ModeState::Normal;
+                }
             }
         }
 
@@ -762,6 +766,12 @@ pub fn reduce(
                         name: bookmark_name,
                     });
                     effects.push(Effect::RefreshTree);
+                    *mode = ModeState::Normal;
+                }
+                BookmarkSelectAction::CreatePR => {
+                    effects.push(Effect::RunCreatePR {
+                        bookmark: bookmark_name,
+                    });
                     *mode = ModeState::Normal;
                 }
             }
@@ -1212,6 +1222,39 @@ pub fn reduce(
                 abandon_commit_ids: abandon_ids,
             });
             effects.push(Effect::RefreshTree);
+        }
+
+        Action::CreatePR => {
+            let Some(node) = tree.current_node() else {
+                effects.push(Effect::SetStatus {
+                    text: "No revision selected".to_string(),
+                    kind: MessageKind::Error,
+                });
+                return effects;
+            };
+
+            if node.bookmarks.is_empty() {
+                effects.push(Effect::SetStatus {
+                    text: "No bookmark on this revision to create PR from".to_string(),
+                    kind: MessageKind::Warning,
+                });
+                return effects;
+            }
+
+            if node.bookmarks.len() == 1 {
+                let bookmark = node.bookmarks[0].name.clone();
+                effects.push(Effect::RunCreatePR { bookmark });
+            } else {
+                let bookmarks: Vec<String> =
+                    node.bookmarks.iter().map(|b| b.name.clone()).collect();
+                let target_rev = node.change_id.clone();
+                *mode = ModeState::BookmarkSelect(super::state::BookmarkSelectState {
+                    bookmarks,
+                    selected_index: 0,
+                    target_rev,
+                    action: BookmarkSelectAction::CreatePR,
+                });
+            }
         }
     }
 

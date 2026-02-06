@@ -379,6 +379,19 @@ pub fn run_effects(
                 }
             }
 
+            Effect::RunCreatePR { bookmark } => match commands::git::create_pr(&bookmark) {
+                Ok(_) => {
+                    result.status_message = Some((
+                        format!("Pushed '{bookmark}' and opened PR creation"),
+                        MessageKind::Success,
+                    ));
+                }
+                Err(e) => {
+                    result.status_message =
+                        Some((format!("Create PR failed: {e}"), MessageKind::Error));
+                }
+            },
+
             Effect::LaunchDescriptionEditor { rev: _ } => {
                 // handled via pending_operation in the main loop
             }
