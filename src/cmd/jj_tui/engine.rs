@@ -1198,13 +1198,16 @@ pub fn reduce(
                 return effects;
             }
 
-            // find the local version (first one, typically newest/has working copy)
-            // and the others to abandon
-            let local_version = &node.divergent_versions[0];
+            let local_version = node
+                .divergent_versions
+                .iter()
+                .find(|v| v.is_local)
+                .unwrap_or(&node.divergent_versions[0]);
+
             let abandon_ids: Vec<String> = node
                 .divergent_versions
                 .iter()
-                .skip(1)
+                .filter(|v| v.commit_id != local_version.commit_id)
                 .map(|v| v.commit_id.clone())
                 .collect();
 
