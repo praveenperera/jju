@@ -62,6 +62,9 @@ fn release_local() -> Result<()> {
     // copy binary
     let src = workspace_root.join("target/release/jju");
     let dest = format!("{bin_dir}/jju");
+
+    // unlink first so we can overwrite even if the binary is currently running (macOS ETXTBSY)
+    let _ = fs::remove_file(&dest);
     fs::copy(&src, &dest)?;
 
     println!("Installed jju to {dest}");
