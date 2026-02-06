@@ -781,6 +781,21 @@ fn split_hunk(
         .run()
         .wrap_err("failed to set commit message")?;
 
+    // capture the split commit's change ID so we can reliably return to it later
+    let split_change_id = cmd!(
+        "jj",
+        "log",
+        "-r",
+        "@",
+        "--no-graph",
+        "-T",
+        "change_id.short()"
+    )
+    .stdout_capture()
+    .stderr_capture()
+    .read()
+    .wrap_err("failed to get split commit change id")?;
+
     // rebase the original revision AND its descendants onto the new split commit
     // using -s (source) instead of -r to include descendants
     cmd!("jj", "rebase", "-s", &revision, "-d", "@")
@@ -803,7 +818,7 @@ fn split_hunk(
     }
 
     // return to the new split commit (which is now parent of original)
-    cmd!("jj", "prev")
+    cmd!("jj", "edit", split_change_id.trim())
         .stdout_null()
         .stderr_null()
         .run()
