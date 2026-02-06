@@ -295,6 +295,8 @@ static BINDING_DEFS: &[BindingDef] = &[
     BindingDef::new(Normal, Char(' '), act!(ToggleExpanded), "details").alias(),
     BindingDef::new(Normal, Char('\\'), act!(ToggleSplitView), "split")
         .help("View", "Toggle split view"),
+    BindingDef::new(Normal, Char('R'), act!(RefreshTree), "refresh")
+        .help("View", "Refresh tree"),
     BindingDef::new(Normal, Char('d'), act!(EnterDiffView), "diff").help("View", "View diff"),
     BindingDef::new(Normal, Char('D'), act!(EditDescription), "desc")
         .help("View", "Edit description"),
