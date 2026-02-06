@@ -1158,7 +1158,7 @@ fn render_bookmark_select(frame: &mut Frame, state: &BookmarkSelectState) {
             theme::POPUP_BG_DELETE,
         ),
         BookmarkSelectAction::CreatePR => {
-            (" Create PR from Bookmark ", Color::Green, theme::POPUP_BG)
+            (" PR from Bookmark ", Color::Green, theme::POPUP_BG)
         }
     };
 
@@ -1261,7 +1261,7 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
         BookmarkSelectAction::Move => (" Move Bookmark Here ", Color::Cyan, theme::POPUP_BG),
         BookmarkSelectAction::Delete => (" Delete Bookmark ", Color::Red, theme::POPUP_BG_DELETE),
         BookmarkSelectAction::CreatePR => {
-            (" Create PR from Bookmark ", Color::Green, theme::POPUP_BG)
+            (" PR from Bookmark ", Color::Green, theme::POPUP_BG)
         }
     };
 
@@ -1378,7 +1378,7 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
             "type: filter | {up_key}/{down_key}: navigate | {confirm_key}: delete | {cancel_key}: cancel"
         ),
         BookmarkSelectAction::CreatePR => format!(
-            "type: filter | {up_key}/{down_key}: navigate | {confirm_key}: create PR | {cancel_key}: cancel"
+            "type: filter | {up_key}/{down_key}: navigate | {confirm_key}: PR | {cancel_key}: cancel"
         ),
     };
     lines.push(Line::from(Span::styled(

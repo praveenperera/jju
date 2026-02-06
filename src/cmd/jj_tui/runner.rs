@@ -379,8 +379,14 @@ pub fn run_effects(
                 }
             }
 
-            Effect::RunCreatePR { bookmark } => match commands::git::create_pr(&bookmark) {
-                Ok(_) => {
+            Effect::RunCreatePR { bookmark } => match commands::git::push_and_pr(&bookmark) {
+                Ok(true) => {
+                    result.status_message = Some((
+                        format!("Pushed '{bookmark}' and opened PR"),
+                        MessageKind::Success,
+                    ));
+                }
+                Ok(false) => {
                     result.status_message = Some((
                         format!("Pushed '{bookmark}' and opened PR creation"),
                         MessageKind::Success,
@@ -388,7 +394,7 @@ pub fn run_effects(
                 }
                 Err(e) => {
                     result.status_message =
-                        Some((format!("Create PR failed: {e}"), MessageKind::Error));
+                        Some((format!("PR failed: {e}"), MessageKind::Error));
                 }
             },
 

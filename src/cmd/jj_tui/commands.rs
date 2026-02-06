@@ -61,9 +61,27 @@ pub mod git {
         run_with_stderr(cmd!("jj", "git", "fetch"))
     }
 
-    pub fn create_pr(bookmark: &str) -> Result<()> {
+    pub fn has_open_pr(bookmark: &str) -> bool {
+        cmd!("gh", "pr", "view", bookmark, "--json", "url")
+            .stdout_null()
+            .stderr_null()
+            .unchecked()
+            .run()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    /// Push a bookmark and create or open its PR
+    /// Returns true if an existing PR was opened, false if a new one was created
+    pub fn push_and_pr(bookmark: &str) -> Result<bool> {
         push_bookmark(bookmark)?;
-        run_with_stderr(cmd!("gh", "pr", "create", "--head", bookmark, "--web"))
+        if has_open_pr(bookmark) {
+            run_with_stderr(cmd!("gh", "pr", "view", bookmark, "--web"))?;
+            Ok(true)
+        } else {
+            run_with_stderr(cmd!("gh", "pr", "create", "--head", bookmark, "--web"))?;
+            Ok(false)
+        }
     }
 }
 

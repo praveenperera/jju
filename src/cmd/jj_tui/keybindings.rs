@@ -370,7 +370,7 @@ static BINDING_DEFS: &[BindingDef] = &[
     .help("Bookmarks & Git", "Resolve divergence (keep local)"),
     BindingDef::new(Normal, Char('p'), act!(CreatePR), "create-pr")
         .prefix('g')
-        .help("Bookmarks & Git", "Create PR from bookmark"),
+        .help("Bookmarks & Git", "Create/open PR from bookmark"),
     // Normal chords: z (nav)
     BindingDef::new(Normal, Char('t'), act!(MoveCursorTop), "top")
         .prefix('z')
