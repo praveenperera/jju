@@ -92,8 +92,8 @@ impl TreeState {
         let working_copy = jj_repo.working_copy_commit()?;
         let working_copy_id = jj_repo.shortest_change_id(&working_copy, 4)?;
 
-        // revset: base | descendants(roots(base..@)) | @::
-        let revset = format!("{base} | descendants(roots({base}..@)) | @::");
+        // show all mutable commits (same as jj log default), rooted at base
+        let revset = format!("{base} | ancestors(immutable_heads().., 2) | @::");
         let commits = jj_repo.eval_revset(&revset)?;
 
         let mut commit_map: HashMap<String, TreeNode> = HashMap::default();
