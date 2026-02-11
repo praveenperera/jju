@@ -430,6 +430,11 @@ fn refresh_tree(
 ) -> eyre::Result<()> {
     // save current position to restore after refresh
     let current_change_id = tree.current_node().map(|n| n.change_id.clone());
+    let parent_change_id = tree
+        .current_node()
+        .and_then(|n| n.parent_ids.first().cloned());
+    let old_cursor = tree.cursor;
+
     // save focus stack change_ids to restore after refresh
     let focus_stack_change_ids: Vec<String> = tree
         .focus_stack
@@ -449,14 +454,23 @@ fn refresh_tree(
         }
     }
 
-    // restore cursor to same change_id if it still exists
-    if let Some(change_id) = current_change_id
-        && let Some(idx) = tree
-            .visible_entries
+    // restore cursor: try current change_id, then parent, then clamp old position
+    let find_visible = |cid: &str| {
+        tree.visible_entries
             .iter()
-            .position(|e| tree.nodes[e.node_index].change_id == change_id)
+            .position(|e| tree.nodes[e.node_index].change_id == cid)
+    };
+
+    if let Some(ref cid) = current_change_id
+        && let Some(idx) = find_visible(cid)
     {
         tree.cursor = idx;
+    } else if let Some(ref pid) = parent_change_id
+        && let Some(idx) = find_visible(pid)
+    {
+        tree.cursor = idx;
+    } else {
+        tree.cursor = old_cursor.min(tree.visible_count().saturating_sub(1));
     }
 
     Ok(())

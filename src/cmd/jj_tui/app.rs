@@ -272,6 +272,12 @@ impl App {
     fn refresh_tree(&mut self) -> Result<()> {
         // save current position to restore after refresh
         let current_change_id = self.tree.current_node().map(|n| n.change_id.clone());
+        let parent_change_id = self
+            .tree
+            .current_node()
+            .and_then(|n| n.parent_ids.first().cloned());
+        let old_cursor = self.tree.cursor;
+
         // save focus stack change_ids to restore after refresh
         let focus_stack_change_ids: Vec<String> = self
             .tree
@@ -297,15 +303,23 @@ impl App {
             }
         }
 
-        // restore cursor to same change_id if it still exists
-        if let Some(change_id) = current_change_id
-            && let Some(idx) = self
-                .tree
-                .visible_entries
+        // restore cursor: try current change_id, then parent, then clamp old position
+        let find_visible = |tree: &TreeState, cid: &str| {
+            tree.visible_entries
                 .iter()
-                .position(|e| self.tree.nodes[e.node_index].change_id == change_id)
+                .position(|e| tree.nodes[e.node_index].change_id == cid)
+        };
+
+        if let Some(ref cid) = current_change_id
+            && let Some(idx) = find_visible(&self.tree, cid)
         {
             self.tree.cursor = idx;
+        } else if let Some(ref pid) = parent_change_id
+            && let Some(idx) = find_visible(&self.tree, pid)
+        {
+            self.tree.cursor = idx;
+        } else {
+            self.tree.cursor = old_cursor.min(self.tree.visible_count().saturating_sub(1));
         }
 
         Ok(())
