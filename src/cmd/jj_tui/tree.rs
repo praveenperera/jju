@@ -68,6 +68,7 @@ impl TreeNode {
 pub struct VisibleEntry {
     pub node_index: usize,
     pub visual_depth: usize,
+    pub has_separator_before: bool,
 }
 
 pub struct TreeState {
@@ -81,6 +82,33 @@ pub struct TreeState {
     pub selected: HashSet<usize>,
     pub selection_anchor: Option<usize>,
     pub focus_stack: Vec<usize>, // stack of node_indices for nested zoom
+}
+
+/// Check if a subtree rooted at `root` contains `target` via DFS through children_map
+fn subtree_contains(
+    root: &str,
+    target: &str,
+    children_map: &HashMap<String, Vec<String>>,
+) -> bool {
+    if root == target {
+        return true;
+    }
+    let mut stack = vec![root.to_string()];
+    let mut visited = HashSet::default();
+    while let Some(node) = stack.pop() {
+        if !visited.insert(node.clone()) {
+            continue;
+        }
+        if let Some(children) = children_map.get(&node) {
+            for child in children {
+                if child == target {
+                    return true;
+                }
+                stack.push(child.clone());
+            }
+        }
+    }
+    false
 }
 
 impl TreeState {
@@ -215,6 +243,33 @@ impl TreeState {
             .collect();
         roots.sort();
 
+        // order roots: working copy tree first (if different from base), then base, then others
+        let wc_root = roots
+            .iter()
+            .find(|r| {
+                subtree_contains(r, &working_copy_id, &children_map)
+            })
+            .cloned();
+        let base_root = base_id.as_ref().and_then(|bid| {
+            roots.iter().find(|r| *r == bid).cloned()
+        });
+
+        let mut ordered_roots = Vec::with_capacity(roots.len());
+        if let Some(ref wc) = wc_root {
+            ordered_roots.push(wc.clone());
+        }
+        if let Some(ref br) = base_root
+            && Some(br) != wc_root.as_ref()
+        {
+            ordered_roots.push(br.clone());
+        }
+        for r in &roots {
+            if !ordered_roots.contains(r) {
+                ordered_roots.push(r.clone());
+            }
+        }
+        let roots = ordered_roots;
+
         let mut nodes = Vec::new();
         let mut visited = HashSet::default();
 
@@ -303,17 +358,28 @@ impl TreeState {
 
         if full_mode {
             // in full mode, use structural depth (minus base_depth for focused)
+            let mut is_first = true;
             filtered_nodes
                 .iter()
-                .map(|(i, n)| VisibleEntry {
-                    node_index: *i,
-                    visual_depth: n.depth.saturating_sub(base_depth),
+                .map(|(i, n)| {
+                    let depth = n.depth.saturating_sub(base_depth);
+                    // separator before each new root tree (depth 0) except the first
+                    let has_separator_before = depth == 0 && !is_first;
+                    if depth == 0 {
+                        is_first = false;
+                    }
+                    VisibleEntry {
+                        node_index: *i,
+                        visual_depth: depth,
+                        has_separator_before,
+                    }
                 })
                 .collect()
         } else {
             // in non-full mode, compute visual depth based on visible ancestors
             let mut entries = Vec::new();
             let mut depth_stack: Vec<usize> = Vec::new();
+            let mut seen_root = false;
 
             for (i, node) in filtered_nodes {
                 if !node.is_visible(full_mode) {
@@ -331,9 +397,15 @@ impl TreeState {
                 let visual_depth = depth_stack.len();
                 depth_stack.push(node.depth);
 
+                let has_separator_before = visual_depth == 0 && seen_root;
+                if visual_depth == 0 {
+                    seen_root = true;
+                }
+
                 entries.push(VisibleEntry {
                     node_index: i,
                     visual_depth,
+                    has_separator_before,
                 });
             }
             entries

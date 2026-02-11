@@ -36,6 +36,9 @@ pub struct TreeRowVm {
 
     // Visual height in terminal lines (1 for collapsed, more for expanded)
     pub height: usize,
+
+    // Whether to render a blank separator line before this row
+    pub has_separator_before: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -106,6 +109,7 @@ fn build_normal_view(app: &App) -> Vec<TreeRowVm> {
                 NodeRole::Normal,
                 None,
                 details,
+                entry.has_separator_before,
             )
         })
         .collect()
@@ -178,6 +182,7 @@ fn build_rebase_view(
                 slot.role,
                 marker,
                 None,
+                false,
             )
         })
         .collect()
@@ -233,6 +238,7 @@ fn build_bookmark_move_view(app: &App, bookmark_name: &str, dest_cursor: usize) 
                 role,
                 marker,
                 details,
+                entry.has_separator_before,
             )
         })
         .collect()
@@ -288,6 +294,7 @@ fn build_squash_view(app: &App, source_rev: &str, dest_cursor: usize) -> Vec<Tre
                 role,
                 marker,
                 details,
+                entry.has_separator_before,
             )
         })
         .collect()
@@ -339,6 +346,7 @@ fn build_row_vm(
     role: NodeRole,
     marker: Option<Marker>,
     details: Option<RowDetails>,
+    has_separator_before: bool,
 ) -> TreeRowVm {
     let (prefix, suffix) = node
         .change_id
@@ -373,6 +381,7 @@ fn build_row_vm(
         marker,
         details,
         height,
+        has_separator_before,
     }
 }
 
@@ -412,6 +421,7 @@ mod tests {
             .map(|(i, n)| VisibleEntry {
                 node_index: i,
                 visual_depth: n.depth,
+                has_separator_before: false,
             })
             .collect();
 

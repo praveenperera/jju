@@ -107,7 +107,10 @@ impl App {
 
             // build view models first to get accurate cursor height
             let vms = vm::build_tree_view(self, viewport_width);
-            let cursor_height = vms.get(self.tree.cursor).map_or(1, |vm| vm.height);
+            let cursor_vm = vms.get(self.tree.cursor);
+            let cursor_height = cursor_vm.map_or(1, |vm| {
+                vm.height + if vm.has_separator_before { 1 } else { 0 }
+            });
             self.tree.update_scroll(viewport_height, cursor_height);
 
             terminal.draw(|frame| ui::render_with_vms(frame, self, &vms))?;

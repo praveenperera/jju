@@ -245,6 +245,15 @@ fn render_tree_with_vms(frame: &mut Frame, app: &App, area: Rect, vms: &[TreeRow
             break;
         }
 
+        // render blank separator line between tree roots
+        if vm.has_separator_before {
+            lines.push(Line::default());
+            line_count += 1;
+            if line_count >= viewport_height {
+                break;
+            }
+        }
+
         lines.push(render_row(vm));
         line_count += 1;
 
@@ -879,6 +888,7 @@ mod tests {
             .map(|(i, n)| VisibleEntry {
                 node_index: i,
                 visual_depth: n.depth,
+                has_separator_before: false,
             })
             .collect();
 

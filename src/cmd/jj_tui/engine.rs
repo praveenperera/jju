@@ -1459,6 +1459,7 @@ mod tests {
             .map(|(i, n)| VisibleEntry {
                 node_index: i,
                 visual_depth: n.depth,
+                has_separator_before: false,
             })
             .collect();
 

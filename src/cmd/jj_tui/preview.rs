@@ -360,6 +360,7 @@ mod tests {
             .map(|(i, n)| VisibleEntry {
                 node_index: i,
                 visual_depth: n.depth,
+                has_separator_before: false,
             })
             .collect();
 
@@ -553,14 +554,17 @@ mod tests {
             VisibleEntry {
                 node_index: 0,
                 visual_depth: 0,
+                has_separator_before: false,
             },
             VisibleEntry {
                 node_index: 1,
                 visual_depth: 1, // visual depth is 1 (child of visible A)
+                has_separator_before: false,
             },
             VisibleEntry {
                 node_index: 2,
                 visual_depth: 2, // visual depth is 2
+                has_separator_before: false,
             },
         ];
 
