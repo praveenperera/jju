@@ -348,6 +348,8 @@ static BINDING_DEFS: &[BindingDef] = &[
     BindingDef::new(Normal, Char('p'), act!(GitPush), "push")
         .help("Bookmarks & Git", "Push current bookmark"),
     BindingDef::new(Normal, Char('P'), act!(GitPushAll), "push-all"),
+    BindingDef::new(Normal, Char('S'), act!(EnterConfirmStackSync), "stack-sync")
+        .help("Bookmarks & Git", "Stack sync (fetch, rebase, clean up)"),
     BindingDef::new(Normal, Char('C'), act!(EnterConflicts), "conflicts")
         .help("Conflicts", "View conflicts panel"),
     // Normal chords: g (git)

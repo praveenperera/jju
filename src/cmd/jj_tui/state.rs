@@ -105,6 +105,14 @@ impl StatusMessage {
         }
     }
 
+    pub fn with_duration(text: String, kind: MessageKind, duration: Duration) -> Self {
+        Self {
+            text,
+            kind,
+            expires: Instant::now() + duration,
+        }
+    }
+
     pub fn is_expired(&self) -> bool {
         Instant::now() > self.expires
     }
@@ -115,6 +123,7 @@ impl StatusMessage {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfirmAction {
     Abandon,
+    StackSync,
     RebaseOntoTrunk(RebaseType),
     MoveBookmarkBackwards {
         bookmark_name: String,

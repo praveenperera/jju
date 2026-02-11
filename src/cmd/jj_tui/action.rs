@@ -33,6 +33,7 @@ pub enum Action {
     EnterDiffView,
     ExitDiffView,
     EnterConfirmAbandon,
+    EnterConfirmStackSync,
     EnterConfirmRebaseOntoTrunk(RebaseType),
     EnterConfirmMoveBookmarkBackwards {
         bookmark_name: String,

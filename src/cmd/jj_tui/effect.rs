@@ -51,6 +51,7 @@ pub enum Effect {
     },
     RunGitPushAll,
     RunGitFetch,
+    RunStackSync,
     RunGitImport,
     RunGitExport,
     RunBookmarkSet {

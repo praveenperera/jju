@@ -11,11 +11,13 @@ use crate::jj_lib_helpers::JjRepo;
 use ratatui::DefaultTerminal;
 use std::fs;
 use std::io::Write;
+use std::time::Duration;
 
 /// Result of running effects
 #[derive(Default)]
 pub struct RunResult {
     pub status_message: Option<(String, MessageKind)>,
+    pub status_duration: Option<Duration>,
 }
 
 /// Execute a list of effects
@@ -38,6 +40,10 @@ pub fn run_effects(
                 if let Err(e) = refresh_tree(tree, diff_stats_cache) {
                     result.status_message =
                         Some((format!("Failed to refresh: {e}"), MessageKind::Error));
+                } else {
+                    result.status_message =
+                        Some(("Refreshed".to_string(), MessageKind::Success));
+                    result.status_duration = Some(Duration::from_millis(1500));
                 }
             }
 
@@ -265,6 +271,70 @@ pub fn run_effects(
                         Some((format!("Push all failed: {e}"), MessageKind::Error));
                 }
             },
+
+            Effect::RunStackSync => {
+                let sync_result = (|| -> eyre::Result<String> {
+                    commands::git::fetch()
+                        .map_err(|e| eyre::eyre!("Stack sync failed (fetch): {e}"))?;
+
+                    let trunk = commands::stack_sync::detect_trunk_branch()
+                        .map_err(|e| eyre::eyre!("Stack sync failed (detect trunk): {e}"))?;
+
+                    commands::stack_sync::sync_trunk_bookmark(&trunk)
+                        .map_err(|e| eyre::eyre!("Stack sync failed (sync trunk): {e}"))?;
+
+                    let roots = commands::stack_sync::find_stack_roots(&trunk)
+                        .map_err(|e| eyre::eyre!("Stack sync failed (find roots): {e}"))?;
+
+                    if roots.is_empty() {
+                        return Ok("Nothing to rebase, stack is up to date".to_string());
+                    }
+
+                    for root in &roots {
+                        commands::stack_sync::rebase_root_onto_trunk(root, &trunk).map_err(
+                            |e| eyre::eyre!("Stack sync failed (rebase {root}): {e}"),
+                        )?;
+                    }
+
+                    let deleted = commands::stack_sync::cleanup_deleted_bookmarks()
+                        .unwrap_or_default();
+
+                    let has_conflicts = commands::has_conflicts().unwrap_or(false);
+                    if has_conflicts {
+                        return Ok(
+                            "Stack synced (conflicts detected, u to undo)".to_string()
+                        );
+                    }
+
+                    let mut msg = format!("Stack synced onto {trunk}");
+                    if !deleted.is_empty() {
+                        msg.push_str(&format!(
+                            ", cleaned up {} bookmark{}",
+                            deleted.len(),
+                            if deleted.len() == 1 { "" } else { "s" }
+                        ));
+                    }
+                    Ok(msg)
+                })();
+
+                match sync_result {
+                    Ok(msg) => {
+                        let kind = if msg.contains("conflicts") {
+                            MessageKind::Warning
+                        } else {
+                            MessageKind::Success
+                        };
+                        result.status_message = Some((msg, kind));
+                    }
+                    Err(e) => {
+                        let error_details = format!("{e}");
+                        result.status_message = Some((
+                            set_error_with_details("Stack sync failed", &error_details),
+                            MessageKind::Error,
+                        ));
+                    }
+                }
+            }
 
             Effect::RunGitFetch => match commands::git::fetch() {
                 Ok(_) => {

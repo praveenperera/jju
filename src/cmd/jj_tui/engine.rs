@@ -95,6 +95,19 @@ pub fn reduce(
         }
         Action::ExitDiffView => *mode = ModeState::Normal,
 
+        Action::EnterConfirmStackSync => {
+            *mode = ModeState::Confirming(ConfirmState {
+                action: ConfirmAction::StackSync,
+                message: "Stack sync: fetch, rebase onto trunk, clean up?".to_string(),
+                revs: vec![
+                    "jj git fetch".to_string(),
+                    "jj bookmark set <trunk> -r <trunk>@origin".to_string(),
+                    "jj rebase -s <root> --onto <trunk> --skip-emptied".to_string(),
+                    "clean up [deleted] bookmarks".to_string(),
+                ],
+            });
+        }
+
         Action::EnterConfirmAbandon => {
             let revs = get_revs_for_action(tree);
             // check for working copy in selection
@@ -189,6 +202,11 @@ pub fn reduce(
                     let revset = state.revs.join(" | ");
                     effects.push(Effect::SaveOperationForUndo);
                     effects.push(Effect::RunAbandon { revset });
+                    effects.push(Effect::RefreshTree);
+                }
+                ConfirmAction::StackSync => {
+                    effects.push(Effect::SaveOperationForUndo);
+                    effects.push(Effect::RunStackSync);
                     effects.push(Effect::RefreshTree);
                 }
                 ConfirmAction::RebaseOntoTrunk(rebase_type) => {
