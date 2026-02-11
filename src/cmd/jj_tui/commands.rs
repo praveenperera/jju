@@ -330,6 +330,23 @@ pub mod stack_sync {
             .collect())
     }
 
+    /// Get the first line of a commit's description
+    pub fn get_commit_description(rev: &str) -> Result<String> {
+        let output = cmd!(
+            "jj",
+            "log",
+            "-r",
+            rev,
+            "--no-graph",
+            "-T",
+            "description.first_line()"
+        )
+        .stdout_capture()
+        .stderr_capture()
+        .read()?;
+        Ok(output.trim().to_string())
+    }
+
     /// Rebase a stack root onto trunk with --skip-emptied
     pub fn rebase_root_onto_trunk(root: &str, trunk: &str) -> Result<()> {
         run_with_stderr(cmd!(

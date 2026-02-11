@@ -8,8 +8,8 @@ use super::effect::Effect;
 use super::handlers;
 use super::state::{
     BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, ConfirmAction, ConfirmState,
-    ConflictsState, DiffState, MessageKind, ModeState, MovingBookmarkState, PendingOperation,
-    PendingSquash, PushSelectState, RebaseState, RebaseType, SquashState,
+    ConflictsState, DiffState, HelpState, MessageKind, ModeState, MovingBookmarkState,
+    PendingOperation, PendingSquash, PushSelectState, RebaseState, RebaseType, SquashState,
 };
 use super::tree::TreeState;
 use crate::jj_lib_helpers::JjRepo;
@@ -79,7 +79,9 @@ pub fn reduce(
         Action::ToggleSplitView => *split_view = !*split_view,
 
         // Mode transitions
-        Action::EnterHelp => *mode = ModeState::Help,
+        Action::EnterHelp => {
+            *mode = ModeState::Help(HelpState { scroll_offset: 0 });
+        }
         Action::ExitHelp => *mode = ModeState::Normal,
 
         Action::EnterDiffView => {
@@ -96,15 +98,30 @@ pub fn reduce(
         Action::ExitDiffView => *mode = ModeState::Normal,
 
         Action::EnterConfirmStackSync => {
+            let trunk = super::commands::stack_sync::detect_trunk_branch()
+                .unwrap_or_else(|_| "trunk".to_string());
+            let roots = super::commands::stack_sync::find_stack_roots(&trunk)
+                .unwrap_or_default();
+
+            let message = format!("Will rebase the following commits on top of {trunk}:");
+            let mut revs = Vec::new();
+            if roots.is_empty() {
+                revs.push("  (stack is up to date, nothing to rebase)".to_string());
+            } else {
+                for root in &roots {
+                    let desc = super::commands::stack_sync::get_commit_description(root)
+                        .unwrap_or_default();
+                    revs.push(format!("  {root}  {desc}"));
+                    revs.push(format!(
+                        "  jj rebase --source (-s) {root} --onto (-o) {trunk} --skip-emptied"
+                    ));
+                }
+            }
+
             *mode = ModeState::Confirming(ConfirmState {
                 action: ConfirmAction::StackSync,
-                message: "Stack sync: fetch, rebase onto trunk, clean up?".to_string(),
-                revs: vec![
-                    "jj git fetch".to_string(),
-                    "jj bookmark set <trunk> -r <trunk>@origin".to_string(),
-                    "jj rebase -s <root> --onto <trunk> --skip-emptied".to_string(),
-                    "clean up [deleted] bookmarks".to_string(),
-                ],
+                message,
+                revs,
             });
         }
 
@@ -878,6 +895,19 @@ pub fn reduce(
             *mode = ModeState::Normal;
         }
 
+        // Help view scrolling
+        Action::ScrollHelpUp(amount) => {
+            if let ModeState::Help(state) = mode {
+                state.scroll_offset = state.scroll_offset.saturating_sub(amount);
+            }
+        }
+
+        Action::ScrollHelpDown(amount) => {
+            if let ModeState::Help(state) = mode {
+                state.scroll_offset = state.scroll_offset.saturating_add(amount);
+            }
+        }
+
         // Diff view scrolling
         Action::ScrollDiffUp(amount) => {
             if let ModeState::ViewingDiff(state) = mode {
@@ -1575,7 +1605,7 @@ mod tests {
         assert!(matches!(state.mode, ModeState::Normal));
 
         state.reduce(Action::EnterHelp);
-        assert!(matches!(state.mode, ModeState::Help));
+        assert!(matches!(state.mode, ModeState::Help(..)));
 
         state.reduce(Action::ExitHelp);
         assert!(matches!(state.mode, ModeState::Normal));

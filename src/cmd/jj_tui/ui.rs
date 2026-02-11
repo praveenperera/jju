@@ -178,8 +178,8 @@ pub fn render_with_vms(frame: &mut Frame, app: &App, vms: &[TreeRowVm]) {
     render_status_bar(frame, app, chunks[1]);
 
     // render overlays
-    if app.mode.is_help() {
-        render_help(frame);
+    if let ModeState::Help(ref help_state) = app.mode {
+        render_help(frame, help_state);
     }
 
     if let ModeState::Confirming(ref state) = app.mode {
@@ -487,7 +487,7 @@ fn render_commit_details_from_vm(
 fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let mode_indicator = match &app.mode {
         ModeState::Normal => "NORMAL",
-        ModeState::Help => "HELP",
+        ModeState::Help(..) => "HELP",
         ModeState::ViewingDiff(_) => "DIFF",
         ModeState::Confirming(_) => "CONFIRM",
         ModeState::Selecting => "SELECT",
@@ -636,7 +636,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(bar, area);
 }
 
-fn render_help(frame: &mut Frame) {
+fn render_help(frame: &mut Frame, help_state: &super::state::HelpState) {
     use unicode_width::UnicodeWidthStr;
 
     let view = keybindings::build_help_view();
@@ -690,6 +690,7 @@ fn render_help(frame: &mut Frame) {
     frame.render_widget(Clear, popup_area);
 
     let help = Paragraph::new(help_text)
+        .scroll((help_state.scroll_offset as u16, 0))
         .block(
             Block::default()
                 .title(" Help ")
@@ -703,11 +704,11 @@ fn render_help(frame: &mut Frame) {
 
 fn render_confirmation(frame: &mut Frame, state: &ConfirmState) {
     let area = frame.area();
-    let popup_width = 50u16.min(area.width.saturating_sub(4));
+    let popup_width = 80u16.min(area.width.saturating_sub(4));
 
     // calculate height based on content
     let rev_count = state.revs.len();
-    let popup_height = (7 + rev_count.min(5)) as u16; // message + revs (max 5) + padding + buttons
+    let popup_height = (7 + rev_count.min(10)) as u16; // message + revs (max 10) + padding + buttons
 
     let popup_area = Rect {
         x: (area.width.saturating_sub(popup_width)) / 2,
@@ -737,13 +738,13 @@ fn render_confirmation(frame: &mut Frame, state: &ConfirmState) {
         Line::from(""),
     ];
 
-    // show affected revisions (up to 5)
-    for (i, rev) in state.revs.iter().take(5).enumerate() {
-        lines.push(Line::from(format!("  {rev}")));
-        if i == 4 && state.revs.len() > 5 {
+    // show affected revisions (up to 10)
+    for (i, rev) in state.revs.iter().take(10).enumerate() {
+        lines.push(Line::from(rev.to_string()));
+        if i == 9 && state.revs.len() > 10 {
             lines.push(Line::from(format!(
                 "  ... and {} more",
-                state.revs.len() - 5
+                state.revs.len() - 10
             )));
         }
     }

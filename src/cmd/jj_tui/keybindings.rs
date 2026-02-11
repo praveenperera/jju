@@ -32,7 +32,7 @@ pub enum ModeId {
 pub fn mode_id_from_state(mode: &ModeState) -> ModeId {
     match mode {
         ModeState::Normal => ModeId::Normal,
-        ModeState::Help => ModeId::Help,
+        ModeState::Help(..) => ModeId::Help,
         ModeState::ViewingDiff(_) => ModeId::Diff,
         ModeState::Confirming(_) => ModeId::Confirm,
         ModeState::Selecting => ModeId::Selecting,
@@ -403,6 +403,12 @@ static BINDING_DEFS: &[BindingDef] = &[
     BindingDef::new(Help, Char('q'), act!(ExitHelp), "close"),
     BindingDef::new(Help, Char('?'), act!(ExitHelp), "close").alias(),
     BindingDef::new(Help, Key(KeyCode::Esc), act!(ExitHelp), "close").alias(),
+    BindingDef::new(Help, Char('j'), act!(ScrollHelpDown(1)), "scroll-down"),
+    BindingDef::new(Help, Key(KeyCode::Down), act!(ScrollHelpDown(1)), "scroll-down").alias(),
+    BindingDef::new(Help, Char('k'), act!(ScrollHelpUp(1)), "scroll-up"),
+    BindingDef::new(Help, Key(KeyCode::Up), act!(ScrollHelpUp(1)), "scroll-up").alias(),
+    BindingDef::new(Help, Char('d'), act!(ScrollHelpDown(20)), "page-down"),
+    BindingDef::new(Help, Char('u'), act!(ScrollHelpUp(20)), "page-up"),
     // ========================================================================
     // Diff mode
     // ========================================================================
@@ -915,6 +921,7 @@ pub fn status_bar_hints(ctx: &StatusHintContext) -> String {
             } else if ctx.current_has_bookmark {
                 join_segments(&[
                     kv(ModeId::Normal, None, "push", "push"),
+                    kv(ModeId::Normal, None, "stack-sync", "sync"),
                     kv(ModeId::Normal, None, "bookmark", "bookmark"),
                     kv(ModeId::Normal, None, "rebase-single", "rebase"),
                     kv(ModeId::Normal, None, "help", "help"),
@@ -929,6 +936,7 @@ pub fn status_bar_hints(ctx: &StatusHintContext) -> String {
                     ),
                     kv(ModeId::Normal, None, "trunk-single", "trunk"),
                     kv(ModeId::Normal, None, "desc", "desc"),
+                    kv(ModeId::Normal, None, "stack-sync", "sync"),
                     kv(ModeId::Normal, None, "bookmark", "bookmark"),
                     kv(ModeId::Normal, None, "git", "git"),
                     kv(ModeId::Normal, None, "nav", "nav"),
@@ -937,10 +945,17 @@ pub fn status_bar_hints(ctx: &StatusHintContext) -> String {
                 ])
             }
         }
-        ModeId::Help => {
-            let keys = keys_for_label(ModeId::Help, None, "close", true, KeyFormat::Space);
-            format!("{}:close", join_keys(&keys, "/"))
-        }
+        ModeId::Help => join_segments(&[
+            format!(
+                "{}/{}:scroll",
+                key_for_hint(ModeId::Help, None, "scroll-down"),
+                key_for_hint(ModeId::Help, None, "scroll-up")
+            ),
+            {
+                let keys = keys_for_label(ModeId::Help, None, "close", true, KeyFormat::Space);
+                format!("{}:close", join_keys(&keys, "/"))
+            },
+        ]),
         ModeId::Diff => join_segments(&[
             format!(
                 "{}/{}:scroll",

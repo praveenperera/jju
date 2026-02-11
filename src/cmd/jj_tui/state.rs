@@ -41,7 +41,7 @@ pub struct DiffState {
 #[derive(Debug, Clone)]
 pub enum ModeState {
     Normal,
-    Help,
+    Help(HelpState),
     ViewingDiff(DiffState),
     Confirming(ConfirmState),
     Selecting,
@@ -56,10 +56,9 @@ pub enum ModeState {
     Conflicts(ConflictsState),
 }
 
-impl ModeState {
-    pub fn is_help(&self) -> bool {
-        matches!(self, ModeState::Help)
-    }
+#[derive(Debug, Clone)]
+pub struct HelpState {
+    pub scroll_offset: usize,
 }
 
 // Rebase types

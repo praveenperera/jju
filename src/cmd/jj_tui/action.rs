@@ -88,6 +88,10 @@ pub enum Action {
     BookmarkInputCursorRight,
     ConfirmBookmarkInput,
 
+    // Help view scrolling
+    ScrollHelpUp(usize),
+    ScrollHelpDown(usize),
+
     // Diff view scrolling
     ScrollDiffUp(usize),
     ScrollDiffDown(usize),
