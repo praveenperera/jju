@@ -85,11 +85,7 @@ pub struct TreeState {
 }
 
 /// Check if a subtree rooted at `root` contains `target` via DFS through children_map
-fn subtree_contains(
-    root: &str,
-    target: &str,
-    children_map: &HashMap<String, Vec<String>>,
-) -> bool {
+fn subtree_contains(root: &str, target: &str, children_map: &HashMap<String, Vec<String>>) -> bool {
     if root == target {
         return true;
     }
@@ -246,13 +242,11 @@ impl TreeState {
         // order roots: working copy tree first (if different from base), then base, then others
         let wc_root = roots
             .iter()
-            .find(|r| {
-                subtree_contains(r, &working_copy_id, &children_map)
-            })
+            .find(|r| subtree_contains(r, &working_copy_id, &children_map))
             .cloned();
-        let base_root = base_id.as_ref().and_then(|bid| {
-            roots.iter().find(|r| *r == bid).cloned()
-        });
+        let base_root = base_id
+            .as_ref()
+            .and_then(|bid| roots.iter().find(|r| *r == bid).cloned());
 
         let mut ordered_roots = Vec::with_capacity(roots.len());
         if let Some(ref wc) = wc_root {

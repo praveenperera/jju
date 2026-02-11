@@ -41,8 +41,7 @@ pub fn run_effects(
                     result.status_message =
                         Some((format!("Failed to refresh: {e}"), MessageKind::Error));
                 } else {
-                    result.status_message =
-                        Some(("Refreshed".to_string(), MessageKind::Success));
+                    result.status_message = Some(("Refreshed".to_string(), MessageKind::Success));
                     result.status_duration = Some(Duration::from_millis(1500));
                 }
             }
@@ -291,19 +290,16 @@ pub fn run_effects(
                     }
 
                     for root in &roots {
-                        commands::stack_sync::rebase_root_onto_trunk(root, &trunk).map_err(
-                            |e| eyre::eyre!("Stack sync failed (rebase {root}): {e}"),
-                        )?;
+                        commands::stack_sync::rebase_root_onto_trunk(root, &trunk)
+                            .map_err(|e| eyre::eyre!("Stack sync failed (rebase {root}): {e}"))?;
                     }
 
-                    let deleted = commands::stack_sync::cleanup_deleted_bookmarks()
-                        .unwrap_or_default();
+                    let deleted =
+                        commands::stack_sync::cleanup_deleted_bookmarks().unwrap_or_default();
 
                     let has_conflicts = commands::has_conflicts().unwrap_or(false);
                     if has_conflicts {
-                        return Ok(
-                            "Stack synced (conflicts detected, u to undo)".to_string()
-                        );
+                        return Ok("Stack synced (conflicts detected, u to undo)".to_string());
                     }
 
                     let mut msg = format!("Stack synced onto {trunk}");
@@ -463,8 +459,7 @@ pub fn run_effects(
                     ));
                 }
                 Err(e) => {
-                    result.status_message =
-                        Some((format!("PR failed: {e}"), MessageKind::Error));
+                    result.status_message = Some((format!("PR failed: {e}"), MessageKind::Error));
                 }
             },
 

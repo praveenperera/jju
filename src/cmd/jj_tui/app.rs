@@ -187,8 +187,7 @@ impl App {
         // apply result
         if let Some((text, kind)) = result.status_message {
             if let Some(duration) = result.status_duration {
-                self.status_message =
-                    Some(StatusMessage::with_duration(text, kind, duration));
+                self.status_message = Some(StatusMessage::with_duration(text, kind, duration));
             } else {
                 self.set_status(&text, kind);
             }

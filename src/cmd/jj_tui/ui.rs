@@ -1167,9 +1167,7 @@ fn render_bookmark_select(frame: &mut Frame, state: &BookmarkSelectState) {
             Color::Red,
             theme::POPUP_BG_DELETE,
         ),
-        BookmarkSelectAction::CreatePR => {
-            (" PR from Bookmark ", Color::Green, theme::POPUP_BG)
-        }
+        BookmarkSelectAction::CreatePR => (" PR from Bookmark ", Color::Green, theme::POPUP_BG),
     };
 
     let block = Block::default()
@@ -1270,9 +1268,7 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
     let (title, border_color, bg_color) = match state.action {
         BookmarkSelectAction::Move => (" Move Bookmark Here ", Color::Cyan, theme::POPUP_BG),
         BookmarkSelectAction::Delete => (" Delete Bookmark ", Color::Red, theme::POPUP_BG_DELETE),
-        BookmarkSelectAction::CreatePR => {
-            (" PR from Bookmark ", Color::Green, theme::POPUP_BG)
-        }
+        BookmarkSelectAction::CreatePR => (" PR from Bookmark ", Color::Green, theme::POPUP_BG),
     };
 
     let block = Block::default()
