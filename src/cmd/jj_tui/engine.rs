@@ -37,7 +37,13 @@ pub fn reduce(
     match action {
         // Lifecycle
         Action::Quit => *should_quit = true,
-        Action::RefreshTree => effects.push(Effect::RefreshTree),
+        Action::RefreshTree => {
+            effects.push(Effect::RefreshTree);
+            effects.push(Effect::SetStatus {
+                text: "Refreshed".to_string(),
+                kind: MessageKind::Success,
+            });
+        }
         Action::Noop => {}
 
         // Pending key management

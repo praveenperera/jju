@@ -40,9 +40,6 @@ pub fn run_effects(
                 if let Err(e) = refresh_tree(tree, diff_stats_cache) {
                     result.status_message =
                         Some((format!("Failed to refresh: {e}"), MessageKind::Error));
-                } else {
-                    result.status_message = Some(("Refreshed".to_string(), MessageKind::Success));
-                    result.status_duration = Some(Duration::from_millis(1500));
                 }
             }
 
