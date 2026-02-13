@@ -42,6 +42,8 @@ pub mod git {
     use eyre::Result;
 
     pub fn push_bookmark(name: &str) -> Result<()> {
+        // track the remote bookmark if it exists, ignore errors for new bookmarks
+        let _ = super::bookmark::track(name);
         run_with_stderr(cmd!("jj", "git", "push", "--bookmark", name))
     }
 
@@ -110,6 +112,11 @@ pub mod bookmark {
     pub fn delete(name: &str) -> Result<()> {
         run_with_stderr(cmd!("jj", "bookmark", "delete", name))
     }
+
+    pub fn track(name: &str) -> Result<()> {
+        let remote_ref = format!("{name}@origin");
+        run_with_stderr(cmd!("jj", "bookmark", "track", &remote_ref))
+    }
 }
 
 /// Revision operations
@@ -141,20 +148,24 @@ pub mod rebase {
     use duct::cmd;
     use eyre::Result;
 
+    /// Inline rebase: insert source after dest, reparenting dest's children under source
     pub fn single(source: &str, dest: &str) -> Result<()> {
         run_with_stderr(cmd!("jj", "rebase", "-r", source, "-A", dest))
     }
 
-    pub fn single_with_next(source: &str, dest: &str, next: &str) -> Result<()> {
-        run_with_stderr(cmd!("jj", "rebase", "-r", source, "-A", dest, "-B", next))
-    }
-
+    /// Inline rebase with descendants
     pub fn with_descendants(source: &str, dest: &str) -> Result<()> {
         run_with_stderr(cmd!("jj", "rebase", "-s", source, "-A", dest))
     }
 
-    pub fn with_descendants_and_next(source: &str, dest: &str, next: &str) -> Result<()> {
-        run_with_stderr(cmd!("jj", "rebase", "-s", source, "-A", dest, "-B", next))
+    /// Fork rebase: set dest as parent, dest's children unaffected
+    pub fn single_fork(source: &str, dest: &str) -> Result<()> {
+        run_with_stderr(cmd!("jj", "rebase", "-r", source, "-d", dest))
+    }
+
+    /// Fork rebase with descendants
+    pub fn with_descendants_fork(source: &str, dest: &str) -> Result<()> {
+        run_with_stderr(cmd!("jj", "rebase", "-s", source, "-d", dest))
     }
 
     /// Rebase single commit onto trunk()
@@ -235,30 +246,6 @@ pub fn is_ancestor(rev1: &str, rev2: &str) -> Result<bool> {
     Ok(!output.trim().is_empty())
 }
 
-/// Get the first child of a revision (if any)
-pub fn get_first_child(rev: &str) -> Result<Option<String>> {
-    let revset = format!("children({rev})");
-    let output = cmd!(
-        "jj",
-        "log",
-        "-r",
-        revset,
-        "--no-graph",
-        "-T",
-        "change_id",
-        "--limit",
-        "1"
-    )
-    .stdout_capture()
-    .stderr_null()
-    .read()?;
-    let trimmed = output.trim();
-    if trimmed.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(trimmed.to_string()))
-    }
-}
 
 /// List files with conflicts in the working copy
 pub fn list_conflict_files() -> Result<Vec<String>> {
