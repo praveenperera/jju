@@ -105,25 +105,20 @@ pub fn run_effects(
                 rebase_type,
                 allow_branches,
             } => {
-                let res = if allow_branches {
-                    match rebase_type {
-                        RebaseType::Single => commands::rebase::single(&source, &dest),
-                        RebaseType::WithDescendants => {
-                            commands::rebase::with_descendants(&source, &dest)
-                        }
+                let res = match (rebase_type, allow_branches) {
+                    // fork: -d flag, dest's children unaffected
+                    (RebaseType::Single, true) => {
+                        commands::rebase::single_fork(&source, &dest)
                     }
-                } else {
-                    match (rebase_type, commands::get_first_child(&dest)) {
-                        (RebaseType::Single, Ok(Some(next))) => {
-                            commands::rebase::single_with_next(&source, &dest, &next)
-                        }
-                        (RebaseType::Single, _) => commands::rebase::single(&source, &dest),
-                        (RebaseType::WithDescendants, Ok(Some(next))) => {
-                            commands::rebase::with_descendants_and_next(&source, &dest, &next)
-                        }
-                        (RebaseType::WithDescendants, _) => {
-                            commands::rebase::with_descendants(&source, &dest)
-                        }
+                    (RebaseType::WithDescendants, true) => {
+                        commands::rebase::with_descendants_fork(&source, &dest)
+                    }
+                    // inline: -A flag, dest's children reparented under source
+                    (RebaseType::Single, false) => {
+                        commands::rebase::single(&source, &dest)
+                    }
+                    (RebaseType::WithDescendants, false) => {
+                        commands::rebase::with_descendants(&source, &dest)
                     }
                 };
 
