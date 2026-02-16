@@ -4,11 +4,15 @@ A TUI for [Jujutsu](https://github.com/martinvonz/jj) version control.
 
 > **Alpha Software** — I use this TUI daily and it handles my regular workflow well. Expect rough edges and frequent changes.
 
-<video src="jju.mp4" autoplay loop muted playsinline></video>
-
+[<video src="jju.mp4" autoplay loop muted playsinline></video>
+](https://github.com/user-attachments/assets/71e79ae9-0725-4510-863e-236ffda48d25
+)
 ## What Works Well
 
 - **Rebasing** — visual rebase preview, single commit (`r`), with descendants (`s`), onto trunk (`t`/`T`)
+
+
+
 - **Daily workflow** — editing, committing, diffing, bookmarks, undo
 - **Navigation** — keyboard-driven with prefix menus and zoom levels
 
