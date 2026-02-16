@@ -4,7 +4,7 @@ A TUI for [Jujutsu](https://github.com/martinvonz/jj) version control.
 
 > **Alpha Software** — I use this TUI daily and it handles my regular workflow well. Expect rough edges and frequent changes.
 
-<!-- TODO: Add terminal recording (asciinema/vhs) -->
+<video src="jju.mp4" autoplay loop muted playsinline></video>
 
 ## What Works Well
 
