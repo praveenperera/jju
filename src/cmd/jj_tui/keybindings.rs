@@ -404,7 +404,13 @@ static BINDING_DEFS: &[BindingDef] = &[
     BindingDef::new(Help, Char('?'), act!(ExitHelp), "close").alias(),
     BindingDef::new(Help, Key(KeyCode::Esc), act!(ExitHelp), "close").alias(),
     BindingDef::new(Help, Char('j'), act!(ScrollHelpDown(1)), "scroll-down"),
-    BindingDef::new(Help, Key(KeyCode::Down), act!(ScrollHelpDown(1)), "scroll-down").alias(),
+    BindingDef::new(
+        Help,
+        Key(KeyCode::Down),
+        act!(ScrollHelpDown(1)),
+        "scroll-down",
+    )
+    .alias(),
     BindingDef::new(Help, Char('k'), act!(ScrollHelpUp(1)), "scroll-up"),
     BindingDef::new(Help, Key(KeyCode::Up), act!(ScrollHelpUp(1)), "scroll-up").alias(),
     BindingDef::new(Help, Char('d'), act!(ScrollHelpDown(20)), "page-down"),

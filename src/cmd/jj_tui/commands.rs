@@ -27,7 +27,11 @@ pub fn get_current_op_id() -> Result<String> {
         .stdout_capture()
         .stderr_null()
         .read()?;
-    Ok(output.trim().to_string())
+    let op_id = output.trim().to_string();
+    if op_id.is_empty() {
+        eyre::bail!("jj op log returned empty operation ID");
+    }
+    Ok(op_id)
 }
 
 /// Restore to a previous operation (undo)
@@ -245,7 +249,6 @@ pub fn is_ancestor(rev1: &str, rev2: &str) -> Result<bool> {
     .read()?;
     Ok(!output.trim().is_empty())
 }
-
 
 /// List files with conflicts in the working copy
 pub fn list_conflict_files() -> Result<Vec<String>> {

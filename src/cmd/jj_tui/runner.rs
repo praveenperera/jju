@@ -107,16 +107,12 @@ pub fn run_effects(
             } => {
                 let res = match (rebase_type, allow_branches) {
                     // fork: -d flag, dest's children unaffected
-                    (RebaseType::Single, true) => {
-                        commands::rebase::single_fork(&source, &dest)
-                    }
+                    (RebaseType::Single, true) => commands::rebase::single_fork(&source, &dest),
                     (RebaseType::WithDescendants, true) => {
                         commands::rebase::with_descendants_fork(&source, &dest)
                     }
                     // inline: -A flag, dest's children reparented under source
-                    (RebaseType::Single, false) => {
-                        commands::rebase::single(&source, &dest)
-                    }
+                    (RebaseType::Single, false) => commands::rebase::single(&source, &dest),
                     (RebaseType::WithDescendants, false) => {
                         commands::rebase::with_descendants(&source, &dest)
                     }
@@ -187,8 +183,8 @@ pub fn run_effects(
 
             Effect::RunUndo { op_id: _ } => {
                 // use last_op from state, not from effect
-                if let Some(ref op_id) = last_op.take() {
-                    match commands::restore_op(op_id) {
+                match last_op.take() {
+                    Some(ref op_id) if !op_id.is_empty() => match commands::restore_op(op_id) {
                         Ok(_) => {
                             result.status_message =
                                 Some(("Operation undone".to_string(), MessageKind::Success));
@@ -197,10 +193,11 @@ pub fn run_effects(
                             result.status_message =
                                 Some((format!("Undo failed: {e}"), MessageKind::Error));
                         }
+                    },
+                    _ => {
+                        result.status_message =
+                            Some(("Nothing to undo".to_string(), MessageKind::Warning));
                     }
-                } else {
-                    result.status_message =
-                        Some(("Nothing to undo".to_string(), MessageKind::Warning));
                 }
             }
 

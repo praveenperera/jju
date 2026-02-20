@@ -92,6 +92,13 @@ pub fn reduce(
 
         Action::EnterDiffView => {
             let rev = current_rev(tree);
+            if rev.is_empty() {
+                effects.push(Effect::SetStatus {
+                    text: "No revision selected".to_string(),
+                    kind: MessageKind::Error,
+                });
+                return effects;
+            }
             if let Ok(diff_output) = super::commands::diff::get_diff(&rev) {
                 let lines = handlers::diff::parse_diff(&diff_output, syntax_set, theme_set);
                 *mode = ModeState::ViewingDiff(DiffState {
@@ -106,8 +113,7 @@ pub fn reduce(
         Action::EnterConfirmStackSync => {
             let trunk = super::commands::stack_sync::detect_trunk_branch()
                 .unwrap_or_else(|_| "trunk".to_string());
-            let roots = super::commands::stack_sync::find_stack_roots(&trunk)
-                .unwrap_or_default();
+            let roots = super::commands::stack_sync::find_stack_roots(&trunk).unwrap_or_default();
 
             let message = format!("Will rebase the following commits on top of {trunk}:");
             let mut revs = Vec::new();
@@ -234,6 +240,13 @@ pub fn reduce(
                 }
                 ConfirmAction::RebaseOntoTrunk(rebase_type) => {
                     let source = current_rev(tree);
+                    if source.is_empty() {
+                        effects.push(Effect::SetStatus {
+                            text: "No revision selected".to_string(),
+                            kind: MessageKind::Error,
+                        });
+                        return effects;
+                    }
                     effects.push(Effect::SaveOperationForUndo);
                     effects.push(Effect::RunRebaseOntoTrunk {
                         source,
@@ -946,6 +959,13 @@ pub fn reduce(
         // Commands
         Action::EditWorkingCopy => {
             let rev = current_rev(tree);
+            if rev.is_empty() {
+                effects.push(Effect::SetStatus {
+                    text: "No revision selected".to_string(),
+                    kind: MessageKind::Error,
+                });
+                return effects;
+            }
             if let Some(node) = tree.current_node()
                 && node.is_working_copy
             {
@@ -961,6 +981,13 @@ pub fn reduce(
 
         Action::CreateNewCommit => {
             let rev = current_rev(tree);
+            if rev.is_empty() {
+                effects.push(Effect::SetStatus {
+                    text: "No revision selected".to_string(),
+                    kind: MessageKind::Error,
+                });
+                return effects;
+            }
             effects.push(Effect::RunNew { rev });
             effects.push(Effect::RefreshTree);
         }
@@ -987,9 +1014,15 @@ pub fn reduce(
         }
 
         Action::EditDescription => {
-            *pending_operation = Some(PendingOperation::EditDescription {
-                rev: current_rev(tree),
-            });
+            let rev = current_rev(tree);
+            if rev.is_empty() {
+                effects.push(Effect::SetStatus {
+                    text: "No revision selected".to_string(),
+                    kind: MessageKind::Error,
+                });
+                return effects;
+            }
+            *pending_operation = Some(PendingOperation::EditDescription { rev });
         }
 
         Action::ExecuteAbandon { ref revs } => {
@@ -1002,6 +1035,13 @@ pub fn reduce(
 
         Action::ExecuteRebaseOntoTrunk(rebase_type) => {
             let source = current_rev(tree);
+            if source.is_empty() {
+                effects.push(Effect::SetStatus {
+                    text: "No revision selected".to_string(),
+                    kind: MessageKind::Error,
+                });
+                return effects;
+            }
             effects.push(Effect::SaveOperationForUndo);
             effects.push(Effect::RunRebaseOntoTrunk {
                 source,
@@ -1817,8 +1857,9 @@ mod tests {
         let mut state = TestState::new(tree);
 
         let effects = state.reduce(Action::RefreshTree);
-        assert_eq!(effects.len(), 1);
+        assert_eq!(effects.len(), 2);
         assert!(matches!(effects[0], Effect::RefreshTree));
+        assert!(matches!(effects[1], Effect::SetStatus { .. }));
     }
 
     #[test]
@@ -1940,5 +1981,69 @@ mod tests {
         state.reduce(Action::ExitPushSelect);
 
         assert!(matches!(state.mode, ModeState::Normal));
+    }
+
+    #[test]
+    fn test_undo_produces_run_undo_and_refresh() {
+        let tree = make_tree(vec![make_node("aaaa", 0)]);
+        let mut state = TestState::new(tree);
+
+        let effects = state.reduce(Action::Undo);
+
+        assert_eq!(effects.len(), 2);
+        assert!(matches!(effects[0], Effect::RunUndo { .. }));
+        assert!(matches!(effects[1], Effect::RefreshTree));
+    }
+
+    #[test]
+    fn test_edit_working_copy_with_empty_tree_shows_error() {
+        let tree = make_tree(vec![]);
+        let mut state = TestState::new(tree);
+
+        let effects = state.reduce(Action::EditWorkingCopy);
+
+        assert!(effects.iter().any(|e| matches!(
+            e,
+            Effect::SetStatus {
+                kind: MessageKind::Error,
+                ..
+            }
+        )));
+        // should NOT produce RunEdit with empty rev
+        assert!(!effects.iter().any(|e| matches!(e, Effect::RunEdit { .. })));
+    }
+
+    #[test]
+    fn test_create_new_commit_with_empty_tree_shows_error() {
+        let tree = make_tree(vec![]);
+        let mut state = TestState::new(tree);
+
+        let effects = state.reduce(Action::CreateNewCommit);
+
+        assert!(effects.iter().any(|e| matches!(
+            e,
+            Effect::SetStatus {
+                kind: MessageKind::Error,
+                ..
+            }
+        )));
+        assert!(!effects.iter().any(|e| matches!(e, Effect::RunNew { .. })));
+    }
+
+    #[test]
+    fn test_edit_description_with_empty_tree_shows_error() {
+        let tree = make_tree(vec![]);
+        let mut state = TestState::new(tree);
+
+        let effects = state.reduce(Action::EditDescription);
+
+        assert!(effects.iter().any(|e| matches!(
+            e,
+            Effect::SetStatus {
+                kind: MessageKind::Error,
+                ..
+            }
+        )));
+        assert!(state.pending_operation.is_none());
     }
 }
