@@ -47,7 +47,6 @@ pub enum ModeState {
     Selecting,
     Rebasing(RebaseState),
     MovingBookmark(MovingBookmarkState),
-    BookmarkInput(BookmarkInputState),
     #[allow(dead_code)]
     BookmarkSelect(BookmarkSelectState),
     BookmarkPicker(BookmarkPickerState),
@@ -166,14 +165,6 @@ pub struct MovingBookmarkState {
     pub bookmark_name: String,
     pub dest_cursor: usize,
     pub op_before: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct BookmarkInputState {
-    pub name: String,
-    pub cursor: usize,
-    pub target_rev: String,
-    pub deleting: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

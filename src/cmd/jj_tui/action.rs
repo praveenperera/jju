@@ -49,7 +49,6 @@ pub enum Action {
     EnterSquashMode,
     ExitSquashMode,
     EnterMoveBookmarkMode,
-    EnterCreateBookmark,
     EnterBookmarkPicker(BookmarkSelectAction),
     ExitBookmarkMode,
 
@@ -81,12 +80,6 @@ pub enum Action {
     BookmarkFilterChar(char),
     BookmarkFilterBackspace,
     ConfirmBookmarkPicker,
-    BookmarkInputChar(char),
-    BookmarkInputBackspace,
-    BookmarkInputDelete,
-    BookmarkInputCursorLeft,
-    BookmarkInputCursorRight,
-    ConfirmBookmarkInput,
 
     // Help view scrolling
     ScrollHelpUp(usize),

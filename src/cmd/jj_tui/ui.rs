@@ -2,9 +2,8 @@ use super::app::App;
 use super::keybindings;
 use super::preview::NodeRole;
 use super::state::{
-    BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState,
-    ConfirmState, ConflictsState, DiffLineKind, DiffState, MessageKind, ModeState, PushSelectState,
-    RebaseType, StatusMessage,
+    BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState, ConfirmState, ConflictsState,
+    DiffLineKind, DiffState, MessageKind, ModeState, PushSelectState, RebaseType, StatusMessage,
 };
 use super::theme;
 use super::tree::BookmarkInfo;
@@ -184,10 +183,6 @@ pub fn render_with_vms(frame: &mut Frame, app: &App, vms: &[TreeRowVm]) {
 
     if let ModeState::Confirming(ref state) = app.mode {
         render_confirmation(frame, state);
-    }
-
-    if let ModeState::BookmarkInput(ref state) = app.mode {
-        render_bookmark_input(frame, state);
     }
 
     if let ModeState::BookmarkSelect(ref state) = app.mode {
@@ -499,7 +494,6 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             }
         }
         ModeState::MovingBookmark(_) => "MOVE BOOKMARK",
-        ModeState::BookmarkInput(_) => "BOOKMARK",
         ModeState::BookmarkSelect(_) => "SELECT BM",
         ModeState::BookmarkPicker(_) => "PICK BM",
         ModeState::PushSelect(_) => "PUSH SELECT",
@@ -1044,109 +1038,6 @@ mod tests {
     }
 }
 
-fn render_bookmark_input(frame: &mut Frame, state: &BookmarkInputState) {
-    let area = frame.area();
-    let popup_width = 50u16.min(area.width.saturating_sub(4));
-    let popup_height = 7u16;
-
-    let popup_area = Rect {
-        x: (area.width.saturating_sub(popup_width)) / 2,
-        y: (area.height.saturating_sub(popup_height)) / 2,
-        width: popup_width,
-        height: popup_height,
-    };
-
-    frame.render_widget(Clear, popup_area);
-
-    let title = if state.deleting {
-        " Delete Bookmark "
-    } else {
-        " Create Bookmark "
-    };
-
-    let block = Block::default()
-        .title(title)
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(if state.deleting {
-            Color::Red
-        } else {
-            Color::Cyan
-        }));
-
-    let inner = block.inner(popup_area);
-    let bg_color = if state.deleting {
-        theme::POPUP_BG_DELETE
-    } else {
-        theme::POPUP_BG
-    };
-    frame.render_widget(block.style(Style::default().bg(bg_color)), popup_area);
-
-    // render text with cursor
-    let before = &state.name[..state.cursor];
-    let cursor_char = state
-        .name
-        .get(state.cursor..)
-        .and_then(|s| s.chars().next());
-    let after = if let Some(c) = cursor_char {
-        &state.name[state.cursor + c.len_utf8()..]
-    } else {
-        ""
-    };
-    let cursor_display = cursor_char.unwrap_or(' ');
-
-    let input_line = Line::from(vec![
-        Span::styled("Name: ", Style::default().fg(Color::Yellow)),
-        Span::raw(before.to_string()),
-        Span::styled(
-            cursor_display.to_string(),
-            Style::default().bg(Color::White).fg(Color::Black),
-        ),
-        Span::raw(after.to_string()),
-    ]);
-
-    let target_short: String = state.target_rev.chars().take(8).collect();
-    let target_line = Line::from(vec![
-        Span::styled("At: ", Style::default().fg(Color::Yellow)),
-        Span::styled(target_short, Style::default().fg(Color::DarkGray)),
-    ]);
-
-    let confirm_key = keybindings::display_keys_joined(
-        keybindings::ModeId::BookmarkInput,
-        None,
-        "confirm",
-        false,
-        keybindings::KeyFormat::Space,
-        "/",
-    );
-    let cancel_key = keybindings::display_keys_joined(
-        keybindings::ModeId::BookmarkInput,
-        None,
-        "cancel",
-        false,
-        keybindings::KeyFormat::Space,
-        "/",
-    );
-    let help_text = if state.deleting {
-        format!("{confirm_key}: delete  |  {cancel_key}: cancel")
-    } else {
-        format!("{confirm_key}: create  |  {cancel_key}: cancel")
-    };
-
-    let lines = vec![
-        input_line,
-        Line::from(""),
-        target_line,
-        Line::from(""),
-        Line::from(Span::styled(
-            help_text,
-            Style::default().fg(Color::DarkGray),
-        )),
-    ];
-
-    let paragraph = Paragraph::new(lines);
-    frame.render_widget(paragraph, inner);
-}
-
 fn render_bookmark_select(frame: &mut Frame, state: &BookmarkSelectState) {
     let area = frame.area();
     let popup_width = 50u16.min(area.width.saturating_sub(4));
@@ -1267,7 +1158,7 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
     frame.render_widget(Clear, popup_area);
 
     let (title, border_color, bg_color) = match state.action {
-        BookmarkSelectAction::Move => (" Move Bookmark Here ", Color::Cyan, theme::POPUP_BG),
+        BookmarkSelectAction::Move => (" Bookmark ", Color::Cyan, theme::POPUP_BG),
         BookmarkSelectAction::Delete => (" Delete Bookmark ", Color::Red, theme::POPUP_BG_DELETE),
         BookmarkSelectAction::CreatePR => (" PR from Bookmark ", Color::Green, theme::POPUP_BG),
     };
@@ -1286,15 +1177,19 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
     if matches!(state.action, BookmarkSelectAction::Move) {
         let rev_short: String = state.target_rev.chars().take(8).collect();
         lines.push(Line::from(vec![
-            Span::styled("Move to: ", Style::default().fg(Color::Yellow)),
+            Span::styled("Set on: ", Style::default().fg(Color::Yellow)),
             Span::styled(rev_short, Style::default().fg(Color::DarkGray)),
         ]));
         lines.push(Line::from(""));
     }
 
     // show filter input
+    let placeholder = match state.action {
+        BookmarkSelectAction::Move => "type to filter or create...",
+        _ => "type to filter...",
+    };
     let filter_display = if state.filter.is_empty() {
-        "type to filter...".to_string()
+        placeholder.to_string()
     } else {
         state.filter.clone()
     };
@@ -1312,8 +1207,14 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
 
     // show filtered bookmarks
     if filtered.is_empty() {
+        let no_match_text =
+            if matches!(state.action, BookmarkSelectAction::Move) && !state.filter.is_empty() {
+                format!("  create '{}'", state.filter)
+            } else {
+                "  (no matching bookmarks)".to_string()
+            };
         lines.push(Line::from(Span::styled(
-            "  (no matching bookmarks)",
+            no_match_text,
             Style::default().fg(Color::DarkGray),
         )));
     } else {
@@ -1379,7 +1280,7 @@ fn render_bookmark_picker(frame: &mut Frame, state: &BookmarkPickerState) {
     );
     let footer = match state.action {
         BookmarkSelectAction::Move => format!(
-            "type: filter | {up_key}/{down_key}: navigate | {confirm_key}: move (or move away if already here) | {cancel_key}: cancel"
+            "type: filter/create | {up_key}/{down_key}: navigate | {confirm_key}: set | {cancel_key}: cancel"
         ),
         BookmarkSelectAction::Delete => format!(
             "type: filter | {up_key}/{down_key}: navigate | {confirm_key}: delete | {cancel_key}: cancel"

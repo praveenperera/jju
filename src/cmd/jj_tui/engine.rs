@@ -7,9 +7,9 @@ use super::action::Action;
 use super::effect::Effect;
 use super::handlers;
 use super::state::{
-    BookmarkInputState, BookmarkPickerState, BookmarkSelectAction, ConfirmAction, ConfirmState,
-    ConflictsState, DiffState, HelpState, MessageKind, ModeState, MovingBookmarkState,
-    PendingOperation, PendingSquash, PushSelectState, RebaseState, RebaseType, SquashState,
+    BookmarkPickerState, BookmarkSelectAction, ConfirmAction, ConfirmState, ConflictsState,
+    DiffState, HelpState, MessageKind, ModeState, MovingBookmarkState, PendingOperation,
+    PendingSquash, PushSelectState, RebaseState, RebaseType, SquashState,
 };
 use super::tree::TreeState;
 use crate::jj_lib_helpers::JjRepo;
@@ -396,18 +396,10 @@ pub fn reduce(
 
             let target_rev = node.change_id.clone();
 
-            // Always enter picker mode so you can move any bookmark onto this revision.
-            // Bookmarks already on this revision are pinned at the top.
+            // Enter picker mode to move any bookmark onto this revision,
+            // or type a new name to create one
             if let Ok(jj_repo) = JjRepo::load(None) {
                 let all_bookmarks = jj_repo.all_local_bookmarks();
-                if all_bookmarks.is_empty() {
-                    effects.push(Effect::SetStatus {
-                        text: "No bookmarks in repository".to_string(),
-                        kind: MessageKind::Warning,
-                    });
-                    return effects;
-                }
-
                 let pinned = node.bookmark_names();
                 let all_bookmarks = build_move_bookmark_picker_list(all_bookmarks, pinned, tree);
 
@@ -420,30 +412,6 @@ pub fn reduce(
                     action: BookmarkSelectAction::Move,
                 });
             }
-        }
-
-        Action::EnterCreateBookmark => {
-            let rev = current_rev(tree);
-            if rev.is_empty() {
-                effects.push(Effect::SetStatus {
-                    text: "No revision selected".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            }
-
-            *mode = ModeState::BookmarkInput(BookmarkInputState {
-                name: String::new(),
-                cursor: 0,
-                target_rev: rev.clone(),
-                deleting: false,
-            });
-
-            let short_rev = &rev[..8.min(rev.len())];
-            effects.push(Effect::SetStatus {
-                text: format!("Creating bookmark at {}", short_rev),
-                kind: MessageKind::Success,
-            });
         }
 
         Action::EnterBookmarkPicker(action) => {
@@ -762,7 +730,23 @@ pub fn reduce(
             };
 
             let filtered = state.filtered_bookmarks();
+            let target_rev = state.target_rev.clone();
+            let action = state.action;
+
+            // no match: for Move, create a new bookmark from the filter text
             let Some(bookmark) = filtered.get(state.selected_index) else {
+                if action == BookmarkSelectAction::Move && !state.filter.trim().is_empty() {
+                    let name = state.filter.trim().to_string();
+                    effects.push(Effect::SaveOperationForUndo);
+                    effects.push(Effect::RunBookmarkSet {
+                        name,
+                        rev: target_rev,
+                    });
+                    effects.push(Effect::RefreshTree);
+                    *mode = ModeState::Normal;
+                    return effects;
+                }
+
                 effects.push(Effect::SetStatus {
                     text: "No bookmark selected".to_string(),
                     kind: MessageKind::Warning,
@@ -772,8 +756,6 @@ pub fn reduce(
             };
 
             let bookmark_name = (*bookmark).clone();
-            let target_rev = state.target_rev.clone();
-            let action = state.action;
 
             match action {
                 BookmarkSelectAction::Move => {
@@ -829,89 +811,6 @@ pub fn reduce(
                     *mode = ModeState::Normal;
                 }
             }
-        }
-
-        // Bookmark input
-        Action::BookmarkInputChar(c) => {
-            if let ModeState::BookmarkInput(state) = mode {
-                state.name.insert(state.cursor, c);
-                state.cursor += c.len_utf8();
-            }
-        }
-
-        Action::BookmarkInputBackspace => {
-            if let ModeState::BookmarkInput(state) = mode
-                && state.cursor > 0
-            {
-                let prev = state.name[..state.cursor]
-                    .char_indices()
-                    .last()
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
-                state.name.remove(prev);
-                state.cursor = prev;
-            }
-        }
-
-        Action::BookmarkInputDelete => {
-            if let ModeState::BookmarkInput(state) = mode
-                && state.cursor < state.name.len()
-            {
-                state.name.remove(state.cursor);
-            }
-        }
-
-        Action::BookmarkInputCursorLeft => {
-            if let ModeState::BookmarkInput(state) = mode
-                && state.cursor > 0
-            {
-                state.cursor = state.name[..state.cursor]
-                    .char_indices()
-                    .last()
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
-            }
-        }
-
-        Action::BookmarkInputCursorRight => {
-            if let ModeState::BookmarkInput(state) = mode
-                && state.cursor < state.name.len()
-            {
-                state.cursor = state.name[state.cursor..]
-                    .char_indices()
-                    .nth(1)
-                    .map(|(i, _)| state.cursor + i)
-                    .unwrap_or(state.name.len());
-            }
-        }
-
-        Action::ConfirmBookmarkInput => {
-            let ModeState::BookmarkInput(state) = &*mode else {
-                *mode = ModeState::Normal;
-                return effects;
-            };
-
-            if state.name.is_empty() {
-                effects.push(Effect::SetStatus {
-                    text: "Bookmark name cannot be empty".to_string(),
-                    kind: MessageKind::Error,
-                });
-                *mode = ModeState::Normal;
-                return effects;
-            }
-
-            let name = state.name.clone();
-            let target = state.target_rev.clone();
-            let deleting = state.deleting;
-
-            effects.push(Effect::SaveOperationForUndo);
-            if deleting {
-                effects.push(Effect::RunBookmarkDelete { name });
-            } else {
-                effects.push(Effect::RunBookmarkSet { name, rev: target });
-            }
-            effects.push(Effect::RefreshTree);
-            *mode = ModeState::Normal;
         }
 
         // Help view scrolling

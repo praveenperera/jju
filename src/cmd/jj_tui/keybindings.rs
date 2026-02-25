@@ -22,7 +22,6 @@ pub enum ModeId {
     Rebase,
     Squash,
     MovingBookmark,
-    BookmarkInput,
     BookmarkSelect,
     BookmarkPicker,
     PushSelect,
@@ -39,7 +38,6 @@ pub fn mode_id_from_state(mode: &ModeState) -> ModeId {
         ModeState::Rebasing(_) => ModeId::Rebase,
         ModeState::Squashing(_) => ModeId::Squash,
         ModeState::MovingBookmark(_) => ModeId::MovingBookmark,
-        ModeState::BookmarkInput(_) => ModeId::BookmarkInput,
         ModeState::BookmarkSelect(_) => ModeId::BookmarkSelect,
         ModeState::BookmarkPicker(_) => ModeId::BookmarkPicker,
         ModeState::PushSelect(_) => ModeId::PushSelect,
@@ -102,7 +100,6 @@ pub enum ActionTemplate {
     PageUpHalfViewport,
     PageDownHalfViewport,
     CenterCursorViewport,
-    BookmarkInputChar,
     BookmarkFilterChar,
     PushSelectFilterChar,
     NormalEscConditional,
@@ -115,7 +112,6 @@ impl ActionTemplate {
             ActionTemplate::PageUpHalfViewport => Action::PageUp(ctx.viewport_height / 2),
             ActionTemplate::PageDownHalfViewport => Action::PageDown(ctx.viewport_height / 2),
             ActionTemplate::CenterCursorViewport => Action::CenterCursor(ctx.viewport_height),
-            ActionTemplate::BookmarkInputChar => Action::BookmarkInputChar(captured.unwrap_or(' ')),
             ActionTemplate::BookmarkFilterChar => {
                 Action::BookmarkFilterChar(captured.unwrap_or(' '))
             }
@@ -383,12 +379,9 @@ static BINDING_DEFS: &[BindingDef] = &[
         .prefix('z')
         .help("Navigation", "Center current line"),
     // Normal chords: b (bookmarks)
-    BindingDef::new(Normal, Char('m'), act!(EnterMoveBookmarkMode), "move")
+    BindingDef::new(Normal, Char('m'), act!(EnterMoveBookmarkMode), "set")
         .prefix('b')
-        .help("Bookmarks & Git", "Move bookmark"),
-    BindingDef::new(Normal, Char('s'), act!(EnterCreateBookmark), "set/new")
-        .prefix('b')
-        .help("Bookmarks & Git", "Set/create bookmark"),
+        .help("Bookmarks & Git", "Set/move bookmark"),
     BindingDef::new(
         Normal,
         Char('d'),
@@ -524,50 +517,6 @@ static BINDING_DEFS: &[BindingDef] = &[
         act!(ExitBookmarkMode),
         "cancel",
     ),
-    // ========================================================================
-    // BookmarkInput mode
-    // ========================================================================
-    BindingDef::new(
-        BookmarkInput,
-        Key(KeyCode::Enter),
-        act!(ConfirmBookmarkInput),
-        "confirm",
-    ),
-    BindingDef::new(
-        BookmarkInput,
-        Key(KeyCode::Esc),
-        act!(ExitBookmarkMode),
-        "cancel",
-    ),
-    BindingDef::new(
-        BookmarkInput,
-        Key(KeyCode::Backspace),
-        act!(BookmarkInputBackspace),
-        "backspace",
-    )
-    .alias(),
-    BindingDef::new(
-        BookmarkInput,
-        Key(KeyCode::Delete),
-        act!(BookmarkInputDelete),
-        "delete",
-    )
-    .alias(),
-    BindingDef::new(
-        BookmarkInput,
-        Key(KeyCode::Left),
-        act!(BookmarkInputCursorLeft),
-        "left",
-    )
-    .alias(),
-    BindingDef::new(
-        BookmarkInput,
-        Key(KeyCode::Right),
-        act!(BookmarkInputCursorRight),
-        "right",
-    )
-    .alias(),
-    BindingDef::new(BookmarkInput, AnyChar, BookmarkInputChar, "type"),
     // ========================================================================
     // BookmarkSelect mode
     // ========================================================================
@@ -1037,10 +986,6 @@ pub fn status_bar_hints(ctx: &StatusHintContext) -> String {
             kv(ModeId::MovingBookmark, None, "run", "run"),
             kv(ModeId::MovingBookmark, None, "cancel", "cancel"),
         ]),
-        ModeId::BookmarkInput => join_segments(&[
-            kv(ModeId::BookmarkInput, None, "confirm", "confirm"),
-            kv(ModeId::BookmarkInput, None, "cancel", "cancel"),
-        ]),
         ModeId::BookmarkSelect => join_segments(&[
             format!(
                 "{}/{}:navigate",
@@ -1206,8 +1151,8 @@ pub fn build_help_view() -> Vec<HelpSectionView> {
 mod tests {
     use super::*;
     use crate::cmd::jj_tui::state::{
-        BookmarkInputState, BookmarkPickerState, ConfirmAction, ConfirmState, ConflictsState,
-        DiffState, MovingBookmarkState, RebaseState, SquashState,
+        BookmarkPickerState, ConfirmAction, ConfirmState, ConflictsState, DiffState,
+        MovingBookmarkState, RebaseState, SquashState,
     };
     use ratatui::crossterm::event::KeyEvent;
 
@@ -1291,22 +1236,6 @@ mod tests {
             KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE),
         );
         assert_eq!(unknown, Action::ClearPendingKey);
-    }
-
-    #[test]
-    fn test_dispatch_bookmark_input_any_char() {
-        let state = BookmarkInputState {
-            name: String::new(),
-            cursor: 0,
-            target_rev: "aaaa".to_string(),
-            deleting: false,
-        };
-        let mode = ModeState::BookmarkInput(state);
-        let action = handle_key(
-            &ctx(&mode, None, 20, false, false),
-            KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE),
-        );
-        assert_eq!(action, Action::BookmarkInputChar('x'));
     }
 
     #[test]
