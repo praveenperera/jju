@@ -4,1279 +4,177 @@
 //! It mutates state but performs no IO.
 
 mod bookmarks;
+mod commands;
+mod modes;
+mod navigation;
 mod rebase;
 mod selection;
 
 use super::action::Action;
 use super::effect::Effect;
-use super::handlers;
-use super::state::{
-    BookmarkPickerState, BookmarkSelectAction, ConfirmAction, ConfirmState, ConflictsState,
-    DiffState, HelpState, MessageKind, ModeState, MovingBookmarkState, PendingOperation,
-    PendingSquash, PushSelectState, RebaseState, RebaseType, SquashState,
-};
+use super::state::{MessageKind, ModeState, PendingOperation};
 use super::tree::TreeState;
-use crate::jj_lib_helpers::JjRepo;
-use ahash::HashSet;
-use bookmarks::{bookmark_is_on_rev, build_move_bookmark_picker_list, is_bookmark_move_backwards};
-use selection::{current_rev, extend_selection_to_cursor, get_rev_at_cursor, get_revs_for_action};
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
-/// Process an action and produce effects
-/// Returns effects to be executed by the runner
-#[allow(clippy::too_many_arguments)]
-pub fn reduce(
-    tree: &mut TreeState,
-    mode: &mut ModeState,
-    should_quit: &mut bool,
-    split_view: &mut bool,
-    pending_key: &mut Option<char>,
-    pending_operation: &mut Option<PendingOperation>,
-    syntax_set: &SyntaxSet,
-    theme_set: &ThemeSet,
-    action: Action,
-    _viewport_height: usize,
-) -> Vec<Effect> {
-    let mut effects = Vec::new();
-
-    match action {
-        // Lifecycle
-        Action::Quit => *should_quit = true,
-        Action::RefreshTree => {
-            effects.push(Effect::RefreshTree);
-            effects.push(Effect::SetStatus {
-                text: "Refreshed".to_string(),
-                kind: MessageKind::Success,
-            });
-        }
-        Action::Noop => {}
-
-        // Pending key management
-        Action::SetPendingKey(c) => *pending_key = Some(c),
-        Action::ClearPendingKey => *pending_key = None,
-
-        // Navigation
-        Action::MoveCursorUp => {
-            tree.move_cursor_up();
-            if matches!(mode, ModeState::Selecting) {
-                extend_selection_to_cursor(tree);
-            }
-        }
-        Action::MoveCursorDown => {
-            tree.move_cursor_down();
-            if matches!(mode, ModeState::Selecting) {
-                extend_selection_to_cursor(tree);
-            }
-        }
-        Action::MoveCursorTop => tree.move_cursor_top(),
-        Action::MoveCursorBottom => tree.move_cursor_bottom(),
-        Action::JumpToWorkingCopy => tree.jump_to_working_copy(),
-        Action::PageUp(amount) => tree.page_up(amount),
-        Action::PageDown(amount) => tree.page_down(amount),
-        Action::CenterCursor(vh) => {
-            if vh > 0 {
-                let half = vh / 2;
-                tree.scroll_offset = tree.cursor.saturating_sub(half);
-            }
-        }
-
-        // Focus/View
-        Action::ToggleFocus => tree.toggle_focus(),
-        Action::Unfocus => tree.unfocus(),
-        Action::ToggleExpanded => tree.toggle_expanded(),
-        Action::ToggleFullMode => tree.toggle_full_mode(),
-        Action::ToggleSplitView => *split_view = !*split_view,
-
-        // Mode transitions
-        Action::EnterHelp => {
-            *mode = ModeState::Help(HelpState { scroll_offset: 0 });
-        }
-        Action::ExitHelp => *mode = ModeState::Normal,
-
-        Action::EnterDiffView => {
-            let rev = current_rev(tree);
-            if rev.is_empty() {
-                effects.push(Effect::SetStatus {
-                    text: "No revision selected".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            }
-            if let Ok(diff_output) = super::commands::diff::get_diff(&rev) {
-                let lines = handlers::diff::parse_diff(&diff_output, syntax_set, theme_set);
-                *mode = ModeState::ViewingDiff(DiffState {
-                    lines,
-                    scroll_offset: 0,
-                    rev,
-                });
-            }
-        }
-        Action::ExitDiffView => *mode = ModeState::Normal,
-
-        Action::EnterConfirmStackSync => {
-            let trunk = super::commands::stack_sync::detect_trunk_branch()
-                .unwrap_or_else(|_| "trunk".to_string());
-            let roots = super::commands::stack_sync::find_stack_roots(&trunk).unwrap_or_default();
-
-            let message = format!("Will rebase the following commits on top of {trunk}:");
-            let mut revs = Vec::new();
-            if roots.is_empty() {
-                revs.push("  (stack is up to date, nothing to rebase)".to_string());
-            } else {
-                for root in &roots {
-                    let desc = super::commands::stack_sync::get_commit_description(root)
-                        .unwrap_or_default();
-                    revs.push(format!("  {root}  {desc}"));
-                    revs.push(format!(
-                        "  jj rebase --source (-s) {root} --onto (-o) {trunk} --skip-emptied"
-                    ));
-                }
-            }
-
-            *mode = ModeState::Confirming(ConfirmState {
-                action: ConfirmAction::StackSync,
-                message,
-                revs,
-            });
-        }
-
-        Action::EnterConfirmAbandon => {
-            let revs = get_revs_for_action(tree);
-            for rev in &revs {
-                if tree
-                    .nodes
-                    .iter()
-                    .any(|n| n.change_id == *rev && n.is_working_copy)
-                {
-                    effects.push(Effect::SetStatus {
-                        text: "Cannot abandon working copy".to_string(),
-                        kind: MessageKind::Error,
-                    });
-                    return effects;
-                }
-            }
-
-            let message = if revs.len() == 1 {
-                format!("Abandon revision {}?", revs[0])
-            } else {
-                format!("Abandon {} revisions?", revs.len())
-            };
-
-            *mode = ModeState::Confirming(ConfirmState {
-                action: ConfirmAction::Abandon,
-                message,
-                revs,
-            });
-        }
-
-        Action::EnterConfirmRebaseOntoTrunk(rebase_type) => {
-            let source = current_rev(tree);
-            if source.is_empty() {
-                effects.push(Effect::SetStatus {
-                    text: "No revision selected".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            }
-
-            let short_rev = &source[..8.min(source.len())];
-            let message = match rebase_type {
-                RebaseType::Single => format!("Rebase {} onto trunk?", short_rev),
-                RebaseType::WithDescendants => {
-                    format!("Rebase {} and descendants onto trunk?", short_rev)
-                }
-            };
-
-            let mode_flag = match rebase_type {
-                RebaseType::Single => "-r",
-                RebaseType::WithDescendants => "-s",
-            };
-            let cmd_preview = format!(
-                "jj rebase {} {} -d trunk() --skip-emptied",
-                mode_flag, short_rev
-            );
-
-            *mode = ModeState::Confirming(ConfirmState {
-                action: ConfirmAction::RebaseOntoTrunk(rebase_type),
-                message,
-                revs: vec![cmd_preview],
-            });
-        }
-
-        Action::EnterConfirmMoveBookmarkBackwards {
-            ref bookmark_name,
-            ref dest_rev,
-            ref op_before,
-        } => {
-            let short_dest = &dest_rev[..8.min(dest_rev.len())];
-            *mode = ModeState::Confirming(ConfirmState {
-                action: ConfirmAction::MoveBookmarkBackwards {
-                    bookmark_name: bookmark_name.clone(),
-                    dest_rev: dest_rev.clone(),
-                    op_before: op_before.clone(),
-                },
-                message: format!(
-                    "Move bookmark '{}' backwards to {}? (This moves the bookmark to an ancestor)",
-                    bookmark_name, short_dest
-                ),
-                revs: vec![],
-            });
-        }
-
-        Action::ConfirmYes => {
-            let ModeState::Confirming(state) = std::mem::replace(mode, ModeState::Normal) else {
-                return effects;
-            };
-
-            match state.action {
-                ConfirmAction::Abandon => {
-                    let revset = state.revs.join(" | ");
-                    effects.push(Effect::SaveOperationForUndo);
-                    effects.push(Effect::RunAbandon { revset });
-                    effects.push(Effect::RefreshTree);
-                }
-                ConfirmAction::StackSync => {
-                    effects.push(Effect::SaveOperationForUndo);
-                    effects.push(Effect::RunStackSync);
-                    effects.push(Effect::RefreshTree);
-                }
-                ConfirmAction::RebaseOntoTrunk(rebase_type) => {
-                    let source = current_rev(tree);
-                    if source.is_empty() {
-                        effects.push(Effect::SetStatus {
-                            text: "No revision selected".to_string(),
-                            kind: MessageKind::Error,
-                        });
-                        return effects;
-                    }
-                    effects.push(Effect::SaveOperationForUndo);
-                    effects.push(Effect::RunRebaseOntoTrunk {
-                        source,
-                        rebase_type,
-                    });
-                    effects.push(Effect::RefreshTree);
-                }
-                ConfirmAction::MoveBookmarkBackwards {
-                    bookmark_name,
-                    dest_rev,
-                    op_before: _,
-                } => {
-                    effects.push(Effect::SaveOperationForUndo);
-                    effects.push(Effect::RunBookmarkSetBackwards {
-                        name: bookmark_name,
-                        rev: dest_rev,
-                    });
-                    effects.push(Effect::RefreshTree);
-                }
-            }
-            tree.clear_selection();
-        }
-
-        Action::ConfirmNo => *mode = ModeState::Normal,
-
-        Action::EnterSelecting => {
-            tree.selection_anchor = Some(tree.cursor);
-            tree.selected.insert(tree.cursor);
-            *mode = ModeState::Selecting;
-        }
-
-        Action::ExitSelecting => {
-            *mode = ModeState::Normal;
-            tree.selection_anchor = None;
-        }
-
-        Action::EnterRebaseMode(rebase_type) => {
-            let source_rev = current_rev(tree);
-            if source_rev.is_empty() {
-                effects.push(Effect::SetStatus {
-                    text: "No revision selected".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            }
-
-            let current = tree.cursor;
-
-            // create initial state
-            let state = RebaseState {
-                source_rev: source_rev.clone(),
-                rebase_type,
-                dest_cursor: current,
-                allow_branches: false,
-                op_before: String::new(), // will be filled by runner
-            };
-
-            // temporarily set mode to compute moving indices
-            *mode = ModeState::Rebasing(state.clone());
-
-            // compute moving indices and find initial position
-            let moving = compute_moving_indices(tree, mode);
-            let max = tree.visible_count();
-
-            // get source's structural depth
-            let source_struct_depth = tree
-                .visible_entries
-                .get(current)
-                .map(|e| tree.nodes[e.node_index].depth)
-                .unwrap_or(0);
-
-            // find source's parent
-            let mut initial_cursor = current.saturating_sub(1);
-            while initial_cursor > 0 {
-                let entry = &tree.visible_entries[initial_cursor];
-                let node = &tree.nodes[entry.node_index];
-                if node.depth < source_struct_depth && !moving.contains(&initial_cursor) {
-                    break;
-                }
-                initial_cursor -= 1;
-            }
-
-            // verify we found a valid non-moving entry
-            if moving.contains(&initial_cursor) || initial_cursor >= max {
-                initial_cursor = 0;
-                while initial_cursor < max && moving.contains(&initial_cursor) {
-                    initial_cursor += 1;
-                }
-            }
-
-            if let ModeState::Rebasing(s) = mode {
-                s.dest_cursor = initial_cursor;
-            }
-
-            effects.push(Effect::SaveOperationForUndo);
-        }
-
-        Action::ExitRebaseMode => *mode = ModeState::Normal,
-
-        Action::EnterSquashMode => {
-            let source_rev = current_rev(tree);
-            if source_rev.is_empty() {
-                effects.push(Effect::SetStatus {
-                    text: "No revision selected".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            }
-
-            let current = tree.cursor;
-            let source_struct_depth = tree
-                .visible_entries
-                .get(current)
-                .map(|e| tree.nodes[e.node_index].depth)
-                .unwrap_or(0);
-
-            // find source's parent
-            let mut initial_cursor = current.saturating_sub(1);
-            while initial_cursor > 0 {
-                let entry = &tree.visible_entries[initial_cursor];
-                let node = &tree.nodes[entry.node_index];
-                if node.depth < source_struct_depth {
-                    break;
-                }
-                initial_cursor -= 1;
-            }
-
-            *mode = ModeState::Squashing(SquashState {
-                source_rev,
-                dest_cursor: initial_cursor,
-                op_before: String::new(), // will be filled by runner
-            });
-
-            effects.push(Effect::SaveOperationForUndo);
-        }
-
-        Action::ExitSquashMode => *mode = ModeState::Normal,
-
-        Action::EnterMoveBookmarkMode => {
-            let Some(node) = tree.current_node() else {
-                effects.push(Effect::SetStatus {
-                    text: "No revision selected".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            };
-
-            let target_rev = node.change_id.clone();
-
-            // Enter picker mode to move any bookmark onto this revision,
-            // or type a new name to create one
-            if let Ok(jj_repo) = JjRepo::load(None) {
-                let all_bookmarks = jj_repo.all_local_bookmarks();
-                let pinned = node.bookmark_names();
-                let all_bookmarks = build_move_bookmark_picker_list(all_bookmarks, pinned, tree);
-
-                *mode = ModeState::BookmarkPicker(BookmarkPickerState {
-                    all_bookmarks,
-                    filter: String::new(),
-                    filter_cursor: 0,
-                    selected_index: 0,
-                    target_rev,
-                    action: BookmarkSelectAction::Move,
-                });
-            }
-        }
-
-        Action::EnterBookmarkPicker(action) => {
-            if let Ok(jj_repo) = JjRepo::load(None) {
-                let mut all_bookmarks = jj_repo.all_local_bookmarks();
-
-                if all_bookmarks.is_empty() {
-                    effects.push(Effect::SetStatus {
-                        text: "No bookmarks in repository".to_string(),
-                        kind: MessageKind::Warning,
-                    });
-                    return effects;
-                }
-
-                // for delete action, prioritize current commit's bookmarks
-                if action == BookmarkSelectAction::Delete {
-                    let current_bookmarks: Vec<String> = tree
-                        .current_node()
-                        .map(|n| n.bookmark_names())
-                        .unwrap_or_default();
-
-                    if !current_bookmarks.is_empty() {
-                        all_bookmarks.retain(|b| !current_bookmarks.contains(b));
-                        let mut reordered = current_bookmarks;
-                        reordered.extend(all_bookmarks);
-                        all_bookmarks = reordered;
-                    }
-                }
-
-                let target_rev = tree
-                    .current_node()
-                    .map(|n| n.change_id.clone())
-                    .unwrap_or_default();
-
-                *mode = ModeState::BookmarkPicker(BookmarkPickerState {
-                    all_bookmarks,
-                    filter: String::new(),
-                    filter_cursor: 0,
-                    selected_index: 0,
-                    target_rev,
-                    action,
-                });
-            }
-        }
-
-        Action::ExitBookmarkMode => *mode = ModeState::Normal,
-
-        // Selection
-        Action::ToggleSelection => tree.toggle_selected(tree.cursor),
-        Action::ExtendSelectionToCursor => extend_selection_to_cursor(tree),
-        Action::ClearSelection => tree.clear_selection(),
-
-        // Rebase mode navigation
-        Action::MoveRebaseDestUp => {
-            let moving = compute_moving_indices(tree, mode);
-            if let ModeState::Rebasing(state) = mode {
-                let mut next = state.dest_cursor.saturating_sub(1);
-                while next > 0 && moving.contains(&next) {
-                    next -= 1;
-                }
-                if !moving.contains(&next) {
-                    state.dest_cursor = next;
-                }
-            }
-        }
-
-        Action::MoveRebaseDestDown => {
-            let moving = compute_moving_indices(tree, mode);
-            let max = tree.visible_count();
-            if let ModeState::Rebasing(state) = mode {
-                let mut next = state.dest_cursor + 1;
-                while next < max && moving.contains(&next) {
-                    next += 1;
-                }
-                if next < max {
-                    state.dest_cursor = next;
-                }
-            }
-        }
-
-        Action::ToggleRebaseBranches => {
-            if let ModeState::Rebasing(state) = mode {
-                state.allow_branches = !state.allow_branches;
-            }
-        }
-
-        Action::ExecuteRebase => {
-            let ModeState::Rebasing(state) = &*mode else {
-                *mode = ModeState::Normal;
-                return effects;
-            };
-
-            let Some(dest) = get_rev_at_cursor(tree, state.dest_cursor) else {
-                effects.push(Effect::SetStatus {
-                    text: "Invalid destination".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            };
-
-            if state.source_rev == dest {
-                effects.push(Effect::SetStatus {
-                    text: "Cannot rebase onto self".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            }
-
-            effects.push(Effect::RunRebase {
-                source: state.source_rev.clone(),
-                dest,
-                rebase_type: state.rebase_type,
-                allow_branches: state.allow_branches,
-            });
-            effects.push(Effect::RefreshTree);
-            *mode = ModeState::Normal;
-        }
-
-        // Squash mode navigation
-        Action::MoveSquashDestUp => {
-            if let ModeState::Squashing(state) = mode
-                && state.dest_cursor > 0
-            {
-                state.dest_cursor -= 1;
-            }
-        }
-
-        Action::MoveSquashDestDown => {
-            if let ModeState::Squashing(state) = mode {
-                let max = tree.visible_count().saturating_sub(1);
-                if state.dest_cursor < max {
-                    state.dest_cursor += 1;
-                }
-            }
-        }
-
-        Action::ExecuteSquash => {
-            let ModeState::Squashing(state) = &*mode else {
-                *mode = ModeState::Normal;
-                return effects;
-            };
-
-            let Some(target) = get_rev_at_cursor(tree, state.dest_cursor) else {
-                effects.push(Effect::SetStatus {
-                    text: "Invalid target".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            };
-
-            if state.source_rev == target {
-                effects.push(Effect::SetStatus {
-                    text: "Cannot squash into self".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            }
-
-            // set pending squash - requires terminal restore for editor
-            *pending_operation = Some(PendingOperation::Squash(PendingSquash {
-                source_rev: state.source_rev.clone(),
-                target_rev: target,
-                op_before: state.op_before.clone(),
-            }));
-            *mode = ModeState::Normal;
-        }
-
-        // Bookmark modes navigation
-        Action::MoveBookmarkDestUp => {
-            if let ModeState::MovingBookmark(state) = mode
-                && state.dest_cursor > 0
-            {
-                state.dest_cursor -= 1;
-            }
-        }
-
-        Action::MoveBookmarkDestDown => {
-            if let ModeState::MovingBookmark(state) = mode {
-                let max = tree.visible_count().saturating_sub(1);
-                if state.dest_cursor < max {
-                    state.dest_cursor += 1;
-                }
-            }
-        }
-
-        Action::ExecuteBookmarkMove => {
-            let ModeState::MovingBookmark(state) = &*mode else {
-                *mode = ModeState::Normal;
-                return effects;
-            };
-
-            let Some(dest) = get_rev_at_cursor(tree, state.dest_cursor) else {
-                effects.push(Effect::SetStatus {
-                    text: "Invalid destination".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            };
-
-            let name = state.bookmark_name.clone();
-
-            // check if this move would be backwards
-            if is_bookmark_move_backwards(tree, &name, &dest) {
-                let short_dest = &dest[..8.min(dest.len())];
-                *mode = ModeState::Confirming(ConfirmState {
-                    action: ConfirmAction::MoveBookmarkBackwards {
-                        bookmark_name: name.clone(),
-                        dest_rev: dest.clone(),
-                        op_before: state.op_before.clone(),
-                    },
-                    message: format!(
-                        "Move bookmark '{}' backwards to {}? (This moves the bookmark to an ancestor)",
-                        name, short_dest
-                    ),
-                    revs: vec![],
-                });
-                return effects;
-            }
-
-            // normal forward move
-            effects.push(Effect::RunBookmarkSet { name, rev: dest });
-            effects.push(Effect::RefreshTree);
-            *mode = ModeState::Normal;
-        }
-
-        Action::SelectBookmarkUp => {
-            if let ModeState::BookmarkSelect(state) = mode
-                && state.selected_index > 0
-            {
-                state.selected_index -= 1;
-            }
-        }
-
-        Action::SelectBookmarkDown => {
-            if let ModeState::BookmarkSelect(state) = mode
-                && state.selected_index < state.bookmarks.len().saturating_sub(1)
-            {
-                state.selected_index += 1;
-            }
-        }
-
-        Action::ConfirmBookmarkSelect => {
-            let ModeState::BookmarkSelect(state) = &*mode else {
-                *mode = ModeState::Normal;
-                return effects;
-            };
-
-            let bookmark = state.bookmarks[state.selected_index].clone();
-
-            match state.action {
-                BookmarkSelectAction::Move => {
-                    *mode = ModeState::MovingBookmark(MovingBookmarkState {
-                        bookmark_name: bookmark,
-                        dest_cursor: tree.cursor,
-                        op_before: String::new(), // will be filled by runner
-                    });
-                    effects.push(Effect::SaveOperationForUndo);
-                }
-                BookmarkSelectAction::Delete => {
-                    effects.push(Effect::SaveOperationForUndo);
-                    effects.push(Effect::RunBookmarkDelete { name: bookmark });
-                    effects.push(Effect::RefreshTree);
-                    *mode = ModeState::Normal;
-                }
-                BookmarkSelectAction::CreatePR => {
-                    effects.push(Effect::RunCreatePR { bookmark });
-                    *mode = ModeState::Normal;
-                }
-            }
-        }
-
-        Action::BookmarkPickerUp => {
-            if let ModeState::BookmarkPicker(state) = mode
-                && state.selected_index > 0
-            {
-                state.selected_index -= 1;
-            }
-        }
-
-        Action::BookmarkPickerDown => {
-            if let ModeState::BookmarkPicker(state) = mode {
-                let filtered_count = state.filtered_bookmarks().len();
-                if state.selected_index < filtered_count.saturating_sub(1) {
-                    state.selected_index += 1;
-                }
-            }
-        }
-
-        Action::BookmarkFilterChar(c) => {
-            if let ModeState::BookmarkPicker(state) = mode {
-                state.filter.insert(state.filter_cursor, c);
-                state.filter_cursor += c.len_utf8();
-                state.selected_index = 0;
-            }
-        }
-
-        Action::BookmarkFilterBackspace => {
-            if let ModeState::BookmarkPicker(state) = mode
-                && state.filter_cursor > 0
-            {
-                let prev = state.filter[..state.filter_cursor]
-                    .char_indices()
-                    .last()
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
-                state.filter.remove(prev);
-                state.filter_cursor = prev;
-                state.selected_index = 0;
-            }
-        }
-
-        Action::ConfirmBookmarkPicker => {
-            let ModeState::BookmarkPicker(state) = &*mode else {
-                *mode = ModeState::Normal;
-                return effects;
-            };
-
-            let filtered = state.filtered_bookmarks();
-            let target_rev = state.target_rev.clone();
-            let action = state.action;
-
-            // no match: for Move, create a new bookmark from the filter text
-            let Some(bookmark) = filtered.get(state.selected_index) else {
-                if action == BookmarkSelectAction::Move && !state.filter.trim().is_empty() {
-                    let name = state.filter.trim().to_string();
-                    effects.push(Effect::SaveOperationForUndo);
-                    effects.push(Effect::RunBookmarkSet {
-                        name,
-                        rev: target_rev,
-                    });
-                    effects.push(Effect::RefreshTree);
-                    *mode = ModeState::Normal;
-                    return effects;
-                }
-
-                effects.push(Effect::SetStatus {
-                    text: "No bookmark selected".to_string(),
-                    kind: MessageKind::Warning,
-                });
-                *mode = ModeState::Normal;
-                return effects;
-            };
-
-            let bookmark_name = (*bookmark).clone();
-
-            match action {
-                BookmarkSelectAction::Move => {
-                    // If the selected bookmark is already on this revision, enter the
-                    // destination-selection flow to move it elsewhere (keep existing behavior).
-                    if bookmark_is_on_rev(tree, &bookmark_name, &target_rev) {
-                        *mode = ModeState::MovingBookmark(MovingBookmarkState {
-                            bookmark_name,
-                            dest_cursor: tree.cursor,
-                            op_before: String::new(), // will be filled by runner
-                        });
-                        effects.push(Effect::SaveOperationForUndo);
-                        return effects;
-                    }
-
-                    if is_bookmark_move_backwards(tree, &bookmark_name, &target_rev) {
-                        let short_dest = &target_rev[..8.min(target_rev.len())];
-                        *mode = ModeState::Confirming(ConfirmState {
-                            action: ConfirmAction::MoveBookmarkBackwards {
-                                bookmark_name: bookmark_name.clone(),
-                                dest_rev: target_rev.clone(),
-                                op_before: String::new(), // will be filled by runner
-                            },
-                            message: format!(
-                                "Move bookmark '{}' backwards to {}? (This moves the bookmark to an ancestor)",
-                                bookmark_name, short_dest
-                            ),
-                            revs: vec![],
-                        });
-                        effects.push(Effect::SaveOperationForUndo);
-                    } else {
-                        effects.push(Effect::SaveOperationForUndo);
-                        effects.push(Effect::RunBookmarkSet {
-                            name: bookmark_name,
-                            rev: target_rev,
-                        });
-                        effects.push(Effect::RefreshTree);
-                        *mode = ModeState::Normal;
-                    }
-                }
-                BookmarkSelectAction::Delete => {
-                    effects.push(Effect::SaveOperationForUndo);
-                    effects.push(Effect::RunBookmarkDelete {
-                        name: bookmark_name,
-                    });
-                    effects.push(Effect::RefreshTree);
-                    *mode = ModeState::Normal;
-                }
-                BookmarkSelectAction::CreatePR => {
-                    effects.push(Effect::RunCreatePR {
-                        bookmark: bookmark_name,
-                    });
-                    *mode = ModeState::Normal;
-                }
-            }
-        }
-
-        // Help view scrolling
-        Action::ScrollHelpUp(amount) => {
-            if let ModeState::Help(state) = mode {
-                state.scroll_offset = state.scroll_offset.saturating_sub(amount);
-            }
-        }
-
-        Action::ScrollHelpDown(amount) => {
-            if let ModeState::Help(state) = mode {
-                state.scroll_offset = state.scroll_offset.saturating_add(amount);
-            }
-        }
-
-        // Diff view scrolling
-        Action::ScrollDiffUp(amount) => {
-            if let ModeState::ViewingDiff(state) = mode {
-                state.scroll_offset = state.scroll_offset.saturating_sub(amount);
-            }
-            *pending_key = None;
-        }
-
-        Action::ScrollDiffDown(amount) => {
-            if let ModeState::ViewingDiff(state) = mode {
-                state.scroll_offset = state.scroll_offset.saturating_add(amount);
-            }
-            *pending_key = None;
-        }
-
-        Action::ScrollDiffTop => {
-            if let ModeState::ViewingDiff(state) = mode {
-                state.scroll_offset = 0;
-            }
-            *pending_key = None;
-        }
-
-        Action::ScrollDiffBottom => {
-            if let ModeState::ViewingDiff(state) = mode {
-                state.scroll_offset = state.lines.len().saturating_sub(1);
-            }
-            *pending_key = None;
-        }
-
-        // Commands
-        Action::EditWorkingCopy => {
-            let rev = current_rev(tree);
-            if rev.is_empty() {
-                effects.push(Effect::SetStatus {
-                    text: "No revision selected".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            }
-            if let Some(node) = tree.current_node()
-                && node.is_working_copy
-            {
-                effects.push(Effect::SetStatus {
-                    text: "Already editing this revision".to_string(),
-                    kind: MessageKind::Warning,
-                });
-                return effects;
-            }
-            effects.push(Effect::RunEdit { rev });
-            effects.push(Effect::RefreshTree);
-        }
-
-        Action::CreateNewCommit => {
-            let rev = current_rev(tree);
-            if rev.is_empty() {
-                effects.push(Effect::SetStatus {
-                    text: "No revision selected".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            }
-            effects.push(Effect::RunNew { rev });
-            effects.push(Effect::RefreshTree);
-        }
-
-        Action::CommitWorkingCopy => {
-            if let Some(node) = tree.current_node()
-                && !node.is_working_copy
-            {
-                effects.push(Effect::SetStatus {
-                    text: "Can only commit from working copy (@)".to_string(),
-                    kind: MessageKind::Warning,
-                });
-                return effects;
-            }
-            if let Some(node) = tree.current_node() {
-                let message = if node.description.is_empty() {
-                    "(no description)".to_string()
-                } else {
-                    node.description.clone()
-                };
-                effects.push(Effect::RunCommit { message });
-                effects.push(Effect::RefreshTree);
-            }
-        }
-
-        Action::EditDescription => {
-            let rev = current_rev(tree);
-            if rev.is_empty() {
-                effects.push(Effect::SetStatus {
-                    text: "No revision selected".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            }
-            *pending_operation = Some(PendingOperation::EditDescription { rev });
-        }
-
-        Action::ExecuteAbandon { ref revs } => {
-            let revset = revs.join(" | ");
-            effects.push(Effect::SaveOperationForUndo);
-            effects.push(Effect::RunAbandon { revset });
-            effects.push(Effect::RefreshTree);
-            tree.clear_selection();
-        }
-
-        Action::ExecuteRebaseOntoTrunk(rebase_type) => {
-            let source = current_rev(tree);
-            if source.is_empty() {
-                effects.push(Effect::SetStatus {
-                    text: "No revision selected".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            }
-            effects.push(Effect::SaveOperationForUndo);
-            effects.push(Effect::RunRebaseOntoTrunk {
-                source,
-                rebase_type,
-            });
-            effects.push(Effect::RefreshTree);
-        }
-
-        Action::Undo => {
-            effects.push(Effect::RunUndo {
-                op_id: String::new(), // runner will use last_op
-            });
-            effects.push(Effect::RefreshTree);
-        }
-
-        Action::GitPush => {
-            let Some(node) = tree.current_node() else {
-                effects.push(Effect::SetStatus {
-                    text: "No revision selected".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            };
-
-            if node.bookmarks.is_empty() {
-                effects.push(Effect::SetStatus {
-                    text: "No bookmark on this revision to push".to_string(),
-                    kind: MessageKind::Warning,
-                });
-                return effects;
-            }
-
-            // single bookmark: push immediately
-            if node.bookmarks.len() == 1 {
-                let bookmark = node.bookmarks[0].name.clone();
-                effects.push(Effect::RunGitPush { bookmark });
-                effects.push(Effect::RefreshTree);
-            } else {
-                // multiple bookmarks: show multi-select picker with all pre-selected
-                let all_bookmarks: Vec<String> =
-                    node.bookmarks.iter().map(|b| b.name.clone()).collect();
-                let selected: HashSet<usize> = (0..all_bookmarks.len()).collect();
-                *mode = ModeState::PushSelect(PushSelectState {
-                    all_bookmarks,
-                    filter: String::new(),
-                    filter_cursor: 0,
-                    cursor_index: 0,
-                    selected,
-                });
-            }
-        }
-
-        Action::GitPushAll => {
-            effects.push(Effect::RunGitPushAll);
-            effects.push(Effect::RefreshTree);
-        }
-
-        Action::GitFetch => {
-            effects.push(Effect::RunGitFetch);
-            effects.push(Effect::RefreshTree);
-        }
-
-        Action::GitImport => {
-            effects.push(Effect::RunGitImport);
-            effects.push(Effect::RefreshTree);
-        }
-
-        Action::GitExport => {
-            effects.push(Effect::RunGitExport);
-            effects.push(Effect::RefreshTree);
-        }
-
-        // Conflicts panel
-        Action::EnterConflicts => {
-            *mode = ModeState::Conflicts(ConflictsState::default());
-            effects.push(Effect::LoadConflictFiles);
-        }
-
-        Action::ExitConflicts => {
-            *mode = ModeState::Normal;
-        }
-
-        Action::ConflictsUp => {
-            if let ModeState::Conflicts(state) = mode
-                && state.selected_index > 0
-            {
-                state.selected_index -= 1;
-            }
-        }
-
-        Action::ConflictsDown => {
-            if let ModeState::Conflicts(state) = mode {
-                let max = state.files.len().saturating_sub(1);
-                if state.selected_index < max {
-                    state.selected_index += 1;
-                }
-            }
-        }
-
-        Action::ConflictsJump => {
-            // jump to the file in the tree if applicable - for now just exit
-            *mode = ModeState::Normal;
-        }
-
-        Action::StartResolveFromConflicts => {
-            if let ModeState::Conflicts(state) = mode
-                && let Some(file) = state.files.get(state.selected_index).cloned()
-            {
-                *pending_operation = Some(PendingOperation::Resolve { file });
-                *mode = ModeState::Normal;
-            }
-        }
-
-        // Push select mode
-        Action::PushSelectUp => {
-            if let ModeState::PushSelect(state) = mode
-                && state.cursor_index > 0
-            {
-                state.cursor_index -= 1;
-            }
-        }
-
-        Action::PushSelectDown => {
-            if let ModeState::PushSelect(state) = mode {
-                let filtered_count = state.filtered_bookmarks().len();
-                if state.cursor_index < filtered_count.saturating_sub(1) {
-                    state.cursor_index += 1;
-                }
-            }
-        }
-
-        Action::PushSelectToggle => {
-            if let ModeState::PushSelect(state) = mode {
-                let filtered = state.filtered_bookmarks();
-                if let Some(&(original_idx, _)) = filtered.get(state.cursor_index) {
-                    if state.selected.contains(&original_idx) {
-                        state.selected.remove(&original_idx);
-                    } else {
-                        state.selected.insert(original_idx);
-                    }
-                }
-            }
-        }
-
-        Action::PushSelectAll => {
-            if let ModeState::PushSelect(state) = mode {
-                // select all in filtered view - collect indices first to avoid borrow conflict
-                let filtered_indices: Vec<usize> = state
-                    .filtered_bookmarks()
-                    .into_iter()
-                    .map(|(i, _)| i)
-                    .collect();
-                for idx in filtered_indices {
-                    state.selected.insert(idx);
-                }
-            }
-        }
-
-        Action::PushSelectNone => {
-            if let ModeState::PushSelect(state) = mode {
-                // deselect all in filtered view - collect indices first to avoid borrow conflict
-                let filtered_indices: Vec<usize> = state
-                    .filtered_bookmarks()
-                    .into_iter()
-                    .map(|(i, _)| i)
-                    .collect();
-                for idx in filtered_indices {
-                    state.selected.remove(&idx);
-                }
-            }
-        }
-
-        Action::PushSelectFilterChar(c) => {
-            if let ModeState::PushSelect(state) = mode {
-                state.filter.insert(state.filter_cursor, c);
-                state.filter_cursor += c.len_utf8();
-                state.cursor_index = 0;
-            }
-        }
-
-        Action::PushSelectFilterBackspace => {
-            if let ModeState::PushSelect(state) = mode
-                && state.filter_cursor > 0
-            {
-                let prev = state.filter[..state.filter_cursor]
-                    .char_indices()
-                    .last()
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
-                state.filter.remove(prev);
-                state.filter_cursor = prev;
-                state.cursor_index = 0;
-            }
-        }
-
-        Action::PushSelectConfirm => {
-            let ModeState::PushSelect(state) = &*mode else {
-                *mode = ModeState::Normal;
-                return effects;
-            };
-
-            if state.selected.is_empty() {
-                effects.push(Effect::SetStatus {
-                    text: "No bookmarks selected".to_string(),
-                    kind: MessageKind::Warning,
-                });
-                *mode = ModeState::Normal;
-                return effects;
-            }
-
-            let bookmarks: Vec<String> = state
-                .selected
-                .iter()
-                .filter_map(|&idx| state.all_bookmarks.get(idx).cloned())
-                .collect();
-
-            effects.push(Effect::RunGitPushMultiple { bookmarks });
-            effects.push(Effect::RefreshTree);
-            *mode = ModeState::Normal;
-        }
-
-        Action::ExitPushSelect => {
-            *mode = ModeState::Normal;
-        }
-
-        Action::ResolveDivergence => {
-            let Some(node) = tree.current_node() else {
-                effects.push(Effect::SetStatus {
-                    text: "No revision selected".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            };
-
-            if !node.is_divergent {
-                effects.push(Effect::SetStatus {
-                    text: "This revision is not divergent".to_string(),
-                    kind: MessageKind::Warning,
-                });
-                return effects;
-            }
-
-            if node.divergent_versions.is_empty() {
-                effects.push(Effect::SetStatus {
-                    text: "No divergent versions found".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            }
-
-            let local_version = node
-                .divergent_versions
-                .iter()
-                .find(|v| v.is_local)
-                .unwrap_or(&node.divergent_versions[0]);
-
-            let abandon_ids: Vec<String> = node
-                .divergent_versions
-                .iter()
-                .filter(|v| v.commit_id != local_version.commit_id)
-                .map(|v| v.commit_id.clone())
-                .collect();
-
-            if abandon_ids.is_empty() {
-                effects.push(Effect::SetStatus {
-                    text: "Only one version exists, nothing to resolve".to_string(),
-                    kind: MessageKind::Warning,
-                });
-                return effects;
-            }
-
-            effects.push(Effect::SaveOperationForUndo);
-            effects.push(Effect::RunResolveDivergence {
-                keep_commit_id: local_version.commit_id.clone(),
-                abandon_commit_ids: abandon_ids,
-            });
-            effects.push(Effect::RefreshTree);
-        }
-
-        Action::CreatePR => {
-            let Some(node) = tree.current_node() else {
-                effects.push(Effect::SetStatus {
-                    text: "No revision selected".to_string(),
-                    kind: MessageKind::Error,
-                });
-                return effects;
-            };
-
-            if node.bookmarks.is_empty() {
-                effects.push(Effect::SetStatus {
-                    text: "No bookmark on this revision to create PR from".to_string(),
-                    kind: MessageKind::Warning,
-                });
-                return effects;
-            }
-
-            if node.bookmarks.len() == 1 {
-                let bookmark = node.bookmarks[0].name.clone();
-                effects.push(Effect::RunCreatePR { bookmark });
-            } else {
-                let bookmarks: Vec<String> =
-                    node.bookmarks.iter().map(|b| b.name.clone()).collect();
-                let target_rev = node.change_id.clone();
-                *mode = ModeState::BookmarkSelect(super::state::BookmarkSelectState {
-                    bookmarks,
-                    selected_index: 0,
-                    target_rev,
-                    action: BookmarkSelectAction::CreatePR,
-                });
-            }
-        }
-    }
-
-    // clear pending key after processing most actions (except SetPendingKey)
-    if !matches!(action, Action::SetPendingKey(_)) {
-        *pending_key = None;
-    }
-
-    effects
+pub struct ReduceCtx<'a> {
+    pub tree: &'a mut TreeState,
+    pub mode: &'a mut ModeState,
+    pub should_quit: &'a mut bool,
+    pub split_view: &'a mut bool,
+    pub pending_key: &'a mut Option<char>,
+    pub pending_operation: &'a mut Option<PendingOperation>,
+    pub syntax_set: &'a SyntaxSet,
+    pub theme_set: &'a ThemeSet,
+    pub effects: Vec<Effect>,
 }
 
-// Helper functions
+pub struct ReduceResources<'a> {
+    pub syntax_set: &'a SyntaxSet,
+    pub theme_set: &'a ThemeSet,
+}
 
-/// Compute indices of entries that will move during rebase
-pub fn compute_moving_indices(tree: &TreeState, mode: &ModeState) -> HashSet<usize> {
-    rebase::compute_moving_indices(tree, mode)
+impl<'a> ReduceCtx<'a> {
+    pub fn new(
+        tree: &'a mut TreeState,
+        mode: &'a mut ModeState,
+        should_quit: &'a mut bool,
+        split_view: &'a mut bool,
+        pending_key: &'a mut Option<char>,
+        pending_operation: &'a mut Option<PendingOperation>,
+        resources: ReduceResources<'a>,
+    ) -> Self {
+        Self {
+            tree,
+            mode,
+            should_quit,
+            split_view,
+            pending_key,
+            pending_operation,
+            syntax_set: resources.syntax_set,
+            theme_set: resources.theme_set,
+            effects: Vec::new(),
+        }
+    }
+
+    fn set_status(&mut self, text: impl Into<String>, kind: MessageKind) {
+        self.effects.push(Effect::SetStatus {
+            text: text.into(),
+            kind,
+        });
+    }
+}
+
+/// Process an action and produce effects
+/// Returns effects to be executed by the runner
+pub fn reduce(mut ctx: ReduceCtx<'_>, action: Action) -> Vec<Effect> {
+    let clear_pending_key = !matches!(&action, Action::SetPendingKey(_));
+
+    match action {
+        Action::Quit => *ctx.should_quit = true,
+        Action::Noop => {}
+        Action::SetPendingKey(prefix) => *ctx.pending_key = Some(prefix),
+        Action::ClearPendingKey => *ctx.pending_key = None,
+        Action::MoveCursorUp
+        | Action::MoveCursorDown
+        | Action::MoveCursorTop
+        | Action::MoveCursorBottom
+        | Action::JumpToWorkingCopy
+        | Action::PageUp(_)
+        | Action::PageDown(_)
+        | Action::CenterCursor(_)
+        | Action::ToggleFocus
+        | Action::Unfocus
+        | Action::ToggleExpanded
+        | Action::ToggleFullMode
+        | Action::ToggleSplitView
+        | Action::EnterHelp
+        | Action::ExitHelp
+        | Action::ScrollHelpUp(_)
+        | Action::ScrollHelpDown(_)
+        | Action::EnterSelecting
+        | Action::ExitSelecting
+        | Action::ToggleSelection
+        | Action::ClearSelection
+        | Action::RefreshTree => navigation::handle(&mut ctx, action),
+        Action::EnterDiffView
+        | Action::ExitDiffView
+        | Action::EnterConfirmAbandon
+        | Action::EnterConfirmStackSync
+        | Action::EnterConfirmRebaseOntoTrunk(_)
+        | Action::ConfirmYes
+        | Action::ConfirmNo
+        | Action::EnterRebaseMode(_)
+        | Action::ExitRebaseMode
+        | Action::MoveRebaseDestUp
+        | Action::MoveRebaseDestDown
+        | Action::ToggleRebaseBranches
+        | Action::ExecuteRebase
+        | Action::EnterSquashMode
+        | Action::ExitSquashMode
+        | Action::MoveSquashDestUp
+        | Action::MoveSquashDestDown
+        | Action::ExecuteSquash
+        | Action::ScrollDiffUp(_)
+        | Action::ScrollDiffDown(_)
+        | Action::ScrollDiffTop
+        | Action::ScrollDiffBottom
+        | Action::EnterConflicts
+        | Action::ExitConflicts
+        | Action::ConflictsUp
+        | Action::ConflictsDown
+        | Action::ConflictsJump
+        | Action::StartResolveFromConflicts => modes::handle(&mut ctx, action),
+        Action::EnterMoveBookmarkMode
+        | Action::EnterBookmarkPicker(_)
+        | Action::ExitBookmarkMode
+        | Action::MoveBookmarkDestUp
+        | Action::MoveBookmarkDestDown
+        | Action::ExecuteBookmarkMove
+        | Action::SelectBookmarkUp
+        | Action::SelectBookmarkDown
+        | Action::ConfirmBookmarkSelect
+        | Action::BookmarkPickerUp
+        | Action::BookmarkPickerDown
+        | Action::BookmarkFilterChar(_)
+        | Action::BookmarkFilterBackspace
+        | Action::ConfirmBookmarkPicker
+        | Action::GitPush
+        | Action::GitPushAll
+        | Action::PushSelectUp
+        | Action::PushSelectDown
+        | Action::PushSelectToggle
+        | Action::PushSelectAll
+        | Action::PushSelectNone
+        | Action::PushSelectFilterChar(_)
+        | Action::PushSelectFilterBackspace
+        | Action::PushSelectConfirm
+        | Action::ExitPushSelect => bookmarks::handle(&mut ctx, action),
+        Action::EditWorkingCopy
+        | Action::CreateNewCommit
+        | Action::CommitWorkingCopy
+        | Action::EditDescription
+        | Action::Undo
+        | Action::GitFetch
+        | Action::GitImport
+        | Action::GitExport
+        | Action::ResolveDivergence
+        | Action::CreatePR => commands::handle(&mut ctx, action),
+    }
+
+    if clear_pending_key {
+        *ctx.pending_key = None;
+    }
+
+    ctx.effects
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cmd::jj_tui::state::{BookmarkPickerState, BookmarkSelectAction};
     use crate::cmd::jj_tui::tree::{TreeNode, VisibleEntry};
-    use ahash::HashMap;
+    use ahash::HashSet;
 
     fn make_node(change_id: &str, depth: usize) -> TreeNode {
         TreeNode {
@@ -1321,14 +219,15 @@ mod tests {
                 has_separator_before: false,
             })
             .collect();
+        let topology = crate::cmd::jj_tui::tree::TreeTopology::from_nodes(&nodes);
 
         TreeState {
             nodes,
+            topology,
             cursor: 0,
             scroll_offset: 0,
             full_mode: true,
             expanded_entry: None,
-            children_map: HashMap::default(),
             visible_entries,
             selected: HashSet::default(),
             selection_anchor: None,
@@ -1363,16 +262,19 @@ mod tests {
 
         fn reduce(&mut self, action: Action) -> Vec<Effect> {
             reduce(
-                &mut self.tree,
-                &mut self.mode,
-                &mut self.should_quit,
-                &mut self.split_view,
-                &mut self.pending_key,
-                &mut self.pending_operation,
-                &self.syntax_set,
-                &self.theme_set,
+                ReduceCtx::new(
+                    &mut self.tree,
+                    &mut self.mode,
+                    &mut self.should_quit,
+                    &mut self.split_view,
+                    &mut self.pending_key,
+                    &mut self.pending_operation,
+                    ReduceResources {
+                        syntax_set: &self.syntax_set,
+                        theme_set: &self.theme_set,
+                    },
+                ),
                 action,
-                20, // viewport_height
             )
         }
     }
@@ -1472,7 +374,7 @@ mod tests {
         ];
         let pinned = tree.nodes[0].bookmark_names();
 
-        let ordered = build_move_bookmark_picker_list(all_bookmarks, pinned, &tree);
+        let ordered = bookmarks::build_move_bookmark_picker_list(all_bookmarks, pinned, &tree);
         assert_eq!(
             ordered,
             vec![
@@ -1756,7 +658,7 @@ mod tests {
         let effects = state.reduce(Action::Undo);
 
         assert_eq!(effects.len(), 2);
-        assert!(matches!(effects[0], Effect::RunUndo { .. }));
+        assert!(matches!(effects[0], Effect::RunUndo));
         assert!(matches!(effects[1], Effect::RefreshTree));
     }
 

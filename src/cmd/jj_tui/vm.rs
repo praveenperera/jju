@@ -79,40 +79,9 @@ pub fn build_tree_view(app: &App, _viewport_width: usize) -> Vec<TreeRowVm> {
 
 /// Build view for normal mode (and selecting mode)
 fn build_normal_view(app: &App) -> Vec<TreeRowVm> {
-    let is_expanded_mode = app.tree.expanded_entry.is_some();
-
-    app.tree
-        .visible_nodes()
-        .enumerate()
-        .map(|(visible_idx, entry)| {
-            let node = app.tree.get_node(entry);
-            let is_cursor = visible_idx == app.tree.cursor;
-            let is_this_expanded = app.tree.is_expanded(visible_idx);
-            let is_dimmed = is_expanded_mode && !is_cursor && !is_this_expanded;
-
-            let details = if is_this_expanded {
-                Some(build_row_details(
-                    node,
-                    app.diff_stats_cache.get(&node.change_id),
-                ))
-            } else {
-                None
-            };
-
-            build_row_vm(
-                entry.visual_depth,
-                node,
-                is_cursor,
-                app.tree.selected.contains(&visible_idx),
-                is_dimmed,
-                app.tree.focus_stack.contains(&entry.node_index),
-                NodeRole::Normal,
-                None,
-                details,
-                entry.has_separator_before,
-            )
-        })
-        .collect()
+    build_operation_view(app, app.tree.cursor, |_visible_idx, _node| {
+        (NodeRole::Normal, None)
+    })
 }
 
 /// Build view for rebase mode using preview system
@@ -123,15 +92,19 @@ fn build_rebase_view(
     rebase_type: RebaseType,
     allow_branches: bool,
 ) -> Vec<TreeRowVm> {
-    // Find source index from source_rev
-    let source_idx = app
+    let source_node_index = app
         .tree
         .visible_entries
         .iter()
-        .enumerate()
-        .find(|(_, entry)| app.tree.nodes[entry.node_index].change_id == source_rev)
-        .map(|(idx, _)| idx)
+        .find(|entry| app.tree.nodes[entry.node_index].change_id == source_rev)
+        .map(|entry| entry.node_index)
         .unwrap_or(0);
+    let dest_node_index = app
+        .tree
+        .visible_entries
+        .get(dest_cursor)
+        .map(|entry| entry.node_index)
+        .unwrap_or(source_node_index);
 
     let preview_rebase_type = match rebase_type {
         RebaseType::Single => PreviewRebaseType::Single,
@@ -139,8 +112,8 @@ fn build_rebase_view(
     };
 
     let preview = PreviewBuilder::new(&app.tree).rebase_preview(
-        NodeId(source_idx),
-        NodeId(dest_cursor),
+        NodeId(source_node_index),
+        NodeId(dest_node_index),
         preview_rebase_type,
         allow_branches,
     );
@@ -155,8 +128,7 @@ fn build_rebase_view(
         .iter()
         .enumerate()
         .map(|(slot_idx, slot)| {
-            let entry = &app.tree.visible_entries[slot.node_id.0];
-            let node = &app.tree.nodes[entry.node_index];
+            let node = &app.tree.nodes[slot.node_id.0];
             let is_cursor = cursor_slot_idx == Some(slot_idx);
 
             let marker = match slot.role {
@@ -172,80 +144,65 @@ fn build_rebase_view(
                 _ => None,
             };
 
-            build_row_vm(
-                slot.visual_depth,
+            build_row_vm(RowVmArgs {
+                visual_depth: slot.visual_depth,
                 node,
                 is_cursor,
-                false, // no multi-select in rebase mode
-                false, // no dimming in rebase mode
-                false, // no zoom markers in rebase mode
-                slot.role,
+                is_selected: false,
+                is_dimmed: false,
+                is_zoom_root: false,
+                role: slot.role,
                 marker,
-                None,
-                false,
-            )
+                details: None,
+                has_separator_before: false,
+            })
         })
         .collect()
 }
 
 /// Build view for bookmark move mode
 fn build_bookmark_move_view(app: &App, bookmark_name: &str, dest_cursor: usize) -> Vec<TreeRowVm> {
-    let is_expanded_mode = app.tree.expanded_entry.is_some();
+    build_operation_view(app, dest_cursor, |visible_idx, node| {
+        let is_source = node.has_bookmark(bookmark_name);
+        let is_dest = visible_idx == dest_cursor && !is_source;
 
-    app.tree
-        .visible_nodes()
-        .enumerate()
-        .map(|(visible_idx, entry)| {
-            let node = app.tree.get_node(entry);
-            let is_source = node.has_bookmark(bookmark_name);
-            let is_dest = visible_idx == dest_cursor && !is_source;
-            let is_cursor = visible_idx == dest_cursor;
-            let is_this_expanded = app.tree.is_expanded(visible_idx);
-            let is_dimmed = is_expanded_mode && !is_cursor && !is_this_expanded;
-
-            let role = if is_source {
-                NodeRole::Source
-            } else if is_dest {
-                NodeRole::Destination
-            } else {
-                NodeRole::Normal
-            };
-
-            let marker = if is_source {
-                Some(Marker::Bookmark)
-            } else if is_dest {
-                Some(Marker::Destination { mode_hint: None })
-            } else {
-                None
-            };
-
-            let details = if is_this_expanded {
-                Some(build_row_details(
-                    node,
-                    app.diff_stats_cache.get(&node.change_id),
-                ))
-            } else {
-                None
-            };
-
-            build_row_vm(
-                entry.visual_depth,
-                node,
-                is_cursor,
-                app.tree.selected.contains(&visible_idx),
-                is_dimmed,
-                app.tree.focus_stack.contains(&entry.node_index),
-                role,
-                marker,
-                details,
-                entry.has_separator_before,
+        if is_source {
+            (NodeRole::Source, Some(Marker::Bookmark))
+        } else if is_dest {
+            (
+                NodeRole::Destination,
+                Some(Marker::Destination { mode_hint: None }),
             )
-        })
-        .collect()
+        } else {
+            (NodeRole::Normal, None)
+        }
+    })
 }
 
 /// Build view for squash mode
 fn build_squash_view(app: &App, source_rev: &str, dest_cursor: usize) -> Vec<TreeRowVm> {
+    build_operation_view(app, dest_cursor, |visible_idx, node| {
+        let is_source = node.change_id == source_rev;
+        let is_dest = visible_idx == dest_cursor && !is_source;
+
+        if is_source {
+            (NodeRole::Source, Some(Marker::Source))
+        } else if is_dest {
+            (
+                NodeRole::Destination,
+                Some(Marker::Destination { mode_hint: None }),
+            )
+        } else {
+            (NodeRole::Normal, None)
+        }
+    })
+}
+
+fn build_operation_view(
+    app: &App,
+    cursor_idx: usize,
+    mut role_marker: impl FnMut(usize, &TreeNode) -> (NodeRole, Option<Marker>),
+) -> Vec<TreeRowVm> {
     let is_expanded_mode = app.tree.expanded_entry.is_some();
 
     app.tree
@@ -253,27 +210,10 @@ fn build_squash_view(app: &App, source_rev: &str, dest_cursor: usize) -> Vec<Tre
         .enumerate()
         .map(|(visible_idx, entry)| {
             let node = app.tree.get_node(entry);
-            let is_source = node.change_id == source_rev;
-            let is_dest = visible_idx == dest_cursor && !is_source;
-            let is_cursor = visible_idx == dest_cursor;
+            let is_cursor = visible_idx == cursor_idx;
             let is_this_expanded = app.tree.is_expanded(visible_idx);
             let is_dimmed = is_expanded_mode && !is_cursor && !is_this_expanded;
-
-            let role = if is_source {
-                NodeRole::Source
-            } else if is_dest {
-                NodeRole::Destination
-            } else {
-                NodeRole::Normal
-            };
-
-            let marker = if is_source {
-                Some(Marker::Source)
-            } else if is_dest {
-                Some(Marker::Destination { mode_hint: None })
-            } else {
-                None
-            };
+            let (role, marker) = role_marker(visible_idx, node);
 
             let details = if is_this_expanded {
                 Some(build_row_details(
@@ -284,18 +224,18 @@ fn build_squash_view(app: &App, source_rev: &str, dest_cursor: usize) -> Vec<Tre
                 None
             };
 
-            build_row_vm(
-                entry.visual_depth,
+            build_row_vm(RowVmArgs {
+                visual_depth: entry.visual_depth,
                 node,
                 is_cursor,
-                app.tree.selected.contains(&visible_idx),
+                is_selected: app.tree.selected.contains(&visible_idx),
                 is_dimmed,
-                app.tree.focus_stack.contains(&entry.node_index),
+                is_zoom_root: app.tree.focus_stack.contains(&entry.node_index),
                 role,
                 marker,
                 details,
-                entry.has_separator_before,
-            )
+                has_separator_before: entry.has_separator_before,
+            })
         })
         .collect()
 }
@@ -334,11 +274,9 @@ fn row_height(details: &Option<RowDetails>) -> usize {
     }
 }
 
-/// Build a single row view model
-#[allow(clippy::too_many_arguments)]
-fn build_row_vm(
+struct RowVmArgs<'a> {
     visual_depth: usize,
-    node: &TreeNode,
+    node: &'a TreeNode,
     is_cursor: bool,
     is_selected: bool,
     is_dimmed: bool,
@@ -347,41 +285,45 @@ fn build_row_vm(
     marker: Option<Marker>,
     details: Option<RowDetails>,
     has_separator_before: bool,
-) -> TreeRowVm {
-    let (prefix, suffix) = node
-        .change_id
-        .split_at(node.unique_prefix_len.min(node.change_id.len()));
+}
 
-    let description = if node.description.is_empty() {
-        if node.is_working_copy {
+/// Build a single row view model
+fn build_row_vm(args: RowVmArgs<'_>) -> TreeRowVm {
+    let (prefix, suffix) = args
+        .node
+        .change_id
+        .split_at(args.node.unique_prefix_len.min(args.node.change_id.len()));
+
+    let description = if args.node.description.is_empty() {
+        if args.node.is_working_copy {
             "(working copy)".to_string()
         } else {
             "(no description)".to_string()
         }
     } else {
-        node.description.clone()
+        args.node.description.clone()
     };
 
-    let height = row_height(&details);
+    let height = row_height(&args.details);
 
     TreeRowVm {
-        visual_depth,
-        role,
-        is_cursor,
-        is_selected,
-        is_dimmed,
-        is_zoom_root,
-        is_working_copy: node.is_working_copy,
-        has_conflicts: node.has_conflicts,
-        is_divergent: node.is_divergent,
+        visual_depth: args.visual_depth,
+        role: args.role,
+        is_cursor: args.is_cursor,
+        is_selected: args.is_selected,
+        is_dimmed: args.is_dimmed,
+        is_zoom_root: args.is_zoom_root,
+        is_working_copy: args.node.is_working_copy,
+        has_conflicts: args.node.has_conflicts,
+        is_divergent: args.node.is_divergent,
         change_id_prefix: prefix.to_string(),
         change_id_suffix: suffix.to_string(),
-        bookmarks: node.bookmarks.clone(),
+        bookmarks: args.node.bookmarks.clone(),
         description,
-        marker,
-        details,
+        marker: args.marker,
+        details: args.details,
         height,
-        has_separator_before,
+        has_separator_before: args.has_separator_before,
     }
 }
 
@@ -389,7 +331,7 @@ fn build_row_vm(
 mod tests {
     use super::*;
     use crate::cmd::jj_tui::tree::{TreeState, VisibleEntry};
-    use ahash::{HashMap, HashSet};
+    use ahash::HashSet;
     use syntect::highlighting::ThemeSet;
     use syntect::parsing::SyntaxSet;
 
@@ -424,14 +366,15 @@ mod tests {
                 has_separator_before: false,
             })
             .collect();
+        let topology = crate::cmd::jj_tui::tree::TreeTopology::from_nodes(&nodes);
 
         TreeState {
             nodes,
+            topology,
             cursor: 0,
             scroll_offset: 0,
             full_mode: true,
             expanded_entry: None,
-            children_map: HashMap::default(),
             visible_entries,
             selected: HashSet::default(),
             selection_anchor: None,
@@ -506,7 +449,6 @@ mod tests {
             dest_cursor: 0,
             rebase_type: RebaseType::Single,
             allow_branches: true,
-            op_before: String::new(),
         });
 
         let vms = build_tree_view(&app, 80);

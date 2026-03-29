@@ -1,7 +1,10 @@
+mod topology;
+
 use crate::jj_lib_helpers::JjRepo;
 use ahash::{HashMap, HashSet};
 use eyre::Result;
 use jj_lib::object_id::ObjectId;
+pub use topology::TreeTopology;
 
 #[derive(Clone, Debug)]
 pub struct BookmarkInfo {
@@ -37,19 +40,6 @@ pub struct TreeNode {
 }
 
 impl TreeNode {
-    #[allow(dead_code)]
-    pub fn display_name(&self) -> String {
-        if self.bookmarks.is_empty() {
-            format!("({})", self.change_id)
-        } else {
-            self.bookmarks
-                .iter()
-                .map(|b| b.name.as_str())
-                .collect::<Vec<_>>()
-                .join(" ")
-        }
-    }
-
     pub fn is_visible(&self, full_mode: bool) -> bool {
         full_mode || !self.bookmarks.is_empty() || self.is_working_copy
     }
@@ -73,11 +63,11 @@ pub struct VisibleEntry {
 
 pub struct TreeState {
     pub nodes: Vec<TreeNode>,
+    pub topology: TreeTopology,
     pub cursor: usize,
     pub scroll_offset: usize,
     pub full_mode: bool,
     pub expanded_entry: Option<usize>,
-    pub(crate) children_map: HashMap<String, Vec<String>>,
     pub visible_entries: Vec<VisibleEntry>,
     pub selected: HashSet<usize>,
     pub selection_anchor: Option<usize>,
@@ -202,11 +192,11 @@ impl TreeState {
         if commit_map.is_empty() {
             return Ok(Self {
                 nodes: Vec::new(),
+                topology: TreeTopology::default(),
                 cursor: 0,
                 scroll_offset: 0,
                 full_mode: true,
                 expanded_entry: None,
-                children_map: HashMap::default(),
                 visible_entries: Vec::new(),
                 selected: HashSet::default(),
                 selection_anchor: None,
@@ -306,15 +296,16 @@ impl TreeState {
             );
         }
 
-        let visible_entries = Self::compute_visible_entries(&nodes, true, None);
+        let topology = TreeTopology::from_nodes(&nodes);
+        let visible_entries = Self::compute_visible_entries(&nodes, &topology, true, None);
 
         Ok(Self {
             nodes,
+            topology,
             cursor: 0,
             scroll_offset: 0,
             full_mode: true,
             expanded_entry: None,
-            children_map,
             visible_entries,
             selected: HashSet::default(),
             selection_anchor: None,
@@ -324,28 +315,24 @@ impl TreeState {
 
     fn compute_visible_entries(
         nodes: &[TreeNode],
+        topology: &TreeTopology,
         full_mode: bool,
         focused_root: Option<usize>,
     ) -> Vec<VisibleEntry> {
-        // when focused, filter to only the focused node and its descendants
         let (filtered_nodes, base_depth): (Vec<(usize, &TreeNode)>, usize) =
             if let Some(root_idx) = focused_root {
                 if root_idx >= nodes.len() {
                     return Vec::new();
                 }
                 let root_depth = nodes[root_idx].depth;
-                let mut result = vec![(root_idx, &nodes[root_idx])];
-
-                // collect descendants (nodes after root with greater depth)
-                for (i, node) in nodes.iter().enumerate().skip(root_idx + 1) {
-                    if node.depth > root_depth {
-                        result.push((i, node));
-                    } else {
-                        // hit a sibling or ancestor, stop
-                        break;
-                    }
-                }
-                (result, root_depth)
+                (
+                    topology
+                        .subtree_nodes_in_order(root_idx)
+                        .into_iter()
+                        .map(|node_index| (node_index, &nodes[node_index]))
+                        .collect(),
+                    root_depth,
+                )
             } else {
                 (nodes.iter().enumerate().collect(), 0)
             };
@@ -370,26 +357,34 @@ impl TreeState {
                 })
                 .collect()
         } else {
-            // in non-full mode, compute visual depth based on visible ancestors
             let mut entries = Vec::new();
-            let mut depth_stack: Vec<usize> = Vec::new();
             let mut seen_root = false;
+            let visible_nodes: Vec<usize> = filtered_nodes
+                .iter()
+                .filter_map(|(node_index, node)| node.is_visible(full_mode).then_some(*node_index))
+                .collect();
+            let visible_set: HashSet<usize> = visible_nodes.iter().copied().collect();
+            let mut visual_depths: HashMap<usize, usize> = HashMap::default();
 
-            for (i, node) in filtered_nodes {
+            for (node_index, node) in filtered_nodes {
                 if !node.is_visible(full_mode) {
                     continue;
                 }
 
-                // pop stack until we find an ancestor (node with smaller structural depth)
-                while let Some(&parent_depth) = depth_stack.last() {
-                    if parent_depth < node.depth {
+                let mut current_parent = topology.parent_of(node_index);
+                let mut visual_depth = 0;
+                while let Some(parent_index) = current_parent {
+                    if visible_set.contains(&parent_index) {
+                        visual_depth = visual_depths
+                            .get(&parent_index)
+                            .copied()
+                            .unwrap_or(0)
+                            .saturating_add(1);
                         break;
                     }
-                    depth_stack.pop();
+                    current_parent = topology.parent_of(parent_index);
                 }
-
-                let visual_depth = depth_stack.len();
-                depth_stack.push(node.depth);
+                visual_depths.insert(node_index, visual_depth);
 
                 let has_separator_before = visual_depth == 0 && seen_root;
                 if visual_depth == 0 {
@@ -397,7 +392,7 @@ impl TreeState {
                 }
 
                 entries.push(VisibleEntry {
-                    node_index: i,
+                    node_index,
                     visual_depth,
                     has_separator_before,
                 });
@@ -466,8 +461,12 @@ impl TreeState {
 
     fn recompute_visible_entries(&mut self) {
         let focused_root = self.focus_stack.last().copied();
-        self.visible_entries =
-            Self::compute_visible_entries(&self.nodes, self.full_mode, focused_root);
+        self.visible_entries = Self::compute_visible_entries(
+            &self.nodes,
+            &self.topology,
+            self.full_mode,
+            focused_root,
+        );
 
         if self.cursor >= self.visible_count() {
             self.cursor = self.visible_count().saturating_sub(1);
@@ -548,18 +547,6 @@ impl TreeState {
             self.scroll_offset = (self.cursor + cursor_height).saturating_sub(viewport_height);
         }
     }
-
-    #[allow(dead_code)]
-    pub fn has_visible_children(&self, change_id: &str) -> bool {
-        self.children_map.get(change_id).is_some_and(|children| {
-            children.iter().any(|c| {
-                self.nodes
-                    .iter()
-                    .any(|n| n.change_id == *c && n.is_visible(self.full_mode))
-            })
-        })
-    }
-
     pub fn page_up(&mut self, amount: usize) {
         self.cursor = self.cursor.saturating_sub(amount);
     }

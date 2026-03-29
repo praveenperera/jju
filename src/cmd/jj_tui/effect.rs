@@ -7,10 +7,7 @@ use super::state::{MessageKind, RebaseType};
 
 /// All possible side effects produced by the engine
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum Effect {
-    // Lifecycle
-    Quit,
     RefreshTree,
 
     // JJ commands
@@ -36,13 +33,7 @@ pub enum Effect {
         source: String,
         rebase_type: RebaseType,
     },
-    RunSquash {
-        source: String,
-        target: String,
-    },
-    RunUndo {
-        op_id: String,
-    },
+    RunUndo,
     RunGitPush {
         bookmark: String,
     },
@@ -72,17 +63,6 @@ pub enum Effect {
     RunCreatePR {
         bookmark: String,
     },
-
-    // Editor launch (requires terminal restore)
-    LaunchDescriptionEditor {
-        rev: String,
-    },
-    LaunchSquashEditor {
-        source: String,
-        target: String,
-        op_before: String,
-    },
-
     // UI
     SetStatus {
         text: String,

@@ -7,7 +7,7 @@ use eyre::{Context, Result, bail};
 use itertools::Itertools;
 use jj_lib::commit::Commit;
 use jj_lib::config::{ConfigLayer, ConfigSource, StackedConfig};
-use jj_lib::id_prefix::IdPrefixContext;
+use jj_lib::id_prefix::{IdPrefixContext, IdPrefixIndex};
 use jj_lib::object_id::ObjectId;
 use jj_lib::ref_name::{RemoteName, RemoteRefSymbol};
 use jj_lib::repo::{ReadonlyRepo, Repo, StoreFactories};
@@ -38,8 +38,6 @@ pub fn create_user_settings() -> Result<UserSettings> {
 pub struct JjRepo {
     workspace: Workspace,
     repo: Arc<ReadonlyRepo>,
-    #[allow(dead_code)]
-    settings: UserSettings,
 }
 
 impl JjRepo {
@@ -67,70 +65,50 @@ impl JjRepo {
             .load_at_head()
             .wrap_err("failed to load repo at head")?;
 
-        Ok(Self {
-            workspace,
-            repo,
-            settings,
-        })
+        Ok(Self { workspace, repo })
     }
 
     /// Evaluate a revset string and return matching commits
     pub fn eval_revset(&self, revset_str: &str) -> Result<Vec<Commit>> {
-        let mut diagnostics = RevsetDiagnostics::new();
-        let aliases_map = self.aliases_map();
-        let extensions = Arc::new(revset::RevsetExtensions::default());
+        self.with_revset_context("jj-lib@localhost", |extensions, context| {
+            let mut diagnostics = RevsetDiagnostics::new();
+            let expression = revset::parse(&mut diagnostics, revset_str, context)
+                .wrap_err_with(|| format!("failed to parse revset: {revset_str}"))?;
 
-        let workspace_ctx = RevsetWorkspaceContext {
-            path_converter: &jj_lib::repo_path::RepoPathUiConverter::Fs {
-                cwd: self.workspace.workspace_root().to_path_buf(),
-                base: self.workspace.workspace_root().to_path_buf(),
-            },
-            workspace_name: self.workspace.workspace_name(),
-        };
+            let id_prefix_context = IdPrefixContext::default();
+            let symbol_resolver =
+                SymbolResolver::new(self.repo.as_ref(), extensions.symbol_resolvers())
+                    .with_id_prefix_context(&id_prefix_context);
 
-        let context = RevsetParseContext {
-            aliases_map: &aliases_map,
-            local_variables: HashMap::new(),
-            user_email: "jj-lib@localhost",
-            date_pattern_context: chrono::Utc::now().fixed_offset().into(),
-            default_ignored_remote: Some(RemoteName::new("git")),
-            workspace: Some(workspace_ctx),
-            extensions: &extensions,
-            use_glob_by_default: false,
-        };
+            let resolved = expression
+                .resolve_user_expression(self.repo.as_ref(), &symbol_resolver)
+                .wrap_err("failed to resolve revset expression")?;
 
-        let expression = revset::parse(&mut diagnostics, revset_str, &context)
-            .wrap_err_with(|| format!("failed to parse revset: {revset_str}"))?;
+            let evaluated = resolved
+                .evaluate(self.repo.as_ref())
+                .wrap_err("failed to evaluate revset")?;
 
-        let id_prefix_context = IdPrefixContext::default();
-        let symbol_resolver =
-            SymbolResolver::new(self.repo.as_ref(), extensions.symbol_resolvers())
-                .with_id_prefix_context(&id_prefix_context);
-
-        let resolved = expression
-            .resolve_user_expression(self.repo.as_ref(), &symbol_resolver)
-            .wrap_err("failed to resolve revset expression")?;
-
-        let evaluated = resolved
-            .evaluate(self.repo.as_ref())
-            .wrap_err("failed to evaluate revset")?;
-
-        let commits: Vec<Commit> = evaluated
-            .iter()
-            .commits(self.repo.store())
-            .try_collect()
-            .wrap_err("failed to collect commits")?;
-
-        Ok(commits)
+            evaluated
+                .iter()
+                .commits(self.repo.store())
+                .try_collect()
+                .wrap_err("failed to collect commits")
+        })
     }
 
     /// Evaluate a revset and return a single commit (error if 0 or >1 results)
     pub fn eval_revset_single(&self, revset_str: &str) -> Result<Commit> {
         let commits = self.eval_revset(revset_str)?;
-        match commits.len() {
-            0 => bail!("revset '{}' matched no commits", revset_str),
-            1 => Ok(commits.into_iter().next().unwrap()),
-            n => bail!("revset '{}' matched {} commits, expected 1", revset_str, n),
+        let mut commits = commits.into_iter();
+
+        match (commits.next(), commits.next()) {
+            (None, _) => bail!("revset '{}' matched no commits", revset_str),
+            (Some(commit), None) => Ok(commit),
+            (Some(_), Some(_)) => bail!(
+                "revset '{}' matched {} commits, expected 1",
+                revset_str,
+                commits.count() + 2
+            ),
         }
     }
 
@@ -198,43 +176,16 @@ impl JjRepo {
         commit: &Commit,
         min_len: usize,
     ) -> Result<(String, usize)> {
-        let extensions = Arc::new(revset::RevsetExtensions::default());
-
-        // use the same disambiguation context as jj CLI (revsets.log default)
-        // this is: present(@) | ancestors(immutable_heads().., 2) | trunk()
-        let mut diagnostics = RevsetDiagnostics::new();
-        let context = RevsetParseContext {
-            aliases_map: &self.aliases_map(),
-            local_variables: HashMap::new(),
-            user_email: "",
-            date_pattern_context: chrono::Utc::now().fixed_offset().into(),
-            default_ignored_remote: Some(RemoteName::new("git")),
-            workspace: Some(RevsetWorkspaceContext {
-                path_converter: &jj_lib::repo_path::RepoPathUiConverter::Fs {
-                    cwd: self.workspace.workspace_root().to_path_buf(),
-                    base: self.workspace.workspace_root().to_path_buf(),
-                },
-                workspace_name: self.workspace.workspace_name(),
-            }),
-            extensions: &extensions,
-            use_glob_by_default: false,
-        };
-        let short_prefixes_revset =
-            "present(@) | ancestors(immutable_heads().., 2) | present(trunk())";
-        let disambiguate_expr = revset::parse(&mut diagnostics, short_prefixes_revset, &context)
-            .wrap_err("failed to parse short-prefixes revset")?;
-
-        let id_prefix_context =
-            IdPrefixContext::new(extensions.clone()).disambiguate_within(disambiguate_expr);
-        let index = id_prefix_context
-            .populate(self.repo.as_ref())
-            .wrap_err("failed to populate id prefix index")?;
-        let unique_prefix_len = index
-            .shortest_change_prefix_len(self.repo.as_ref(), commit.change_id())
-            .wrap_err("failed to get shortest prefix length")?;
-        let full_id = commit.change_id().reverse_hex();
-        let display_len = unique_prefix_len.max(min_len).min(full_id.len());
-        Ok((full_id[..display_len].to_string(), unique_prefix_len))
+        self.with_short_prefix_index(|index| {
+            let unique_prefix_len = index
+                .shortest_change_prefix_len(self.repo.as_ref(), commit.change_id())
+                .wrap_err("failed to get shortest prefix length")?;
+            let full_id = commit.change_id().reverse_hex();
+            Ok((
+                Self::prefix_display(&full_id, unique_prefix_len, min_len),
+                unique_prefix_len,
+            ))
+        })
     }
 
     /// Get the revset aliases map with jj's default aliases
@@ -311,41 +262,16 @@ impl JjRepo {
         commit: &Commit,
         min_len: usize,
     ) -> Result<(String, usize)> {
-        let extensions = Arc::new(revset::RevsetExtensions::default());
-
-        let mut diagnostics = RevsetDiagnostics::new();
-        let context = RevsetParseContext {
-            aliases_map: &self.aliases_map(),
-            local_variables: HashMap::new(),
-            user_email: "",
-            date_pattern_context: chrono::Utc::now().fixed_offset().into(),
-            default_ignored_remote: Some(RemoteName::new("git")),
-            workspace: Some(RevsetWorkspaceContext {
-                path_converter: &jj_lib::repo_path::RepoPathUiConverter::Fs {
-                    cwd: self.workspace.workspace_root().to_path_buf(),
-                    base: self.workspace.workspace_root().to_path_buf(),
-                },
-                workspace_name: self.workspace.workspace_name(),
-            }),
-            extensions: &extensions,
-            use_glob_by_default: false,
-        };
-        let short_prefixes_revset =
-            "present(@) | ancestors(immutable_heads().., 2) | present(trunk())";
-        let disambiguate_expr = revset::parse(&mut diagnostics, short_prefixes_revset, &context)
-            .wrap_err("failed to parse short-prefixes revset")?;
-
-        let id_prefix_context =
-            IdPrefixContext::new(extensions.clone()).disambiguate_within(disambiguate_expr);
-        let index = id_prefix_context
-            .populate(self.repo.as_ref())
-            .wrap_err("failed to populate id prefix index")?;
-        let unique_prefix_len = index
-            .shortest_commit_prefix_len(self.repo.as_ref(), commit.id())
-            .wrap_err("failed to get shortest commit prefix length")?;
-        let full_id = commit.id().hex();
-        let display_len = unique_prefix_len.max(min_len).min(full_id.len());
-        Ok((full_id[..display_len].to_string(), unique_prefix_len))
+        self.with_short_prefix_index(|index| {
+            let unique_prefix_len = index
+                .shortest_commit_prefix_len(self.repo.as_ref(), commit.id())
+                .wrap_err("failed to get shortest commit prefix length")?;
+            let full_id = commit.id().hex();
+            Ok((
+                Self::prefix_display(&full_id, unique_prefix_len, min_len),
+                unique_prefix_len,
+            ))
+        })
     }
 
     /// Check if a commit is divergent (same change_id, multiple visible commits)
@@ -427,5 +353,57 @@ impl JjRepo {
             "just now".to_string()
         };
         format!("{relative} ({absolute})")
+    }
+
+    fn with_revset_context<T>(
+        &self,
+        user_email: &str,
+        f: impl FnOnce(&Arc<revset::RevsetExtensions>, &RevsetParseContext<'_>) -> Result<T>,
+    ) -> Result<T> {
+        let aliases_map = self.aliases_map();
+        let extensions = Arc::new(revset::RevsetExtensions::default());
+        let path_converter = jj_lib::repo_path::RepoPathUiConverter::Fs {
+            cwd: self.workspace.workspace_root().to_path_buf(),
+            base: self.workspace.workspace_root().to_path_buf(),
+        };
+        let workspace_ctx = RevsetWorkspaceContext {
+            path_converter: &path_converter,
+            workspace_name: self.workspace.workspace_name(),
+        };
+        let context = RevsetParseContext {
+            aliases_map: &aliases_map,
+            local_variables: HashMap::new(),
+            user_email,
+            date_pattern_context: chrono::Utc::now().fixed_offset().into(),
+            default_ignored_remote: Some(RemoteName::new("git")),
+            workspace: Some(workspace_ctx),
+            extensions: &extensions,
+            use_glob_by_default: false,
+        };
+
+        f(&extensions, &context)
+    }
+
+    fn with_short_prefix_index<T>(&self, f: impl FnOnce(&IdPrefixIndex) -> Result<T>) -> Result<T> {
+        self.with_revset_context("", |extensions, context| {
+            let mut diagnostics = RevsetDiagnostics::new();
+            let short_prefixes_revset =
+                "present(@) | ancestors(immutable_heads().., 2) | present(trunk())";
+            let disambiguate_expr = revset::parse(&mut diagnostics, short_prefixes_revset, context)
+                .wrap_err("failed to parse short-prefixes revset")?;
+
+            let id_prefix_context =
+                IdPrefixContext::new(extensions.clone()).disambiguate_within(disambiguate_expr);
+            let index = id_prefix_context
+                .populate(self.repo.as_ref())
+                .wrap_err("failed to populate id prefix index")?;
+
+            f(&index)
+        })
+    }
+
+    fn prefix_display(full_id: &str, unique_prefix_len: usize, min_len: usize) -> String {
+        let display_len = unique_prefix_len.max(min_len).min(full_id.len());
+        full_id[..display_len].to_string()
     }
 }

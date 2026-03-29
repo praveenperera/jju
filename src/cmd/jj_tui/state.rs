@@ -47,7 +47,6 @@ pub enum ModeState {
     Selecting,
     Rebasing(RebaseState),
     MovingBookmark(MovingBookmarkState),
-    #[allow(dead_code)]
     BookmarkSelect(BookmarkSelectState),
     BookmarkPicker(BookmarkPickerState),
     PushSelect(PushSelectState),
@@ -81,8 +80,6 @@ impl std::fmt::Display for RebaseType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageKind {
-    #[allow(dead_code)]
-    Info,
     Success,
     Warning,
     Error,
@@ -126,7 +123,6 @@ pub enum ConfirmAction {
     MoveBookmarkBackwards {
         bookmark_name: String,
         dest_rev: String,
-        op_before: String,
     },
 }
 
@@ -145,8 +141,6 @@ pub struct RebaseState {
     pub rebase_type: RebaseType,
     pub dest_cursor: usize,
     pub allow_branches: bool,
-    #[allow(dead_code)]
-    pub op_before: String,
 }
 
 // Diff stats
@@ -164,7 +158,6 @@ pub struct DiffStats {
 pub struct MovingBookmarkState {
     pub bookmark_name: String,
     pub dest_cursor: usize,
-    pub op_before: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

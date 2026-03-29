@@ -8,7 +8,6 @@ use super::state::{BookmarkSelectAction, RebaseType};
 
 /// All possible user actions in the TUI
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum Action {
     // Navigation
     MoveCursorUp,
@@ -35,11 +34,6 @@ pub enum Action {
     EnterConfirmAbandon,
     EnterConfirmStackSync,
     EnterConfirmRebaseOntoTrunk(RebaseType),
-    EnterConfirmMoveBookmarkBackwards {
-        bookmark_name: String,
-        dest_rev: String,
-        op_before: String,
-    },
     ConfirmYes,
     ConfirmNo,
     EnterSelecting,
@@ -54,7 +48,6 @@ pub enum Action {
 
     // Selection
     ToggleSelection,
-    ExtendSelectionToCursor,
     ClearSelection,
 
     // Rebase mode navigation
@@ -96,10 +89,6 @@ pub enum Action {
     CreateNewCommit,
     CommitWorkingCopy,
     EditDescription,
-    ExecuteAbandon {
-        revs: Vec<String>,
-    },
-    ExecuteRebaseOntoTrunk(RebaseType),
     Undo,
     GitPush,
     GitPushAll,

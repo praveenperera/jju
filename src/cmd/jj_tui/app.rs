@@ -154,16 +154,19 @@ impl App {
 
         // process action through engine
         let effects = engine::reduce(
-            &mut self.tree,
-            &mut self.mode,
-            &mut self.should_quit,
-            &mut self.split_view,
-            &mut self.pending_key,
-            &mut self.pending_operation,
-            &self.syntax_set,
-            &self.theme_set,
+            engine::ReduceCtx::new(
+                &mut self.tree,
+                &mut self.mode,
+                &mut self.should_quit,
+                &mut self.split_view,
+                &mut self.pending_key,
+                &mut self.pending_operation,
+                engine::ReduceResources {
+                    syntax_set: &self.syntax_set,
+                    theme_set: &self.theme_set,
+                },
+            ),
             action,
-            viewport_height,
         );
 
         // check if we need to load conflict files before running effects
@@ -173,10 +176,12 @@ impl App {
 
         // execute effects
         let result = runner::run_effects(
+            runner::RunCtx::new(
+                &mut self.tree,
+                &mut self.diff_stats_cache,
+                &mut self.last_op,
+            ),
             effects,
-            &mut self.tree,
-            &mut self.diff_stats_cache,
-            &mut self.last_op,
             terminal,
         );
 
@@ -307,11 +312,5 @@ impl App {
             .current_node()
             .map(|n| !n.bookmarks.is_empty())
             .unwrap_or(false)
-    }
-
-    /// Compute indices of entries that will move during rebase
-    #[allow(dead_code)]
-    pub fn compute_moving_indices(&self) -> ahash::HashSet<usize> {
-        engine::compute_moving_indices(&self.tree, &self.mode)
     }
 }
