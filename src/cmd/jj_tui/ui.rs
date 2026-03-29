@@ -1,9 +1,12 @@
+mod layout;
+mod status_bar;
+
 use super::app::App;
 use super::keybindings;
 use super::preview::NodeRole;
 use super::state::{
     BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState, ConfirmState, ConflictsState,
-    DiffLineKind, DiffState, MessageKind, ModeState, PushSelectState, RebaseType, StatusMessage,
+    DiffLineKind, DiffState, MessageKind, ModeState, PushSelectState, StatusMessage,
 };
 use super::theme;
 use super::tree::BookmarkInfo;
@@ -18,82 +21,9 @@ use ratatui::{
 use tui_popup::Popup;
 use unicode_width::UnicodeWidthStr;
 
-#[derive(Debug, Clone, Copy)]
-struct Panes {
-    primary: Rect,
-    secondary: Option<Rect>,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum PaneContent<'a> {
-    Tree,
-    Diff(&'a DiffState),
-    DiffPlaceholder,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct PanePlan<'a> {
-    primary: PaneContent<'a>,
-    secondary: Option<PaneContent<'a>>,
-}
-
-fn panes_for(area: Rect, split_view: bool) -> Panes {
-    if split_view {
-        let split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(area);
-        Panes {
-            primary: split[0],
-            secondary: Some(split[1]),
-        }
-    } else {
-        Panes {
-            primary: area,
-            secondary: None,
-        }
-    }
-}
-
-fn pane_plan<'a>(app: &'a App, has_secondary: bool) -> PanePlan<'a> {
-    if has_secondary {
-        match &app.mode {
-            ModeState::ViewingDiff(state) => PanePlan {
-                primary: PaneContent::Tree,
-                secondary: Some(PaneContent::Diff(state)),
-            },
-            _ => PanePlan {
-                primary: PaneContent::Tree,
-                secondary: Some(PaneContent::DiffPlaceholder),
-            },
-        }
-    } else {
-        match &app.mode {
-            ModeState::ViewingDiff(state) => PanePlan {
-                primary: PaneContent::Diff(state),
-                secondary: None,
-            },
-            _ => PanePlan {
-                primary: PaneContent::Tree,
-                secondary: None,
-            },
-        }
-    }
-}
-
-fn render_pane(
-    frame: &mut Frame,
-    app: &App,
-    vms: &[TreeRowVm],
-    area: Rect,
-    content: PaneContent<'_>,
-) {
-    match content {
-        PaneContent::Tree => render_tree_with_vms(frame, app, area, vms),
-        PaneContent::Diff(state) => render_diff(frame, state, area),
-        PaneContent::DiffPlaceholder => render_diff_pane(frame, app, area),
-    }
-}
+#[cfg(test)]
+use layout::PaneContent;
+use layout::{pane_plan, panes_for, render_pane};
 
 /// Format bookmarks to fit within max_width, showing "+N" for overflow
 /// Diverged bookmarks are marked with * suffix
@@ -174,7 +104,7 @@ pub fn render_with_vms(frame: &mut Frame, app: &App, vms: &[TreeRowVm]) {
         render_pane(frame, app, vms, area, content);
     }
 
-    render_status_bar(frame, app, chunks[1]);
+    status_bar::render_status_bar(frame, app, chunks[1]);
 
     // render overlays
     if let ModeState::Help(ref help_state) = app.mode {
@@ -477,157 +407,6 @@ fn render_commit_details_from_vm(
     }
 
     lines
-}
-
-fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
-    let mode_indicator = match &app.mode {
-        ModeState::Normal => "NORMAL",
-        ModeState::Help(..) => "HELP",
-        ModeState::ViewingDiff(_) => "DIFF",
-        ModeState::Confirming(_) => "CONFIRM",
-        ModeState::Selecting => "SELECT",
-        ModeState::Rebasing(state) => {
-            if state.rebase_type == RebaseType::Single {
-                "REBASE -r"
-            } else {
-                "REBASE -s"
-            }
-        }
-        ModeState::MovingBookmark(_) => "MOVE BOOKMARK",
-        ModeState::BookmarkSelect(_) => "SELECT BM",
-        ModeState::BookmarkPicker(_) => "PICK BM",
-        ModeState::PushSelect(_) => "PUSH SELECT",
-        ModeState::Squashing(_) => "SQUASH",
-        ModeState::Conflicts(_) => "CONFLICTS",
-    };
-
-    let full_indicator = if app.tree.full_mode { " [FULL]" } else { "" };
-    let split_indicator = if app.split_view { " [SPLIT]" } else { "" };
-
-    // show zoom indicator with depth and focused node info
-    let focus_indicator = if app.tree.is_focused() {
-        let depth = app.tree.focus_depth();
-        let focused_name = app
-            .tree
-            .focused_node()
-            .map(|n| {
-                if !n.bookmarks.is_empty() {
-                    n.bookmark_names().first().cloned().unwrap_or_default()
-                } else {
-                    n.change_id.chars().take(8).collect::<String>()
-                }
-            })
-            .unwrap_or_default();
-        format!(" [ZOOM:{depth}→{focused_name}]")
-    } else {
-        String::new()
-    };
-
-    // show pending key when waiting for second key in sequence
-    let pending_indicator = match app.pending_key {
-        Some(p) if keybindings::is_known_prefix(p) => format!(" {p}-"),
-        _ => String::new(),
-    };
-
-    // show selection count when there are selected items
-    let selection_indicator = if !app.tree.selected.is_empty() {
-        format!(" [{}sel]", app.tree.selected.len())
-    } else {
-        String::new()
-    };
-
-    // in rebase mode, show source→dest instead of current node
-    let current_info = if let ModeState::Rebasing(state) = &app.mode {
-        let dest_name = app
-            .tree
-            .visible_entries
-            .get(state.dest_cursor)
-            .map(|e| {
-                let node = &app.tree.nodes[e.node_index];
-                if node.bookmarks.is_empty() {
-                    node.change_id.chars().take(8).collect::<String>()
-                } else {
-                    node.bookmark_names().join(" ")
-                }
-            })
-            .unwrap_or_else(|| "?".to_string());
-        let src_short: String = state.source_rev.chars().take(8).collect();
-        format!(" | {src_short}→{dest_name}")
-    } else if let ModeState::MovingBookmark(state) = &app.mode {
-        let dest_name = app
-            .tree
-            .visible_entries
-            .get(state.dest_cursor)
-            .map(|e| {
-                let node = &app.tree.nodes[e.node_index];
-                node.change_id.chars().take(8).collect::<String>()
-            })
-            .unwrap_or_else(|| "?".to_string());
-        let bm_name: String = state.bookmark_name.chars().take(12).collect();
-        format!(" | {bm_name}→{dest_name}")
-    } else if let ModeState::Squashing(state) = &app.mode {
-        let dest_name = app
-            .tree
-            .visible_entries
-            .get(state.dest_cursor)
-            .map(|e| {
-                let node = &app.tree.nodes[e.node_index];
-                if node.bookmarks.is_empty() {
-                    node.change_id.chars().take(8).collect::<String>()
-                } else {
-                    node.bookmark_names().join(" ")
-                }
-            })
-            .unwrap_or_else(|| "?".to_string());
-        let src_short: String = state.source_rev.chars().take(8).collect();
-        format!(" | {src_short}→{dest_name}")
-    } else {
-        app.tree
-            .current_node()
-            .map(|n| {
-                let name = if n.bookmarks.is_empty() {
-                    n.change_id.clone()
-                } else {
-                    n.bookmark_names().join(" ")
-                };
-                format!(" | {name}")
-            })
-            .unwrap_or_default()
-    };
-
-    let mode_id = keybindings::mode_id_from_state(&app.mode);
-    let rebase_allow_branches = match &app.mode {
-        ModeState::Rebasing(state) => Some(state.allow_branches),
-        _ => None,
-    };
-    let hints = keybindings::status_bar_hints(&keybindings::StatusHintContext {
-        mode: mode_id,
-        has_selection: !app.tree.selected.is_empty(),
-        has_focus: app.tree.is_focused(),
-        current_has_bookmark: app.current_has_bookmark(),
-        rebase_allow_branches,
-    });
-
-    let left = format!(
-        " {mode_indicator}{full_indicator}{split_indicator}{focus_indicator}{pending_indicator}{selection_indicator}{current_info}"
-    );
-    let right = format!("{hints} ");
-
-    let available = area.width as usize;
-    let left_width = left.width();
-    let right_width = right.width();
-
-    let text = if left_width + right_width < available {
-        let padding = available - left_width - right_width;
-        format!("{left}{:padding$}{right}", "")
-    } else {
-        format!("{left}  {hints}")
-    };
-
-    let bar =
-        Paragraph::new(text).style(Style::default().bg(theme::STATUS_BAR_BG).fg(Color::White));
-
-    frame.render_widget(bar, area);
 }
 
 fn render_help(frame: &mut Frame, help_state: &super::state::HelpState) {

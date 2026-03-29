@@ -3,14 +3,15 @@
 //! The runner executes effects by performing IO operations.
 //! It handles terminal restore/init for operations that need the terminal.
 
+mod error;
+mod operations;
+
 use super::commands;
 use super::effect::Effect;
-use super::state::{DiffStats, MessageKind, RebaseType};
+use super::refresh;
+use super::state::{DiffStats, MessageKind};
 use super::tree::TreeState;
-use crate::jj_lib_helpers::JjRepo;
 use ratatui::DefaultTerminal;
-use std::fs;
-use std::io::Write;
 use std::time::Duration;
 
 /// Result of running effects
@@ -37,7 +38,7 @@ pub fn run_effects(
             }
 
             Effect::RefreshTree => {
-                if let Err(e) = refresh_tree(tree, diff_stats_cache) {
+                if let Err(e) = refresh::refresh_tree(tree, diff_stats_cache) {
                     result.status_message =
                         Some((format!("Failed to refresh: {e}"), MessageKind::Error));
                 }
@@ -93,7 +94,7 @@ pub fn run_effects(
                 Err(e) => {
                     let error_details = format!("{e}");
                     result.status_message = Some((
-                        set_error_with_details("Abandon failed", &error_details),
+                        error::set_error_with_details("Abandon failed", &error_details),
                         MessageKind::Error,
                     ));
                 }
@@ -105,71 +106,20 @@ pub fn run_effects(
                 rebase_type,
                 allow_branches,
             } => {
-                let res = match (rebase_type, allow_branches) {
-                    // fork: -d flag, dest's children unaffected
-                    (RebaseType::Single, true) => commands::rebase::single_fork(&source, &dest),
-                    (RebaseType::WithDescendants, true) => {
-                        commands::rebase::with_descendants_fork(&source, &dest)
-                    }
-                    // inline: -A flag, dest's children reparented under source
-                    (RebaseType::Single, false) => commands::rebase::single(&source, &dest),
-                    (RebaseType::WithDescendants, false) => {
-                        commands::rebase::with_descendants(&source, &dest)
-                    }
-                };
-
-                match res {
-                    Ok(_) => {
-                        let has_conflicts = commands::has_conflicts().unwrap_or(false);
-                        if has_conflicts {
-                            result.status_message = Some((
-                                "Rebase created conflicts. Press u to undo".to_string(),
-                                MessageKind::Warning,
-                            ));
-                        } else {
-                            result.status_message =
-                                Some(("Rebase complete".to_string(), MessageKind::Success));
-                        }
-                    }
-                    Err(e) => {
-                        result.status_message =
-                            Some((format!("Rebase failed: {e}"), MessageKind::Error));
-                    }
-                }
+                result.status_message = Some(operations::run_rebase(
+                    &source,
+                    &dest,
+                    rebase_type,
+                    allow_branches,
+                ));
             }
 
             Effect::RunRebaseOntoTrunk {
                 source,
                 rebase_type,
             } => {
-                let res = match rebase_type {
-                    RebaseType::Single => commands::rebase::single_onto_trunk(&source),
-                    RebaseType::WithDescendants => {
-                        commands::rebase::with_descendants_onto_trunk(&source)
-                    }
-                };
-
-                match res {
-                    Ok(_) => {
-                        let has_conflicts = commands::has_conflicts().unwrap_or(false);
-                        if has_conflicts {
-                            result.status_message = Some((
-                                "Rebased onto trunk (conflicts detected, u to undo)".to_string(),
-                                MessageKind::Warning,
-                            ));
-                        } else {
-                            result.status_message =
-                                Some(("Rebased onto trunk".to_string(), MessageKind::Success));
-                        }
-                    }
-                    Err(e) => {
-                        let error_details = format!("{e}");
-                        result.status_message = Some((
-                            set_error_with_details("Rebase failed", &error_details),
-                            MessageKind::Error,
-                        ));
-                    }
-                }
+                result.status_message =
+                    Some(operations::run_rebase_onto_trunk(&source, rebase_type));
             }
 
             Effect::RunSquash { source, target } => {
@@ -261,64 +211,7 @@ pub fn run_effects(
             },
 
             Effect::RunStackSync => {
-                let sync_result = (|| -> eyre::Result<String> {
-                    commands::git::fetch()
-                        .map_err(|e| eyre::eyre!("Stack sync failed (fetch): {e}"))?;
-
-                    let trunk = commands::stack_sync::detect_trunk_branch()
-                        .map_err(|e| eyre::eyre!("Stack sync failed (detect trunk): {e}"))?;
-
-                    commands::stack_sync::sync_trunk_bookmark(&trunk)
-                        .map_err(|e| eyre::eyre!("Stack sync failed (sync trunk): {e}"))?;
-
-                    let roots = commands::stack_sync::find_stack_roots(&trunk)
-                        .map_err(|e| eyre::eyre!("Stack sync failed (find roots): {e}"))?;
-
-                    if roots.is_empty() {
-                        return Ok("Nothing to rebase, stack is up to date".to_string());
-                    }
-
-                    for root in &roots {
-                        commands::stack_sync::rebase_root_onto_trunk(root, &trunk)
-                            .map_err(|e| eyre::eyre!("Stack sync failed (rebase {root}): {e}"))?;
-                    }
-
-                    let deleted =
-                        commands::stack_sync::cleanup_deleted_bookmarks().unwrap_or_default();
-
-                    let has_conflicts = commands::has_conflicts().unwrap_or(false);
-                    if has_conflicts {
-                        return Ok("Stack synced (conflicts detected, u to undo)".to_string());
-                    }
-
-                    let mut msg = format!("Stack synced onto {trunk}");
-                    if !deleted.is_empty() {
-                        msg.push_str(&format!(
-                            ", cleaned up {} bookmark{}",
-                            deleted.len(),
-                            if deleted.len() == 1 { "" } else { "s" }
-                        ));
-                    }
-                    Ok(msg)
-                })();
-
-                match sync_result {
-                    Ok(msg) => {
-                        let kind = if msg.contains("conflicts") {
-                            MessageKind::Warning
-                        } else {
-                            MessageKind::Success
-                        };
-                        result.status_message = Some((msg, kind));
-                    }
-                    Err(e) => {
-                        let error_details = format!("{e}");
-                        result.status_message = Some((
-                            set_error_with_details("Stack sync failed", &error_details),
-                            MessageKind::Error,
-                        ));
-                    }
-                }
+                result.status_message = Some(operations::run_stack_sync());
             }
 
             Effect::RunGitFetch => match commands::git::fetch() {
@@ -354,40 +247,12 @@ pub fn run_effects(
                 }
             },
 
-            Effect::RunBookmarkSet { name, rev } => match commands::bookmark::set(&name, &rev) {
-                Ok(_) => {
-                    let short_rev = &rev[..8.min(rev.len())];
-                    result.status_message = Some((
-                        format!("Moved bookmark '{}' to {}", name, short_rev),
-                        MessageKind::Success,
-                    ));
-                }
-                Err(e) => {
-                    let error_details = format!("{e}");
-                    result.status_message = Some((
-                        set_error_with_details("Move bookmark failed", &error_details),
-                        MessageKind::Error,
-                    ));
-                }
-            },
+            Effect::RunBookmarkSet { name, rev } => {
+                result.status_message = Some(operations::run_bookmark_set(&name, &rev));
+            }
 
             Effect::RunBookmarkSetBackwards { name, rev } => {
-                match commands::bookmark::set_allow_backwards(&name, &rev) {
-                    Ok(_) => {
-                        let short_rev = &rev[..8.min(rev.len())];
-                        result.status_message = Some((
-                            format!("Moved bookmark '{}' to {}", name, short_rev),
-                            MessageKind::Success,
-                        ));
-                    }
-                    Err(e) => {
-                        let error_details = format!("{e}");
-                        result.status_message = Some((
-                            set_error_with_details("Move bookmark failed", &error_details),
-                            MessageKind::Error,
-                        ));
-                    }
-                }
+                result.status_message = Some(operations::run_bookmark_set_backwards(&name, &rev));
             }
 
             Effect::RunBookmarkDelete { name } => match commands::bookmark::delete(&name) {
@@ -398,7 +263,7 @@ pub fn run_effects(
                 Err(e) => {
                     let error_details = format!("{e}");
                     result.status_message = Some((
-                        set_error_with_details("Delete bookmark failed", &error_details),
+                        error::set_error_with_details("Delete bookmark failed", &error_details),
                         MessageKind::Error,
                     ));
                 }
@@ -427,7 +292,10 @@ pub fn run_effects(
                     Err(e) => {
                         let error_details = format!("{e}");
                         result.status_message = Some((
-                            set_error_with_details("Resolve divergence failed", &error_details),
+                            error::set_error_with_details(
+                                "Resolve divergence failed",
+                                &error_details,
+                            ),
                             MessageKind::Error,
                         ));
                     }
@@ -475,91 +343,4 @@ pub fn run_effects(
     }
 
     result
-}
-
-/// Refresh the tree state
-fn refresh_tree(
-    tree: &mut TreeState,
-    diff_stats_cache: &mut std::collections::HashMap<String, DiffStats>,
-) -> eyre::Result<()> {
-    // save current position to restore after refresh
-    let current_change_id = tree.current_node().map(|n| n.change_id.clone());
-    let parent_change_id = tree
-        .current_node()
-        .and_then(|n| n.parent_ids.first().cloned());
-    let old_cursor = tree.cursor;
-
-    // save focus stack change_ids to restore after refresh
-    let focus_stack_change_ids: Vec<String> = tree
-        .focus_stack
-        .iter()
-        .filter_map(|&idx| tree.nodes.get(idx).map(|n| n.change_id.clone()))
-        .collect();
-
-    let jj_repo = JjRepo::load(None)?;
-    *tree = TreeState::load(&jj_repo)?;
-    tree.clear_selection();
-    diff_stats_cache.clear();
-
-    // restore focus stack if the focused nodes still exist
-    for change_id in focus_stack_change_ids {
-        if let Some(node_idx) = tree.nodes.iter().position(|n| n.change_id == change_id) {
-            tree.focus_on(node_idx);
-        }
-    }
-
-    // restore cursor: try current change_id, then parent, then clamp old position
-    let find_visible = |cid: &str| {
-        tree.visible_entries
-            .iter()
-            .position(|e| tree.nodes[e.node_index].change_id == cid)
-    };
-
-    if let Some(ref cid) = current_change_id
-        && let Some(idx) = find_visible(cid)
-    {
-        tree.cursor = idx;
-    } else if let Some(ref pid) = parent_change_id
-        && let Some(idx) = find_visible(pid)
-    {
-        tree.cursor = idx;
-    } else {
-        tree.cursor = old_cursor.min(tree.visible_count().saturating_sub(1));
-    }
-
-    Ok(())
-}
-
-/// Save error details to a temp file and return a formatted error message
-fn set_error_with_details(prefix: &str, stderr: &str) -> String {
-    let first_line = stderr.lines().next().unwrap_or(stderr);
-    let truncated = if first_line.len() > 80 {
-        format!("{}...", &first_line[..77])
-    } else {
-        first_line.to_string()
-    };
-
-    if let Some(path) = save_error_to_file(stderr) {
-        format!("{prefix}: {truncated} (full error: {path})")
-    } else {
-        format!("{prefix}: {truncated}")
-    }
-}
-
-/// Save error details to a temp file and return the path
-fn save_error_to_file(error: &str) -> Option<String> {
-    let temp_dir = std::env::temp_dir();
-    let error_file = temp_dir.join(format!("jju-error-{}.log", std::process::id()));
-    let path = error_file.to_string_lossy().to_string();
-
-    match fs::File::create(&error_file) {
-        Ok(mut file) => {
-            if file.write_all(error.as_bytes()).is_ok() {
-                Some(path)
-            } else {
-                None
-            }
-        }
-        Err(_) => None,
-    }
 }

@@ -3,6 +3,10 @@
 //! The engine is a pure function that processes actions and produces effects.
 //! It mutates state but performs no IO.
 
+mod bookmarks;
+mod rebase;
+mod selection;
+
 use super::action::Action;
 use super::effect::Effect;
 use super::handlers;
@@ -13,7 +17,9 @@ use super::state::{
 };
 use super::tree::TreeState;
 use crate::jj_lib_helpers::JjRepo;
-use ahash::{HashSet, HashSetExt};
+use ahash::HashSet;
+use bookmarks::{bookmark_is_on_rev, build_move_bookmark_picker_list, is_bookmark_move_backwards};
+use selection::{current_rev, extend_selection_to_cursor, get_rev_at_cursor, get_revs_for_action};
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
@@ -53,14 +59,12 @@ pub fn reduce(
         // Navigation
         Action::MoveCursorUp => {
             tree.move_cursor_up();
-            // in selection mode, also extend selection
             if matches!(mode, ModeState::Selecting) {
                 extend_selection_to_cursor(tree);
             }
         }
         Action::MoveCursorDown => {
             tree.move_cursor_down();
-            // in selection mode, also extend selection
             if matches!(mode, ModeState::Selecting) {
                 extend_selection_to_cursor(tree);
             }
@@ -139,7 +143,6 @@ pub fn reduce(
 
         Action::EnterConfirmAbandon => {
             let revs = get_revs_for_action(tree);
-            // check for working copy in selection
             for rev in &revs {
                 if tree
                     .nodes
@@ -1264,146 +1267,9 @@ pub fn reduce(
 
 // Helper functions
 
-fn current_rev(tree: &TreeState) -> String {
-    tree.current_node()
-        .map(|n| n.change_id.clone())
-        .unwrap_or_default()
-}
-
-fn get_revs_for_action(tree: &TreeState) -> Vec<String> {
-    if tree.selected.is_empty() {
-        vec![current_rev(tree)]
-    } else {
-        tree.selected
-            .iter()
-            .filter_map(|&idx| {
-                tree.visible_entries
-                    .get(idx)
-                    .map(|e| tree.nodes[e.node_index].change_id.clone())
-            })
-            .collect()
-    }
-}
-
-fn get_rev_at_cursor(tree: &TreeState, cursor: usize) -> Option<String> {
-    tree.visible_entries
-        .get(cursor)
-        .map(|e| tree.nodes[e.node_index].change_id.clone())
-}
-
-fn extend_selection_to_cursor(tree: &mut TreeState) {
-    if let Some(anchor) = tree.selection_anchor {
-        tree.selected.clear();
-        tree.select_range(anchor, tree.cursor);
-    }
-}
-
-fn is_bookmark_move_backwards(tree: &TreeState, bookmark_name: &str, dest_rev: &str) -> bool {
-    let Some(current_node) = tree.nodes.iter().find(|n| n.has_bookmark(bookmark_name)) else {
-        return false; // new bookmark, not backwards
-    };
-    let current_change_id = &current_node.change_id;
-
-    // check if dest is an ancestor of current position
-    super::commands::is_ancestor(dest_rev, current_change_id).unwrap_or(false)
-}
-
-fn bookmark_is_on_rev(tree: &TreeState, bookmark_name: &str, rev: &str) -> bool {
-    tree.nodes
-        .iter()
-        .any(|n| n.change_id == rev && n.has_bookmark(bookmark_name))
-}
-
-fn build_move_bookmark_picker_list(
-    all_bookmarks: Vec<String>,
-    pinned: Vec<String>,
-    tree: &TreeState,
-) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut pinned_unique = Vec::new();
-    for name in pinned {
-        if seen.insert(name.clone()) {
-            pinned_unique.push(name);
-        }
-    }
-
-    let pinned_set = seen;
-    let mut rest: Vec<String> = all_bookmarks
-        .into_iter()
-        .filter(|b| !pinned_set.contains(b))
-        .collect();
-    sort_bookmarks_by_proximity(&mut rest, tree);
-
-    let mut ordered = pinned_unique;
-    ordered.extend(rest);
-    ordered
-}
-
-/// Sort bookmarks by proximity to the current cursor position
-/// Prefers bookmarks above the cursor (lower index = ancestors), so moving
-/// bookmarks forward to newer commits is prioritized
-fn sort_bookmarks_by_proximity(bookmarks: &mut [String], tree: &TreeState) {
-    let bookmark_indices = tree.bookmark_to_visible_index();
-    let cursor = tree.cursor;
-
-    bookmarks.sort_by(|a, b| {
-        let idx_a = bookmark_indices.get(a).copied();
-        let idx_b = bookmark_indices.get(b).copied();
-
-        // bookmarks not in visible tree go last
-        match (idx_a, idx_b) {
-            (None, None) => a.cmp(b),
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (Some(idx_a), Some(idx_b)) => {
-                let above_a = idx_a < cursor;
-                let above_b = idx_b < cursor;
-
-                // prefer bookmarks above cursor
-                match (above_a, above_b) {
-                    (true, false) => std::cmp::Ordering::Less,
-                    (false, true) => std::cmp::Ordering::Greater,
-                    _ => {
-                        // both above or both below: sort by distance, then alphabetically
-                        let dist_a = idx_a.abs_diff(cursor);
-                        let dist_b = idx_b.abs_diff(cursor);
-                        dist_a.cmp(&dist_b).then_with(|| a.cmp(b))
-                    }
-                }
-            }
-        }
-    });
-}
-
 /// Compute indices of entries that will move during rebase
 pub fn compute_moving_indices(tree: &TreeState, mode: &ModeState) -> HashSet<usize> {
-    let ModeState::Rebasing(state) = mode else {
-        return HashSet::new();
-    };
-
-    let mut indices = HashSet::new();
-    let mut in_source_tree = false;
-    let mut source_struct_depth = 0usize;
-
-    for (idx, entry) in tree.visible_entries.iter().enumerate() {
-        let node = &tree.nodes[entry.node_index];
-
-        if node.change_id == state.source_rev {
-            indices.insert(idx);
-            if state.rebase_type == RebaseType::WithDescendants {
-                in_source_tree = true;
-                source_struct_depth = node.depth;
-            }
-        } else if in_source_tree {
-            if node.depth > source_struct_depth {
-                indices.insert(idx);
-            } else {
-                break;
-            }
-        }
-    }
-
-    indices
+    rebase::compute_moving_indices(tree, mode)
 }
 
 #[cfg(test)]

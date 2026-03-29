@@ -8,6 +8,7 @@ mod engine;
 mod handlers;
 mod keybindings;
 mod preview;
+mod refresh;
 mod runner;
 mod state;
 mod theme;

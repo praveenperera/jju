@@ -9,6 +9,7 @@ use super::controller::{self, ControllerContext};
 use super::effect::Effect;
 use super::engine;
 use super::handlers;
+use super::refresh;
 use super::runner;
 use super::state::{
     DiffStats, MessageKind, ModeState, PendingOperation, PendingSquash, StatusMessage,
@@ -274,59 +275,7 @@ impl App {
     }
 
     fn refresh_tree(&mut self) -> Result<()> {
-        // save current position to restore after refresh
-        let current_change_id = self.tree.current_node().map(|n| n.change_id.clone());
-        let parent_change_id = self
-            .tree
-            .current_node()
-            .and_then(|n| n.parent_ids.first().cloned());
-        let old_cursor = self.tree.cursor;
-
-        // save focus stack change_ids to restore after refresh
-        let focus_stack_change_ids: Vec<String> = self
-            .tree
-            .focus_stack
-            .iter()
-            .filter_map(|&idx| self.tree.nodes.get(idx).map(|n| n.change_id.clone()))
-            .collect();
-
-        let jj_repo = JjRepo::load(None)?;
-        self.tree = TreeState::load(&jj_repo)?;
-        self.tree.clear_selection();
-        self.diff_stats_cache.clear();
-
-        // restore focus stack if the focused nodes still exist
-        for change_id in focus_stack_change_ids {
-            if let Some(node_idx) = self
-                .tree
-                .nodes
-                .iter()
-                .position(|n| n.change_id == change_id)
-            {
-                self.tree.focus_on(node_idx);
-            }
-        }
-
-        // restore cursor: try current change_id, then parent, then clamp old position
-        let find_visible = |tree: &TreeState, cid: &str| {
-            tree.visible_entries
-                .iter()
-                .position(|e| tree.nodes[e.node_index].change_id == cid)
-        };
-
-        if let Some(ref cid) = current_change_id
-            && let Some(idx) = find_visible(&self.tree, cid)
-        {
-            self.tree.cursor = idx;
-        } else if let Some(ref pid) = parent_change_id
-            && let Some(idx) = find_visible(&self.tree, pid)
-        {
-            self.tree.cursor = idx;
-        } else {
-            self.tree.cursor = old_cursor.min(self.tree.visible_count().saturating_sub(1));
-        }
-
-        Ok(())
+        refresh::refresh_tree(&mut self.tree, &mut self.diff_stats_cache)
     }
 
     pub fn get_diff_stats(&mut self, change_id: &str) -> Option<&DiffStats> {
