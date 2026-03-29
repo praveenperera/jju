@@ -52,3 +52,5 @@ ahash = "0.8.12"
 
 # regex
 regex = "1"
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "0.8.23"

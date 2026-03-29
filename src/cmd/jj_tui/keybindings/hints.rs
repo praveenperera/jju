@@ -1,4 +1,4 @@
-use super::display::{KeyFormat, first_key, join_keys, keys_for_label};
+use super::display::{KeyFormat, first_key, first_key_any_pending, join_keys, keys_for_label};
 use super::{DisplayKind, ModeId};
 
 #[derive(Debug, Clone, Copy)]
@@ -77,8 +77,8 @@ pub fn status_bar_hints(ctx: &StatusHintContext) -> String {
             ),
             format!(
                 "{}/{}:top/bottom",
-                key_for_hint_chord(ModeId::Diff, 'z', "top"),
-                key_for_hint_chord(ModeId::Diff, 'z', "bottom")
+                key_for_hint_any_pending(ModeId::Diff, "top", KeyFormat::Concat),
+                key_for_hint_any_pending(ModeId::Diff, "bottom", KeyFormat::Concat)
             ),
             {
                 let keys = keys_for_label(ModeId::Diff, None, "close", true, KeyFormat::Space);
@@ -194,10 +194,8 @@ fn key_for_hint(mode: ModeId, pending: Option<char>, label: &str) -> String {
         .to_string()
 }
 
-fn key_for_hint_chord(mode: ModeId, prefix: char, label: &str) -> String {
-    keys_for_label(mode, Some(prefix), label, false, KeyFormat::Concat)
-        .into_iter()
-        .next()
+fn key_for_hint_any_pending(mode: ModeId, label: &str, format: KeyFormat) -> String {
+    first_key_any_pending(mode, label, DisplayKind::Primary, format)
         .unwrap_or_else(|| "?".to_string())
 }
 

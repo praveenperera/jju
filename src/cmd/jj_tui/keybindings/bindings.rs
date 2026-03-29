@@ -1,356 +1,757 @@
 use super::ActionTemplate::*;
-use super::BindingDef;
-use super::KeyDef::*;
 use super::ModeId::*;
+use super::{BindingBehavior, BindingSpec, KeyDef, KeySequence};
 use crate::cmd::jj_tui::action::Action;
 use crate::cmd::jj_tui::state::{BookmarkSelectAction, RebaseType};
 use ratatui::crossterm::event::KeyCode;
 
 macro_rules! act {
     ($action:ident) => {
-        Fixed(Action::$action)
+        BindingBehavior::Action(Fixed(Action::$action))
     };
     ($action:ident($($arg:expr),*)) => {
-        Fixed(Action::$action($($arg),*))
+        BindingBehavior::Action(Fixed(Action::$action($($arg),*)))
     };
 }
 
-pub(super) fn binding_defs() -> &'static [BindingDef] {
-    BINDING_DEFS
+macro_rules! single {
+    ($key:expr) => {
+        KeySequence::Single($key)
+    };
 }
 
-pub(super) fn prefix_title(prefix: char) -> Option<&'static str> {
-    PREFIX_TITLES
-        .iter()
-        .find(|(pending, _)| *pending == prefix)
-        .map(|(_, title)| *title)
+macro_rules! chord {
+    ($prefix:literal, $key:expr) => {
+        KeySequence::Chord($prefix, $key)
+    };
 }
 
-const PREFIX_TITLES: &[(char, &str)] = &[('g', "git"), ('z', "nav"), ('b', "bookmark")];
+macro_rules! pending {
+    ($title:literal) => {
+        BindingBehavior::PendingPrefix { title: $title }
+    };
+}
 
-static BINDING_DEFS: &[BindingDef] = &[
-    BindingDef::new(Normal, Char('q'), act!(Quit), "quit").help("General", "Quit"),
-    BindingDef::new(Normal, Ctrl('c'), act!(Quit), "quit").alias(),
-    BindingDef::new(Normal, Char('Q'), act!(EnterSquashMode), "squash")
+pub(super) fn builtin_specs() -> Vec<BindingSpec> {
+    vec![
+        BindingSpec::new(
+            Normal,
+            "quit",
+            act!(Quit),
+            vec![single!(KeyDef::Char('q')), single!(KeyDef::Ctrl('c'))],
+        )
+        .help("General", "Quit"),
+        BindingSpec::new(
+            Normal,
+            "squash",
+            act!(EnterSquashMode),
+            vec![single!(KeyDef::Char('Q'))],
+        )
         .help("Rebase", "Squash into target"),
-    BindingDef::new(Normal, Key(KeyCode::Esc), NormalEscConditional, "esc"),
-    BindingDef::new(Normal, Char('?'), act!(EnterHelp), "help").help("General", "Toggle help"),
-    BindingDef::new(Normal, Char('j'), act!(MoveCursorDown), "down")
+        BindingSpec::new(
+            Normal,
+            "esc",
+            BindingBehavior::Action(NormalEscConditional),
+            vec![single!(KeyDef::Key(KeyCode::Esc))],
+        ),
+        BindingSpec::new(
+            Normal,
+            "help",
+            act!(EnterHelp),
+            vec![single!(KeyDef::Char('?'))],
+        )
+        .help("General", "Toggle help"),
+        BindingSpec::new(
+            Normal,
+            "down",
+            act!(MoveCursorDown),
+            vec![
+                single!(KeyDef::Char('j')),
+                single!(KeyDef::Key(KeyCode::Down)),
+            ],
+        )
         .help("Navigation", "Move cursor down"),
-    BindingDef::new(Normal, Key(KeyCode::Down), act!(MoveCursorDown), "down").alias(),
-    BindingDef::new(Normal, Char('k'), act!(MoveCursorUp), "up")
+        BindingSpec::new(
+            Normal,
+            "up",
+            act!(MoveCursorUp),
+            vec![
+                single!(KeyDef::Char('k')),
+                single!(KeyDef::Key(KeyCode::Up)),
+            ],
+        )
         .help("Navigation", "Move cursor up"),
-    BindingDef::new(Normal, Key(KeyCode::Up), act!(MoveCursorUp), "up").alias(),
-    BindingDef::new(Normal, Char('@'), act!(JumpToWorkingCopy), "working-copy")
+        BindingSpec::new(
+            Normal,
+            "working-copy",
+            act!(JumpToWorkingCopy),
+            vec![single!(KeyDef::Char('@'))],
+        )
         .help("Navigation", "Jump to working copy"),
-    BindingDef::new(Normal, Ctrl('u'), PageUpHalfViewport, "page-up").help("Navigation", "Page up"),
-    BindingDef::new(Normal, Ctrl('d'), PageDownHalfViewport, "page-down")
+        BindingSpec::new(
+            Normal,
+            "page-up",
+            BindingBehavior::Action(PageUpHalfViewport),
+            vec![single!(KeyDef::Ctrl('u'))],
+        )
+        .help("Navigation", "Page up"),
+        BindingSpec::new(
+            Normal,
+            "page-down",
+            BindingBehavior::Action(PageDownHalfViewport),
+            vec![single!(KeyDef::Ctrl('d'))],
+        )
         .help("Navigation", "Page down"),
-    BindingDef::new(Normal, Char('g'), act!(SetPendingKey('g')), "git"),
-    BindingDef::new(Normal, Char('z'), act!(SetPendingKey('z')), "nav"),
-    BindingDef::new(Normal, Char('b'), act!(SetPendingKey('b')), "bookmark"),
-    BindingDef::new(Normal, Char('f'), act!(ToggleFullMode), "full")
+        BindingSpec::new(
+            Normal,
+            "git",
+            pending!("git"),
+            vec![single!(KeyDef::Char('g'))],
+        ),
+        BindingSpec::new(
+            Normal,
+            "nav",
+            pending!("nav"),
+            vec![single!(KeyDef::Char('z'))],
+        ),
+        BindingSpec::new(
+            Normal,
+            "bookmark",
+            pending!("bookmark"),
+            vec![single!(KeyDef::Char('b'))],
+        ),
+        BindingSpec::new(
+            Normal,
+            "full",
+            act!(ToggleFullMode),
+            vec![single!(KeyDef::Char('f'))],
+        )
         .help("View", "Toggle full mode"),
-    BindingDef::new(Normal, Key(KeyCode::Enter), act!(ToggleFocus), "zoom")
+        BindingSpec::new(
+            Normal,
+            "zoom",
+            act!(ToggleFocus),
+            vec![single!(KeyDef::Key(KeyCode::Enter))],
+        )
         .help("Navigation", "Zoom in/out on node"),
-    BindingDef::new(Normal, Key(KeyCode::Tab), act!(ToggleExpanded), "details")
+        BindingSpec::new(
+            Normal,
+            "details",
+            act!(ToggleExpanded),
+            vec![
+                single!(KeyDef::Key(KeyCode::Tab)),
+                single!(KeyDef::Char(' ')),
+            ],
+        )
         .help("View", "Toggle commit details"),
-    BindingDef::new(Normal, Char(' '), act!(ToggleExpanded), "details").alias(),
-    BindingDef::new(Normal, Char('\\'), act!(ToggleSplitView), "split")
+        BindingSpec::new(
+            Normal,
+            "split",
+            act!(ToggleSplitView),
+            vec![single!(KeyDef::Char('\\'))],
+        )
         .help("View", "Toggle split view"),
-    BindingDef::new(Normal, Char('R'), act!(RefreshTree), "refresh").help("View", "Refresh tree"),
-    BindingDef::new(Normal, Char('d'), act!(EnterDiffView), "diff").help("View", "View diff"),
-    BindingDef::new(Normal, Char('D'), act!(EditDescription), "desc")
+        BindingSpec::new(
+            Normal,
+            "refresh",
+            act!(RefreshTree),
+            vec![single!(KeyDef::Char('R'))],
+        )
+        .help("View", "Refresh tree"),
+        BindingSpec::new(
+            Normal,
+            "diff",
+            act!(EnterDiffView),
+            vec![single!(KeyDef::Char('d'))],
+        )
+        .help("View", "View diff"),
+        BindingSpec::new(
+            Normal,
+            "desc",
+            act!(EditDescription),
+            vec![single!(KeyDef::Char('D'))],
+        )
         .help("View", "Edit description"),
-    BindingDef::new(Normal, Char('e'), act!(EditWorkingCopy), "edit")
+        BindingSpec::new(
+            Normal,
+            "edit",
+            act!(EditWorkingCopy),
+            vec![single!(KeyDef::Char('e'))],
+        )
         .help("Edit Operations", "Edit working copy (jj edit)"),
-    BindingDef::new(Normal, Char('n'), act!(CreateNewCommit), "new")
+        BindingSpec::new(
+            Normal,
+            "new",
+            act!(CreateNewCommit),
+            vec![single!(KeyDef::Char('n'))],
+        )
         .help("Edit Operations", "New commit (jj new)"),
-    BindingDef::new(Normal, Char('c'), act!(CommitWorkingCopy), "commit")
+        BindingSpec::new(
+            Normal,
+            "commit",
+            act!(CommitWorkingCopy),
+            vec![single!(KeyDef::Char('c'))],
+        )
         .help("Edit Operations", "Commit changes (jj commit)"),
-    BindingDef::new(Normal, Char('x'), act!(ToggleSelection), "toggle")
+        BindingSpec::new(
+            Normal,
+            "toggle",
+            act!(ToggleSelection),
+            vec![single!(KeyDef::Char('x'))],
+        )
         .help("Selection", "Toggle selection"),
-    BindingDef::new(Normal, Char('v'), act!(EnterSelecting), "select")
+        BindingSpec::new(
+            Normal,
+            "select",
+            act!(EnterSelecting),
+            vec![single!(KeyDef::Char('v'))],
+        )
         .help("Selection", "Visual select mode"),
-    BindingDef::new(Normal, Char('a'), act!(EnterConfirmAbandon), "abandon")
+        BindingSpec::new(
+            Normal,
+            "abandon",
+            act!(EnterConfirmAbandon),
+            vec![single!(KeyDef::Char('a'))],
+        )
         .help("Selection", "Abandon selected"),
-    BindingDef::new(
-        Normal,
-        Char('r'),
-        act!(EnterRebaseMode(RebaseType::Single)),
-        "rebase-single",
-    )
-    .help("Rebase", "Rebase single (-r)"),
-    BindingDef::new(
-        Normal,
-        Char('s'),
-        act!(EnterRebaseMode(RebaseType::WithDescendants)),
-        "rebase-desc",
-    )
-    .help("Rebase", "Rebase + descendants (-s)"),
-    BindingDef::new(
-        Normal,
-        Char('t'),
-        act!(EnterConfirmRebaseOntoTrunk(RebaseType::Single)),
-        "trunk-single",
-    )
-    .help("Rebase", "Quick rebase onto trunk"),
-    BindingDef::new(
-        Normal,
-        Char('T'),
-        act!(EnterConfirmRebaseOntoTrunk(RebaseType::WithDescendants)),
-        "trunk-desc",
-    )
-    .help("Rebase", "Quick rebase tree onto trunk"),
-    BindingDef::new(Normal, Char('u'), act!(Undo), "undo").help("Rebase", "Undo last operation"),
-    BindingDef::new(Normal, Char('p'), act!(GitPush), "push")
+        BindingSpec::new(
+            Normal,
+            "rebase-single",
+            act!(EnterRebaseMode(RebaseType::Single)),
+            vec![single!(KeyDef::Char('r'))],
+        )
+        .help("Rebase", "Rebase single (-r)"),
+        BindingSpec::new(
+            Normal,
+            "rebase-desc",
+            act!(EnterRebaseMode(RebaseType::WithDescendants)),
+            vec![single!(KeyDef::Char('s'))],
+        )
+        .help("Rebase", "Rebase + descendants (-s)"),
+        BindingSpec::new(
+            Normal,
+            "trunk-single",
+            act!(EnterConfirmRebaseOntoTrunk(RebaseType::Single)),
+            vec![single!(KeyDef::Char('t'))],
+        )
+        .help("Rebase", "Quick rebase onto trunk"),
+        BindingSpec::new(
+            Normal,
+            "trunk-desc",
+            act!(EnterConfirmRebaseOntoTrunk(RebaseType::WithDescendants)),
+            vec![single!(KeyDef::Char('T'))],
+        )
+        .help("Rebase", "Quick rebase tree onto trunk"),
+        BindingSpec::new(Normal, "undo", act!(Undo), vec![single!(KeyDef::Char('u'))])
+            .help("Rebase", "Undo last operation"),
+        BindingSpec::new(
+            Normal,
+            "push",
+            act!(GitPush),
+            vec![single!(KeyDef::Char('p'))],
+        )
         .help("Bookmarks & Git", "Push current bookmark"),
-    BindingDef::new(Normal, Char('P'), act!(GitPushAll), "push-all"),
-    BindingDef::new(Normal, Char('S'), act!(EnterConfirmStackSync), "stack-sync")
+        BindingSpec::new(
+            Normal,
+            "push-all",
+            act!(GitPushAll),
+            vec![single!(KeyDef::Char('P'))],
+        ),
+        BindingSpec::new(
+            Normal,
+            "stack-sync",
+            act!(EnterConfirmStackSync),
+            vec![single!(KeyDef::Char('S'))],
+        )
         .help("Bookmarks & Git", "Stack sync (fetch, rebase, clean up)"),
-    BindingDef::new(Normal, Char('C'), act!(EnterConflicts), "conflicts")
+        BindingSpec::new(
+            Normal,
+            "conflicts",
+            act!(EnterConflicts),
+            vec![single!(KeyDef::Char('C'))],
+        )
         .help("Conflicts", "View conflicts panel"),
-    BindingDef::new(Normal, Char('f'), act!(GitFetch), "fetch")
-        .prefix('g')
-        .help("Bookmarks & Git", "Git fetch"),
-    BindingDef::new(Normal, Char('i'), act!(GitImport), "import")
-        .prefix('g')
-        .help("Bookmarks & Git", "Git import"),
-    BindingDef::new(Normal, Char('e'), act!(GitExport), "export")
-        .prefix('g')
-        .help("Bookmarks & Git", "Git export"),
-    BindingDef::new(
-        Normal,
-        Char('r'),
-        act!(ResolveDivergence),
-        "resolve-divergence",
-    )
-    .prefix('g')
-    .help("Bookmarks & Git", "Resolve divergence (keep local)"),
-    BindingDef::new(Normal, Char('p'), act!(CreatePR), "create-pr")
-        .prefix('g')
-        .help("Bookmarks & Git", "Create/open PR from bookmark"),
-    BindingDef::new(Normal, Char('t'), act!(MoveCursorTop), "top")
-        .prefix('z')
-        .help("Navigation", "Jump to top"),
-    BindingDef::new(Normal, Char('b'), act!(MoveCursorBottom), "bottom")
-        .prefix('z')
-        .help("Navigation", "Jump to bottom"),
-    BindingDef::new(Normal, Char('z'), CenterCursorViewport, "center")
-        .prefix('z')
-        .help("Navigation", "Center current line"),
-    BindingDef::new(Normal, Char('m'), act!(EnterMoveBookmarkMode), "set")
-        .prefix('b')
-        .help("Bookmarks & Git", "Set/move bookmark"),
-    BindingDef::new(
-        Normal,
-        Char('d'),
-        act!(EnterBookmarkPicker(BookmarkSelectAction::Delete)),
-        "delete",
-    )
-    .prefix('b')
-    .help("Bookmarks & Git", "Delete bookmark"),
-    BindingDef::new(Help, Char('q'), act!(ExitHelp), "close"),
-    BindingDef::new(Help, Char('?'), act!(ExitHelp), "close").alias(),
-    BindingDef::new(Help, Key(KeyCode::Esc), act!(ExitHelp), "close").alias(),
-    BindingDef::new(Help, Char('j'), act!(ScrollHelpDown(1)), "scroll-down"),
-    BindingDef::new(
-        Help,
-        Key(KeyCode::Down),
-        act!(ScrollHelpDown(1)),
-        "scroll-down",
-    )
-    .alias(),
-    BindingDef::new(Help, Char('k'), act!(ScrollHelpUp(1)), "scroll-up"),
-    BindingDef::new(Help, Key(KeyCode::Up), act!(ScrollHelpUp(1)), "scroll-up").alias(),
-    BindingDef::new(Help, Char('d'), act!(ScrollHelpDown(20)), "page-down"),
-    BindingDef::new(Help, Char('u'), act!(ScrollHelpUp(20)), "page-up"),
-    BindingDef::new(Diff, Char('j'), act!(ScrollDiffDown(1)), "scroll-down"),
-    BindingDef::new(
-        Diff,
-        Key(KeyCode::Down),
-        act!(ScrollDiffDown(1)),
-        "scroll-down",
-    )
-    .alias(),
-    BindingDef::new(Diff, Char('k'), act!(ScrollDiffUp(1)), "scroll-up"),
-    BindingDef::new(Diff, Key(KeyCode::Up), act!(ScrollDiffUp(1)), "scroll-up").alias(),
-    BindingDef::new(Diff, Char('d'), act!(ScrollDiffDown(20)), "page-down"),
-    BindingDef::new(Diff, Char('u'), act!(ScrollDiffUp(20)), "page-up"),
-    BindingDef::new(Diff, Char('z'), act!(SetPendingKey('z')), "nav"),
-    BindingDef::new(Diff, Char('q'), act!(ExitDiffView), "close"),
-    BindingDef::new(Diff, Key(KeyCode::Esc), act!(ExitDiffView), "close").alias(),
-    BindingDef::new(Diff, Char('t'), act!(ScrollDiffTop), "top").prefix('z'),
-    BindingDef::new(Diff, Char('b'), act!(ScrollDiffBottom), "bottom").prefix('z'),
-    BindingDef::new(Confirm, Char('y'), act!(ConfirmYes), "yes"),
-    BindingDef::new(Confirm, Key(KeyCode::Enter), act!(ConfirmYes), "yes").alias(),
-    BindingDef::new(Confirm, Char('n'), act!(ConfirmNo), "no"),
-    BindingDef::new(Confirm, Key(KeyCode::Esc), act!(ConfirmNo), "no").alias(),
-    BindingDef::new(Selecting, Char('j'), act!(MoveCursorDown), "down"),
-    BindingDef::new(Selecting, Key(KeyCode::Down), act!(MoveCursorDown), "down").alias(),
-    BindingDef::new(Selecting, Char('k'), act!(MoveCursorUp), "up"),
-    BindingDef::new(Selecting, Key(KeyCode::Up), act!(MoveCursorUp), "up").alias(),
-    BindingDef::new(Selecting, Key(KeyCode::Esc), act!(ExitSelecting), "exit"),
-    BindingDef::new(Selecting, Char('a'), act!(EnterConfirmAbandon), "abandon"),
-    BindingDef::new(Rebase, Char('j'), act!(MoveRebaseDestDown), "dest-down"),
-    BindingDef::new(
-        Rebase,
-        Key(KeyCode::Down),
-        act!(MoveRebaseDestDown),
-        "dest-down",
-    )
-    .alias(),
-    BindingDef::new(Rebase, Char('k'), act!(MoveRebaseDestUp), "dest-up"),
-    BindingDef::new(Rebase, Key(KeyCode::Up), act!(MoveRebaseDestUp), "dest-up").alias(),
-    BindingDef::new(Rebase, Char('b'), act!(ToggleRebaseBranches), "branches"),
-    BindingDef::new(Rebase, Key(KeyCode::Enter), act!(ExecuteRebase), "run"),
-    BindingDef::new(Rebase, Key(KeyCode::Esc), act!(ExitRebaseMode), "cancel"),
-    BindingDef::new(Squash, Char('j'), act!(MoveSquashDestDown), "dest-down"),
-    BindingDef::new(
-        Squash,
-        Key(KeyCode::Down),
-        act!(MoveSquashDestDown),
-        "dest-down",
-    )
-    .alias(),
-    BindingDef::new(Squash, Char('k'), act!(MoveSquashDestUp), "dest-up"),
-    BindingDef::new(Squash, Key(KeyCode::Up), act!(MoveSquashDestUp), "dest-up").alias(),
-    BindingDef::new(Squash, Key(KeyCode::Enter), act!(ExecuteSquash), "run"),
-    BindingDef::new(Squash, Key(KeyCode::Esc), act!(ExitSquashMode), "cancel"),
-    BindingDef::new(
-        MovingBookmark,
-        Char('j'),
-        act!(MoveBookmarkDestDown),
-        "dest-down",
-    ),
-    BindingDef::new(
-        MovingBookmark,
-        Key(KeyCode::Down),
-        act!(MoveBookmarkDestDown),
-        "dest-down",
-    )
-    .alias(),
-    BindingDef::new(
-        MovingBookmark,
-        Char('k'),
-        act!(MoveBookmarkDestUp),
-        "dest-up",
-    ),
-    BindingDef::new(
-        MovingBookmark,
-        Key(KeyCode::Up),
-        act!(MoveBookmarkDestUp),
-        "dest-up",
-    )
-    .alias(),
-    BindingDef::new(
-        MovingBookmark,
-        Key(KeyCode::Enter),
-        act!(ExecuteBookmarkMove),
-        "run",
-    ),
-    BindingDef::new(
-        MovingBookmark,
-        Key(KeyCode::Esc),
-        act!(ExitBookmarkMode),
-        "cancel",
-    ),
-    BindingDef::new(BookmarkSelect, Char('j'), act!(SelectBookmarkDown), "down"),
-    BindingDef::new(
-        BookmarkSelect,
-        Key(KeyCode::Down),
-        act!(SelectBookmarkDown),
-        "down",
-    )
-    .alias(),
-    BindingDef::new(BookmarkSelect, Char('k'), act!(SelectBookmarkUp), "up"),
-    BindingDef::new(
-        BookmarkSelect,
-        Key(KeyCode::Up),
-        act!(SelectBookmarkUp),
-        "up",
-    )
-    .alias(),
-    BindingDef::new(
-        BookmarkSelect,
-        Key(KeyCode::Enter),
-        act!(ConfirmBookmarkSelect),
-        "select",
-    ),
-    BindingDef::new(
-        BookmarkSelect,
-        Key(KeyCode::Esc),
-        act!(ExitBookmarkMode),
-        "cancel",
-    ),
-    BindingDef::new(
-        BookmarkPicker,
-        Key(KeyCode::Esc),
-        act!(ExitBookmarkMode),
-        "cancel",
-    ),
-    BindingDef::new(
-        BookmarkPicker,
-        Key(KeyCode::Enter),
-        act!(ConfirmBookmarkPicker),
-        "confirm",
-    ),
-    BindingDef::new(
-        BookmarkPicker,
-        Key(KeyCode::Down),
-        act!(BookmarkPickerDown),
-        "down",
-    ),
-    BindingDef::new(
-        BookmarkPicker,
-        Key(KeyCode::Up),
-        act!(BookmarkPickerUp),
-        "up",
-    ),
-    BindingDef::new(
-        BookmarkPicker,
-        Key(KeyCode::Backspace),
-        act!(BookmarkFilterBackspace),
-        "backspace",
-    )
-    .alias(),
-    BindingDef::new(BookmarkPicker, AnyChar, BookmarkFilterChar, "type"),
-    BindingDef::new(
-        PushSelect,
-        Key(KeyCode::Esc),
-        act!(ExitPushSelect),
-        "cancel",
-    ),
-    BindingDef::new(
-        PushSelect,
-        Key(KeyCode::Enter),
-        act!(PushSelectConfirm),
-        "push",
-    ),
-    BindingDef::new(PushSelect, Key(KeyCode::Down), act!(PushSelectDown), "down"),
-    BindingDef::new(PushSelect, Key(KeyCode::Up), act!(PushSelectUp), "up"),
-    BindingDef::new(PushSelect, Char(' '), act!(PushSelectToggle), "toggle"),
-    BindingDef::new(PushSelect, Char('a'), act!(PushSelectAll), "all"),
-    BindingDef::new(PushSelect, Char('n'), act!(PushSelectNone), "none"),
-    BindingDef::new(
-        PushSelect,
-        Key(KeyCode::Backspace),
-        act!(PushSelectFilterBackspace),
-        "backspace",
-    )
-    .alias(),
-    BindingDef::new(PushSelect, AnyChar, PushSelectFilterChar, "type"),
-    BindingDef::new(Conflicts, Char('j'), act!(ConflictsDown), "down"),
-    BindingDef::new(Conflicts, Key(KeyCode::Down), act!(ConflictsDown), "down").alias(),
-    BindingDef::new(Conflicts, Char('k'), act!(ConflictsUp), "up"),
-    BindingDef::new(Conflicts, Key(KeyCode::Up), act!(ConflictsUp), "up").alias(),
-    BindingDef::new(Conflicts, Key(KeyCode::Enter), act!(ConflictsJump), "jump"),
-    BindingDef::new(
-        Conflicts,
-        Char('R'),
-        act!(StartResolveFromConflicts),
-        "resolve",
-    ),
-    BindingDef::new(Conflicts, Char('q'), act!(ExitConflicts), "exit"),
-    BindingDef::new(Conflicts, Key(KeyCode::Esc), act!(ExitConflicts), "exit").alias(),
-];
+        BindingSpec::new(
+            Normal,
+            "fetch",
+            act!(GitFetch),
+            vec![chord!('g', KeyDef::Char('f'))],
+        )
+        .help("Bookmarks & Git", "Git fetch")
+        .prefix_title("git"),
+        BindingSpec::new(
+            Normal,
+            "import",
+            act!(GitImport),
+            vec![chord!('g', KeyDef::Char('i'))],
+        )
+        .help("Bookmarks & Git", "Git import")
+        .prefix_title("git"),
+        BindingSpec::new(
+            Normal,
+            "export",
+            act!(GitExport),
+            vec![chord!('g', KeyDef::Char('e'))],
+        )
+        .help("Bookmarks & Git", "Git export")
+        .prefix_title("git"),
+        BindingSpec::new(
+            Normal,
+            "resolve-divergence",
+            act!(ResolveDivergence),
+            vec![chord!('g', KeyDef::Char('r'))],
+        )
+        .help("Bookmarks & Git", "Resolve divergence (keep local)")
+        .prefix_title("git"),
+        BindingSpec::new(
+            Normal,
+            "create-pr",
+            act!(CreatePR),
+            vec![chord!('g', KeyDef::Char('p'))],
+        )
+        .help("Bookmarks & Git", "Create/open PR from bookmark")
+        .prefix_title("git"),
+        BindingSpec::new(
+            Normal,
+            "top",
+            act!(MoveCursorTop),
+            vec![chord!('z', KeyDef::Char('t'))],
+        )
+        .help("Navigation", "Jump to top")
+        .prefix_title("nav"),
+        BindingSpec::new(
+            Normal,
+            "bottom",
+            act!(MoveCursorBottom),
+            vec![chord!('z', KeyDef::Char('b'))],
+        )
+        .help("Navigation", "Jump to bottom")
+        .prefix_title("nav"),
+        BindingSpec::new(
+            Normal,
+            "center",
+            BindingBehavior::Action(CenterCursorViewport),
+            vec![chord!('z', KeyDef::Char('z'))],
+        )
+        .help("Navigation", "Center current line")
+        .prefix_title("nav"),
+        BindingSpec::new(
+            Normal,
+            "set",
+            act!(EnterMoveBookmarkMode),
+            vec![chord!('b', KeyDef::Char('m'))],
+        )
+        .help("Bookmarks & Git", "Set/move bookmark")
+        .prefix_title("bookmark"),
+        BindingSpec::new(
+            Normal,
+            "delete",
+            act!(EnterBookmarkPicker(BookmarkSelectAction::Delete)),
+            vec![chord!('b', KeyDef::Char('d'))],
+        )
+        .help("Bookmarks & Git", "Delete bookmark")
+        .prefix_title("bookmark"),
+        BindingSpec::new(
+            Help,
+            "close",
+            act!(ExitHelp),
+            vec![
+                single!(KeyDef::Char('q')),
+                single!(KeyDef::Char('?')),
+                single!(KeyDef::Key(KeyCode::Esc)),
+            ],
+        ),
+        BindingSpec::new(
+            Help,
+            "scroll-down",
+            act!(ScrollHelpDown(1)),
+            vec![
+                single!(KeyDef::Char('j')),
+                single!(KeyDef::Key(KeyCode::Down)),
+            ],
+        ),
+        BindingSpec::new(
+            Help,
+            "scroll-up",
+            act!(ScrollHelpUp(1)),
+            vec![
+                single!(KeyDef::Char('k')),
+                single!(KeyDef::Key(KeyCode::Up)),
+            ],
+        ),
+        BindingSpec::new(
+            Help,
+            "page-down",
+            act!(ScrollHelpDown(20)),
+            vec![single!(KeyDef::Char('d'))],
+        ),
+        BindingSpec::new(
+            Help,
+            "page-up",
+            act!(ScrollHelpUp(20)),
+            vec![single!(KeyDef::Char('u'))],
+        ),
+        BindingSpec::new(
+            Diff,
+            "scroll-down",
+            act!(ScrollDiffDown(1)),
+            vec![
+                single!(KeyDef::Char('j')),
+                single!(KeyDef::Key(KeyCode::Down)),
+            ],
+        ),
+        BindingSpec::new(
+            Diff,
+            "scroll-up",
+            act!(ScrollDiffUp(1)),
+            vec![
+                single!(KeyDef::Char('k')),
+                single!(KeyDef::Key(KeyCode::Up)),
+            ],
+        ),
+        BindingSpec::new(
+            Diff,
+            "page-down",
+            act!(ScrollDiffDown(20)),
+            vec![single!(KeyDef::Char('d'))],
+        ),
+        BindingSpec::new(
+            Diff,
+            "page-up",
+            act!(ScrollDiffUp(20)),
+            vec![single!(KeyDef::Char('u'))],
+        ),
+        BindingSpec::new(
+            Diff,
+            "nav",
+            pending!("nav"),
+            vec![single!(KeyDef::Char('z'))],
+        ),
+        BindingSpec::new(
+            Diff,
+            "close",
+            act!(ExitDiffView),
+            vec![
+                single!(KeyDef::Char('q')),
+                single!(KeyDef::Key(KeyCode::Esc)),
+            ],
+        ),
+        BindingSpec::new(
+            Diff,
+            "top",
+            act!(ScrollDiffTop),
+            vec![chord!('z', KeyDef::Char('t'))],
+        )
+        .prefix_title("nav"),
+        BindingSpec::new(
+            Diff,
+            "bottom",
+            act!(ScrollDiffBottom),
+            vec![chord!('z', KeyDef::Char('b'))],
+        )
+        .prefix_title("nav"),
+        BindingSpec::new(
+            Confirm,
+            "yes",
+            act!(ConfirmYes),
+            vec![
+                single!(KeyDef::Char('y')),
+                single!(KeyDef::Key(KeyCode::Enter)),
+            ],
+        ),
+        BindingSpec::new(
+            Confirm,
+            "no",
+            act!(ConfirmNo),
+            vec![
+                single!(KeyDef::Char('n')),
+                single!(KeyDef::Key(KeyCode::Esc)),
+            ],
+        ),
+        BindingSpec::new(
+            Selecting,
+            "down",
+            act!(MoveCursorDown),
+            vec![
+                single!(KeyDef::Char('j')),
+                single!(KeyDef::Key(KeyCode::Down)),
+            ],
+        ),
+        BindingSpec::new(
+            Selecting,
+            "up",
+            act!(MoveCursorUp),
+            vec![
+                single!(KeyDef::Char('k')),
+                single!(KeyDef::Key(KeyCode::Up)),
+            ],
+        ),
+        BindingSpec::new(
+            Selecting,
+            "exit",
+            act!(ExitSelecting),
+            vec![single!(KeyDef::Key(KeyCode::Esc))],
+        ),
+        BindingSpec::new(
+            Selecting,
+            "abandon",
+            act!(EnterConfirmAbandon),
+            vec![single!(KeyDef::Char('a'))],
+        ),
+        BindingSpec::new(
+            Rebase,
+            "dest-down",
+            act!(MoveRebaseDestDown),
+            vec![
+                single!(KeyDef::Char('j')),
+                single!(KeyDef::Key(KeyCode::Down)),
+            ],
+        ),
+        BindingSpec::new(
+            Rebase,
+            "dest-up",
+            act!(MoveRebaseDestUp),
+            vec![
+                single!(KeyDef::Char('k')),
+                single!(KeyDef::Key(KeyCode::Up)),
+            ],
+        ),
+        BindingSpec::new(
+            Rebase,
+            "branches",
+            act!(ToggleRebaseBranches),
+            vec![single!(KeyDef::Char('b'))],
+        ),
+        BindingSpec::new(
+            Rebase,
+            "run",
+            act!(ExecuteRebase),
+            vec![single!(KeyDef::Key(KeyCode::Enter))],
+        ),
+        BindingSpec::new(
+            Rebase,
+            "cancel",
+            act!(ExitRebaseMode),
+            vec![single!(KeyDef::Key(KeyCode::Esc))],
+        ),
+        BindingSpec::new(
+            Squash,
+            "dest-down",
+            act!(MoveSquashDestDown),
+            vec![
+                single!(KeyDef::Char('j')),
+                single!(KeyDef::Key(KeyCode::Down)),
+            ],
+        ),
+        BindingSpec::new(
+            Squash,
+            "dest-up",
+            act!(MoveSquashDestUp),
+            vec![
+                single!(KeyDef::Char('k')),
+                single!(KeyDef::Key(KeyCode::Up)),
+            ],
+        ),
+        BindingSpec::new(
+            Squash,
+            "run",
+            act!(ExecuteSquash),
+            vec![single!(KeyDef::Key(KeyCode::Enter))],
+        ),
+        BindingSpec::new(
+            Squash,
+            "cancel",
+            act!(ExitSquashMode),
+            vec![single!(KeyDef::Key(KeyCode::Esc))],
+        ),
+        BindingSpec::new(
+            MovingBookmark,
+            "dest-down",
+            act!(MoveBookmarkDestDown),
+            vec![
+                single!(KeyDef::Char('j')),
+                single!(KeyDef::Key(KeyCode::Down)),
+            ],
+        ),
+        BindingSpec::new(
+            MovingBookmark,
+            "dest-up",
+            act!(MoveBookmarkDestUp),
+            vec![
+                single!(KeyDef::Char('k')),
+                single!(KeyDef::Key(KeyCode::Up)),
+            ],
+        ),
+        BindingSpec::new(
+            MovingBookmark,
+            "run",
+            act!(ExecuteBookmarkMove),
+            vec![single!(KeyDef::Key(KeyCode::Enter))],
+        ),
+        BindingSpec::new(
+            MovingBookmark,
+            "cancel",
+            act!(ExitBookmarkMode),
+            vec![single!(KeyDef::Key(KeyCode::Esc))],
+        ),
+        BindingSpec::new(
+            BookmarkSelect,
+            "down",
+            act!(SelectBookmarkDown),
+            vec![
+                single!(KeyDef::Char('j')),
+                single!(KeyDef::Key(KeyCode::Down)),
+            ],
+        ),
+        BindingSpec::new(
+            BookmarkSelect,
+            "up",
+            act!(SelectBookmarkUp),
+            vec![
+                single!(KeyDef::Char('k')),
+                single!(KeyDef::Key(KeyCode::Up)),
+            ],
+        ),
+        BindingSpec::new(
+            BookmarkSelect,
+            "select",
+            act!(ConfirmBookmarkSelect),
+            vec![single!(KeyDef::Key(KeyCode::Enter))],
+        ),
+        BindingSpec::new(
+            BookmarkSelect,
+            "cancel",
+            act!(ExitBookmarkMode),
+            vec![single!(KeyDef::Key(KeyCode::Esc))],
+        ),
+        BindingSpec::new(
+            BookmarkPicker,
+            "cancel",
+            act!(ExitBookmarkMode),
+            vec![single!(KeyDef::Key(KeyCode::Esc))],
+        ),
+        BindingSpec::new(
+            BookmarkPicker,
+            "confirm",
+            act!(ConfirmBookmarkPicker),
+            vec![single!(KeyDef::Key(KeyCode::Enter))],
+        ),
+        BindingSpec::new(
+            BookmarkPicker,
+            "down",
+            act!(BookmarkPickerDown),
+            vec![single!(KeyDef::Key(KeyCode::Down))],
+        ),
+        BindingSpec::new(
+            BookmarkPicker,
+            "up",
+            act!(BookmarkPickerUp),
+            vec![single!(KeyDef::Key(KeyCode::Up))],
+        ),
+        BindingSpec::new(
+            BookmarkPicker,
+            "backspace",
+            act!(BookmarkFilterBackspace),
+            vec![single!(KeyDef::Key(KeyCode::Backspace))],
+        ),
+        BindingSpec::new(
+            BookmarkPicker,
+            "type",
+            BindingBehavior::Action(BookmarkFilterChar),
+            vec![single!(KeyDef::AnyChar)],
+        ),
+        BindingSpec::new(
+            PushSelect,
+            "cancel",
+            act!(ExitPushSelect),
+            vec![single!(KeyDef::Key(KeyCode::Esc))],
+        ),
+        BindingSpec::new(
+            PushSelect,
+            "push",
+            act!(PushSelectConfirm),
+            vec![single!(KeyDef::Key(KeyCode::Enter))],
+        ),
+        BindingSpec::new(
+            PushSelect,
+            "down",
+            act!(PushSelectDown),
+            vec![single!(KeyDef::Key(KeyCode::Down))],
+        ),
+        BindingSpec::new(
+            PushSelect,
+            "up",
+            act!(PushSelectUp),
+            vec![single!(KeyDef::Key(KeyCode::Up))],
+        ),
+        BindingSpec::new(
+            PushSelect,
+            "toggle",
+            act!(PushSelectToggle),
+            vec![single!(KeyDef::Char(' '))],
+        ),
+        BindingSpec::new(
+            PushSelect,
+            "all",
+            act!(PushSelectAll),
+            vec![single!(KeyDef::Char('a'))],
+        ),
+        BindingSpec::new(
+            PushSelect,
+            "none",
+            act!(PushSelectNone),
+            vec![single!(KeyDef::Char('n'))],
+        ),
+        BindingSpec::new(
+            PushSelect,
+            "backspace",
+            act!(PushSelectFilterBackspace),
+            vec![single!(KeyDef::Key(KeyCode::Backspace))],
+        ),
+        BindingSpec::new(
+            PushSelect,
+            "type",
+            BindingBehavior::Action(PushSelectFilterChar),
+            vec![single!(KeyDef::AnyChar)],
+        ),
+        BindingSpec::new(
+            Conflicts,
+            "down",
+            act!(ConflictsDown),
+            vec![
+                single!(KeyDef::Char('j')),
+                single!(KeyDef::Key(KeyCode::Down)),
+            ],
+        ),
+        BindingSpec::new(
+            Conflicts,
+            "up",
+            act!(ConflictsUp),
+            vec![
+                single!(KeyDef::Char('k')),
+                single!(KeyDef::Key(KeyCode::Up)),
+            ],
+        ),
+        BindingSpec::new(
+            Conflicts,
+            "jump",
+            act!(ConflictsJump),
+            vec![single!(KeyDef::Key(KeyCode::Enter))],
+        ),
+        BindingSpec::new(
+            Conflicts,
+            "resolve",
+            act!(StartResolveFromConflicts),
+            vec![single!(KeyDef::Char('R'))],
+        ),
+        BindingSpec::new(
+            Conflicts,
+            "exit",
+            act!(ExitConflicts),
+            vec![
+                single!(KeyDef::Char('q')),
+                single!(KeyDef::Key(KeyCode::Esc)),
+            ],
+        ),
+    ]
+}

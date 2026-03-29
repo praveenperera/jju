@@ -9,6 +9,7 @@ use super::controller::{self, ControllerContext};
 use super::effect::Effect;
 use super::engine;
 use super::handlers;
+use super::keybindings;
 use super::refresh;
 use super::runner;
 use super::state::{
@@ -40,6 +41,7 @@ pub struct App {
 
 impl App {
     pub fn new() -> Result<Self> {
+        let keybindings_warning = keybindings::initialize();
         let jj_repo = JjRepo::load(None)?;
         let tree = TreeState::load(&jj_repo)?;
         let syntax_set = SyntaxSet::load_defaults_newlines();
@@ -51,7 +53,13 @@ impl App {
             should_quit: false,
             split_view: false,
             diff_stats_cache: std::collections::HashMap::new(),
-            status_message: None,
+            status_message: keybindings_warning.map(|warning| {
+                StatusMessage::with_duration(
+                    warning,
+                    MessageKind::Warning,
+                    keybindings::warning_duration(),
+                )
+            }),
             pending_operation: None,
             last_op: None,
             pending_key: None,

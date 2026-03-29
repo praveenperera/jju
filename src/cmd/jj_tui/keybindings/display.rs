@@ -108,6 +108,12 @@ fn find_bindings(
         .filter(move |b| b.mode == mode && b.pending_prefix == pending && b.label == label)
 }
 
+fn find_bindings_any_pending(mode: ModeId, label: &str) -> impl Iterator<Item = &'static Binding> {
+    super::bindings()
+        .iter()
+        .filter(move |binding| binding.mode == mode && binding.label == label)
+}
+
 pub(super) fn first_key(
     mode: ModeId,
     pending: Option<char>,
@@ -117,6 +123,17 @@ pub(super) fn first_key(
     find_bindings(mode, pending, label)
         .find(|b| b.display == kind)
         .map(|b| format_binding_key(b, KeyFormat::Space))
+}
+
+pub(super) fn first_key_any_pending(
+    mode: ModeId,
+    label: &str,
+    kind: DisplayKind,
+    format: KeyFormat,
+) -> Option<String> {
+    find_bindings_any_pending(mode, label)
+        .find(|binding| binding.display == kind)
+        .map(|binding| format_binding_key(binding, format))
 }
 
 pub(super) fn keys_for_label(

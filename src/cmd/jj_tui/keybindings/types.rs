@@ -36,7 +36,7 @@ pub fn mode_id_from_state(mode: &ModeState) -> ModeId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyPattern {
     Exact {
         code: KeyCode,
@@ -124,6 +124,7 @@ pub enum DisplayKind {
     Alias,
 }
 
+#[derive(Debug)]
 pub struct Binding {
     pub mode: ModeId,
     pub pending_prefix: Option<char>,
@@ -134,7 +135,7 @@ pub struct Binding {
     pub help: Option<(&'static str, &'static str)>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyDef {
     Char(char),
     Ctrl(char),
@@ -160,61 +161,11 @@ impl KeyDef {
             KeyDef::AnyChar => KeyPattern::AnyChar,
         }
     }
-}
 
-#[derive(Clone)]
-pub struct BindingDef {
-    pub mode: ModeId,
-    pub prefix: Option<char>,
-    pub key: KeyDef,
-    pub action: ActionTemplate,
-    pub display: DisplayKind,
-    pub label: &'static str,
-    pub help: Option<(&'static str, &'static str)>,
-}
-
-impl BindingDef {
-    pub const fn new(
-        mode: ModeId,
-        key: KeyDef,
-        action: ActionTemplate,
-        label: &'static str,
-    ) -> Self {
-        Self {
-            mode,
-            key,
-            action,
-            label,
-            prefix: None,
-            display: DisplayKind::Primary,
-            help: None,
-        }
-    }
-
-    pub const fn prefix(mut self, prefix: char) -> Self {
-        self.prefix = Some(prefix);
-        self
-    }
-
-    pub const fn alias(mut self) -> Self {
-        self.display = DisplayKind::Alias;
-        self
-    }
-
-    pub const fn help(mut self, section: &'static str, desc: &'static str) -> Self {
-        self.help = Some((section, desc));
-        self
-    }
-
-    pub(crate) fn to_binding(&self) -> Binding {
-        Binding {
-            mode: self.mode,
-            pending_prefix: self.prefix,
-            key: self.key.to_pattern(),
-            action: self.action.clone(),
-            display: self.display,
-            label: self.label,
-            help: self.help,
+    pub(crate) const fn plain_char(self) -> Option<char> {
+        match self {
+            KeyDef::Char(c) => Some(c),
+            KeyDef::Ctrl(_) | KeyDef::Key(_) | KeyDef::AnyChar => None,
         }
     }
 }
