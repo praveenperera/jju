@@ -2,7 +2,11 @@ use super::super::app::App;
 use super::super::keybindings;
 use super::super::state::{ModeState, RebaseType};
 use super::super::theme;
-use super::{Color, Frame, Paragraph, Rect, Style};
+use super::{Frame, Rect};
+use ratatui::{
+    style::{Color, Style},
+    widgets::Paragraph,
+};
 use unicode_width::UnicodeWidthStr;
 
 pub(super) fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {

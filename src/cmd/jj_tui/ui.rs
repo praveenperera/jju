@@ -1,84 +1,22 @@
+mod diff_pane;
 mod layout;
 mod overlays;
 mod status_bar;
+mod tree_pane;
 
 use super::app::App;
-use super::keybindings;
-use super::preview::NodeRole;
-use super::state::{DiffLineKind, DiffState};
-use super::theme;
-use super::tree::BookmarkInfo;
-use super::vm::{Marker, TreeRowVm};
+use super::vm::TreeRowVm;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
 };
-use unicode_width::UnicodeWidthStr;
 
+pub(super) use diff_pane::{render_diff, render_diff_pane};
 #[cfg(test)]
 use layout::PaneContent;
 use layout::{pane_plan, panes_for, render_pane};
-
-/// Format bookmarks to fit within max_width, showing "+N" for overflow
-/// Diverged bookmarks are marked with * suffix
-pub(crate) fn format_bookmarks_truncated(bookmarks: &[BookmarkInfo], max_width: usize) -> String {
-    if bookmarks.is_empty() {
-        return String::new();
-    }
-
-    let format_bookmark = |b: &BookmarkInfo| {
-        if b.is_diverged {
-            format!("{}*", b.name)
-        } else {
-            b.name.clone()
-        }
-    };
-
-    if bookmarks.len() == 1 {
-        return format_bookmark(&bookmarks[0]);
-    }
-
-    let mut result = String::new();
-
-    for (i, bm) in bookmarks.iter().enumerate() {
-        let bm_display = format_bookmark(bm);
-        let remaining = bookmarks.len() - i - 1;
-        let suffix = if remaining > 0 {
-            format!(" +{}", remaining)
-        } else {
-            String::new()
-        };
-        let candidate = if result.is_empty() {
-            format!("{}{}", bm_display, suffix)
-        } else {
-            format!("{} {}{}", result, bm_display, suffix)
-        };
-
-        if candidate.width() <= max_width {
-            if remaining == 0 {
-                result = candidate;
-            } else {
-                // add this bookmark, continue to next
-                if result.is_empty() {
-                    result = bm_display;
-                } else {
-                    result = format!("{} {}", result, bm_display);
-                }
-            }
-        } else {
-            // doesn't fit, stop here and add +N
-            let overflow = bookmarks.len() - i;
-            if result.is_empty() {
-                return format!("{} +{}", format_bookmark(&bookmarks[0]), overflow - 1);
-            }
-            return format!("{} +{}", result, overflow);
-        }
-    }
-    result
-}
+pub(crate) use tree_pane::format_bookmarks_truncated;
+pub(super) use tree_pane::render_tree_with_vms;
 
 /// Render with pre-built view models (avoids rebuilding when caller already has them)
 pub fn render_with_vms(frame: &mut Frame, app: &App, vms: &[TreeRowVm]) {
@@ -99,336 +37,6 @@ pub fn render_with_vms(frame: &mut Frame, app: &App, vms: &[TreeRowVm]) {
     overlays::render_overlays(frame, app);
 }
 
-fn render_tree_with_vms(frame: &mut Frame, app: &App, area: Rect, vms: &[TreeRowVm]) {
-    let block = Block::default()
-        .title(" jj tree ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray));
-
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    if app.tree.visible_count() == 0 {
-        let empty = Paragraph::new("No commits found").style(Style::default().fg(Color::DarkGray));
-        frame.render_widget(empty, inner);
-        return;
-    }
-
-    let viewport_height = inner.height as usize;
-    let scroll_offset = app.tree.scroll_offset;
-
-    let mut lines: Vec<Line> = Vec::new();
-    let mut line_count = 0;
-
-    for vm in vms.iter().skip(scroll_offset) {
-        if line_count >= viewport_height {
-            break;
-        }
-
-        // render blank separator line between tree roots
-        if vm.has_separator_before {
-            lines.push(Line::default());
-            line_count += 1;
-            if line_count >= viewport_height {
-                break;
-            }
-        }
-
-        lines.push(render_row(vm));
-        line_count += 1;
-
-        // render expanded details
-        if let Some(ref details) = vm.details {
-            let detail_lines = render_commit_details_from_vm(vm, details);
-            for detail in detail_lines {
-                if line_count >= viewport_height {
-                    break;
-                }
-                lines.push(detail);
-                line_count += 1;
-            }
-        }
-    }
-
-    let paragraph = Paragraph::new(lines);
-    frame.render_widget(paragraph, inner);
-}
-
-/// Render a single row from the view model
-fn render_row(vm: &TreeRowVm) -> Line<'static> {
-    let indent = "  ".repeat(vm.visual_depth);
-    let connector = if vm.visual_depth > 0 {
-        "├── "
-    } else {
-        ""
-    };
-    let at_marker = if vm.is_working_copy { "@ " } else { "" };
-    let selection_marker = if vm.is_selected { "[x] " } else { "" };
-    let zoom_marker = if vm.is_zoom_root { "◉ " } else { "" };
-
-    let mut spans = Vec::new();
-
-    // determine colors based on role
-    let is_source = matches!(vm.role, NodeRole::Source | NodeRole::Moving);
-    let prefix_color = if is_source {
-        Color::Yellow
-    } else {
-        Color::Magenta
-    };
-
-    let dim_color = Color::Reset;
-
-    // add zoom marker with distinct color
-    if vm.is_zoom_root {
-        spans.push(Span::styled(zoom_marker, Style::default().fg(Color::Cyan)));
-    }
-
-    // add conflict marker in red
-    if vm.has_conflicts {
-        spans.push(Span::styled("× ", Style::default().fg(Color::Red)));
-    }
-
-    // add divergent marker in yellow
-    if vm.is_divergent {
-        spans.push(Span::styled("?? ", Style::default().fg(Color::Yellow)));
-    }
-
-    spans.extend([
-        Span::raw(format!("{indent}{connector}{selection_marker}{at_marker}(")),
-        Span::styled(
-            vm.change_id_prefix.clone(),
-            Style::default().fg(prefix_color),
-        ),
-        Span::styled(
-            vm.change_id_suffix.clone(),
-            Style::default().add_modifier(Modifier::DIM),
-        ),
-        Span::raw(")"),
-    ]);
-
-    if !vm.bookmarks.is_empty() {
-        let bookmark_str = format_bookmarks_truncated(&vm.bookmarks, 30);
-        spans.push(Span::raw(" "));
-        let bm_color = if is_source {
-            Color::Yellow
-        } else {
-            Color::Cyan
-        };
-        spans.push(Span::styled(bookmark_str, Style::default().fg(bm_color)));
-    }
-
-    spans.push(Span::styled(
-        format!("  {}", vm.description),
-        Style::default().fg(dim_color),
-    ));
-
-    // add markers on the right based on role/marker
-    if let Some(ref marker) = vm.marker {
-        match marker {
-            Marker::Source => {
-                spans.push(Span::styled("  ← src", Style::default().fg(Color::Yellow)));
-            }
-            Marker::Destination { mode_hint } => {
-                let hint = mode_hint
-                    .as_ref()
-                    .map(|h| format!("  ← dest ({h})"))
-                    .unwrap_or_else(|| "  ← dest".to_string());
-                spans.push(Span::styled(hint, Style::default().fg(Color::Cyan)));
-            }
-            Marker::Moving => {
-                spans.push(Span::styled("  ↳", Style::default().fg(Color::Yellow)));
-            }
-            Marker::Bookmark => {
-                spans.push(Span::styled("  ← bm", Style::default().fg(Color::Yellow)));
-            }
-        }
-    }
-
-    let mut line = Line::from(spans);
-
-    // apply styling based on state
-    if vm.is_cursor {
-        line = line.style(
-            Style::default()
-                .bg(theme::CURSOR_BG)
-                .add_modifier(Modifier::BOLD),
-        );
-    } else if is_source {
-        line = line.style(Style::default().bg(theme::SOURCE_BG));
-    } else if vm.is_selected {
-        line = line.style(Style::default().bg(theme::SELECTED_BG));
-    } else if vm.is_dimmed {
-        line = line.style(Style::default().add_modifier(Modifier::DIM));
-    }
-
-    line
-}
-
-/// Render commit details from view model
-fn render_commit_details_from_vm(
-    vm: &TreeRowVm,
-    details: &super::vm::RowDetails,
-) -> Vec<Line<'static>> {
-    let indent = "  ".repeat(vm.visual_depth + 1);
-    let dim = Style::default().fg(Color::Reset);
-    let label_style = Style::default().fg(Color::Yellow);
-
-    let change_id = format!("{}{}", vm.change_id_prefix, vm.change_id_suffix);
-
-    let stats_str = match &details.diff_stats {
-        Some(s) => format!(
-            "{} file{}, +{} -{}",
-            s.files_changed,
-            if s.files_changed == 1 { "" } else { "s" },
-            s.insertions,
-            s.deletions
-        ),
-        None => "loading...".to_string(),
-    };
-
-    let mut lines = vec![
-        Line::from(vec![
-            Span::styled(format!("{indent}Change ID: "), label_style),
-            Span::styled(change_id, dim),
-        ]),
-        Line::from(vec![
-            Span::styled(format!("{indent}Commit: "), label_style),
-            Span::styled(
-                details.commit_id_prefix.clone(),
-                Style::default().fg(Color::Blue),
-            ),
-            Span::styled(
-                details.commit_id_suffix.clone(),
-                Style::default().add_modifier(Modifier::DIM),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled(format!("{indent}Author: "), label_style),
-            Span::styled(details.author.clone(), dim),
-        ]),
-        Line::from(vec![
-            Span::styled(format!("{indent}Date: "), label_style),
-            Span::styled(details.timestamp.clone(), dim),
-        ]),
-        Line::from(vec![
-            Span::styled(format!("{indent}Changes: "), label_style),
-            Span::styled(
-                format!(
-                    "+{}",
-                    details
-                        .diff_stats
-                        .as_ref()
-                        .map(|s| s.insertions)
-                        .unwrap_or(0)
-                ),
-                Style::default().fg(Color::Green),
-            ),
-            Span::raw(" "),
-            Span::styled(
-                format!(
-                    "-{}",
-                    details
-                        .diff_stats
-                        .as_ref()
-                        .map(|s| s.deletions)
-                        .unwrap_or(0)
-                ),
-                Style::default().fg(Color::Red),
-            ),
-            Span::styled(format!(" ({stats_str})"), dim),
-        ]),
-    ];
-
-    // add description header
-    lines.push(Line::from(vec![Span::styled(
-        format!("{indent}Description:"),
-        label_style,
-    )]));
-
-    // add multi-line description
-    let desc_text = details.full_description.trim();
-    if desc_text.is_empty() {
-        lines.push(Line::from(vec![
-            Span::styled(format!("{indent}  "), label_style),
-            Span::styled("(empty)", dim),
-        ]));
-    } else {
-        for desc_line in desc_text.lines() {
-            lines.push(Line::from(vec![
-                Span::styled(format!("{indent}  "), label_style),
-                Span::styled(desc_line.to_string(), dim),
-            ]));
-        }
-    }
-
-    lines
-}
-
-fn render_diff(frame: &mut Frame, state: &DiffState, area: Rect) {
-    let block = Block::default()
-        .title(format!(" Diff: {} ", state.rev))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
-
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let viewport_height = inner.height as usize;
-    let lines: Vec<Line> = state
-        .lines
-        .iter()
-        .skip(state.scroll_offset)
-        .take(viewport_height)
-        .map(|dl| {
-            // apply background tint for added/removed lines
-            let bg = match dl.kind {
-                DiffLineKind::Added => Some(theme::DIFF_ADDED_BG),
-                DiffLineKind::Removed => Some(theme::DIFF_REMOVED_BG),
-                _ => None,
-            };
-
-            let spans: Vec<Span> = dl
-                .spans
-                .iter()
-                .map(|s| {
-                    let mut style = Style::default().fg(s.fg);
-                    if let Some(bg_color) = bg {
-                        style = style.bg(bg_color);
-                    }
-                    Span::styled(s.text.clone(), style)
-                })
-                .collect();
-
-            Line::from(spans)
-        })
-        .collect();
-
-    let paragraph = Paragraph::new(lines);
-    frame.render_widget(paragraph, inner);
-}
-
-fn render_diff_pane(frame: &mut Frame, _app: &App, area: Rect) {
-    let block = Block::default()
-        .title(" Diff ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray));
-
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let diff_key = keybindings::display_keys_joined(
-        keybindings::ModeId::Normal,
-        None,
-        "diff",
-        false,
-        keybindings::KeyFormat::Space,
-        "/",
-    );
-    let hint = Paragraph::new(format!("Press {diff_key} to view diff"))
-        .style(Style::default().fg(Color::DarkGray));
-    frame.render_widget(hint, inner);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -436,7 +44,7 @@ mod tests {
     use crate::cmd::jj_tui::tree::{TreeNode, TreeState, VisibleEntry};
     use crate::cmd::jj_tui::vm::build_tree_view;
     use ahash::HashSet;
-    use ratatui::{Terminal, backend::TestBackend};
+    use ratatui::{Terminal, backend::TestBackend, style::Color};
     use syntect::highlighting::ThemeSet;
     use syntect::parsing::SyntaxSet;
 
@@ -465,9 +73,9 @@ mod tests {
         let visible_entries: Vec<VisibleEntry> = nodes
             .iter()
             .enumerate()
-            .map(|(i, n)| VisibleEntry {
-                node_index: i,
-                visual_depth: n.depth,
+            .map(|(index, node)| VisibleEntry {
+                node_index: index,
+                visual_depth: node.depth,
                 has_separator_before: false,
             })
             .collect();
@@ -488,14 +96,14 @@ mod tests {
     }
 
     fn buffer_to_string(buf: &ratatui::buffer::Buffer) -> String {
-        let mut out = String::new();
+        let mut output = String::new();
         for y in 0..buf.area.height {
             for x in 0..buf.area.width {
-                out.push_str(buf[(x, y)].symbol());
+                output.push_str(buf[(x, y)].symbol());
             }
-            out.push('\n');
+            output.push('\n');
         }
-        out
+        output
     }
 
     #[test]

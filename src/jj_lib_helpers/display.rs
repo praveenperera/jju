@@ -1,0 +1,52 @@
+use super::JjRepo;
+use jj_lib::commit::Commit;
+
+impl JjRepo {
+    /// Get the first line of a commit's description
+    pub fn description_first_line(commit: &Commit) -> String {
+        commit
+            .description()
+            .lines()
+            .next()
+            .unwrap_or("")
+            .to_string()
+    }
+
+    /// Get the author name for a commit
+    pub fn author_name(commit: &Commit) -> String {
+        commit.author().name.clone()
+    }
+
+    /// Get the author email for a commit
+    pub fn author_email(commit: &Commit) -> String {
+        commit.author().email.clone()
+    }
+
+    /// Get the author timestamp formatted as a relative time string with absolute date
+    pub fn author_timestamp_relative(commit: &Commit) -> String {
+        let timestamp = commit.author().timestamp;
+        let millis = timestamp.timestamp.0;
+        let secs = millis / 1000;
+        let Some(datetime) = chrono::DateTime::from_timestamp(secs, 0) else {
+            return "unknown".to_string();
+        };
+
+        let now = chrono::Utc::now();
+        let diff = now.signed_duration_since(datetime);
+        let absolute = datetime.format("%Y-%m-%d %H:%M");
+        let relative = if diff.num_days() > 365 {
+            format!("{} years ago", diff.num_days() / 365)
+        } else if diff.num_days() > 30 {
+            format!("{} months ago", diff.num_days() / 30)
+        } else if diff.num_days() > 0 {
+            format!("{} days ago", diff.num_days())
+        } else if diff.num_hours() > 0 {
+            format!("{} hours ago", diff.num_hours())
+        } else if diff.num_minutes() > 0 {
+            format!("{} minutes ago", diff.num_minutes())
+        } else {
+            "just now".to_string()
+        };
+        format!("{relative} ({absolute})")
+    }
+}
