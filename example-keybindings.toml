@@ -1,0 +1,52 @@
+version = 1
+
+# copy this file to $XDG_CONFIG_HOME/jju/keybindings.toml
+# or to ~/.config/jju/keybindings.toml when XDG_CONFIG_HOME is unset
+
+# each override replaces every built-in key for that command in that mode
+# repeat any defaults you want to keep
+
+[[binding]]
+mode = "normal"
+command = "down"
+keys = [["j"], ["J"], ["Down"]]
+
+# prefixed commands need both the prefix key and every command under it
+# moving only fetch/import/export is invalid without moving the git prefix too
+
+[[binding]]
+mode = "normal"
+command = "git"
+keys = [["X"]]
+
+[[binding]]
+mode = "normal"
+command = "fetch"
+keys = [["X", "f"]]
+
+[[binding]]
+mode = "normal"
+command = "import"
+keys = [["X", "i"]]
+
+[[binding]]
+mode = "normal"
+command = "export"
+keys = [["X", "e"]]
+
+[[binding]]
+mode = "normal"
+command = "resolve-divergence"
+keys = [["X", "r"]]
+
+[[binding]]
+mode = "normal"
+command = "create-pr"
+keys = [["X", "p"]]
+
+# typed filter modes use AnyChar to capture text input
+
+[[binding]]
+mode = "bookmark_picker"
+command = "type"
+keys = [["AnyChar"]]
