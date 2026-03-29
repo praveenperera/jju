@@ -41,59 +41,11 @@ pub fn render_with_vms(frame: &mut Frame, app: &App, vms: &[TreeRowVm]) {
 mod tests {
     use super::*;
     use crate::cmd::jj_tui::state::{DiffLine, DiffLineKind, DiffState, ModeState, StyledSpan};
-    use crate::cmd::jj_tui::tree::{TreeNode, TreeState, VisibleEntry};
+    use crate::cmd::jj_tui::test_support::{make_node, make_tree};
     use crate::cmd::jj_tui::vm::build_tree_view;
-    use ahash::HashSet;
     use ratatui::{Terminal, backend::TestBackend, style::Color};
     use syntect::highlighting::ThemeSet;
     use syntect::parsing::SyntaxSet;
-
-    fn make_node(change_id: &str, depth: usize) -> TreeNode {
-        TreeNode {
-            change_id: change_id.to_string(),
-            unique_prefix_len: 4,
-            commit_id: format!("{change_id}000000"),
-            unique_commit_prefix_len: 7,
-            description: String::new(),
-            full_description: String::new(),
-            bookmarks: vec![],
-            is_working_copy: false,
-            has_conflicts: false,
-            is_divergent: false,
-            divergent_versions: vec![],
-            parent_ids: vec![],
-            depth,
-            author_name: String::new(),
-            author_email: String::new(),
-            timestamp: String::new(),
-        }
-    }
-
-    fn make_tree(nodes: Vec<TreeNode>) -> TreeState {
-        let visible_entries: Vec<VisibleEntry> = nodes
-            .iter()
-            .enumerate()
-            .map(|(index, node)| VisibleEntry {
-                node_index: index,
-                visual_depth: node.depth,
-                has_separator_before: false,
-            })
-            .collect();
-        let topology = crate::cmd::jj_tui::tree::TreeTopology::from_nodes(&nodes);
-
-        TreeState {
-            nodes,
-            topology,
-            cursor: 0,
-            scroll_offset: 0,
-            full_mode: true,
-            expanded_entry: None,
-            visible_entries,
-            selected: HashSet::default(),
-            selection_anchor: None,
-            focus_stack: Vec::new(),
-        }
-    }
 
     fn buffer_to_string(buf: &ratatui::buffer::Buffer) -> String {
         let mut output = String::new();

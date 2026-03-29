@@ -173,67 +173,7 @@ pub fn reduce(mut ctx: ReduceCtx<'_>, action: Action) -> Vec<Effect> {
 mod tests {
     use super::*;
     use crate::cmd::jj_tui::state::{BookmarkPickerState, BookmarkSelectAction};
-    use crate::cmd::jj_tui::tree::{TreeNode, VisibleEntry};
-    use ahash::HashSet;
-
-    fn make_node(change_id: &str, depth: usize) -> TreeNode {
-        TreeNode {
-            change_id: change_id.to_string(),
-            unique_prefix_len: 4,
-            commit_id: format!("{change_id}000000"),
-            unique_commit_prefix_len: 7,
-            description: String::new(),
-            full_description: String::new(),
-            bookmarks: vec![],
-            is_working_copy: false,
-            has_conflicts: false,
-            is_divergent: false,
-            divergent_versions: vec![],
-            parent_ids: vec![],
-            depth,
-            author_name: String::new(),
-            author_email: String::new(),
-            timestamp: String::new(),
-        }
-    }
-
-    fn make_node_with_bookmarks(change_id: &str, depth: usize, bookmarks: &[&str]) -> TreeNode {
-        let mut node = make_node(change_id, depth);
-        node.bookmarks = bookmarks
-            .iter()
-            .map(|&name| crate::cmd::jj_tui::tree::BookmarkInfo {
-                name: name.to_string(),
-                is_diverged: false,
-            })
-            .collect();
-        node
-    }
-
-    fn make_tree(nodes: Vec<TreeNode>) -> TreeState {
-        let visible_entries: Vec<VisibleEntry> = nodes
-            .iter()
-            .enumerate()
-            .map(|(i, n)| VisibleEntry {
-                node_index: i,
-                visual_depth: n.depth,
-                has_separator_before: false,
-            })
-            .collect();
-        let topology = crate::cmd::jj_tui::tree::TreeTopology::from_nodes(&nodes);
-
-        TreeState {
-            nodes,
-            topology,
-            cursor: 0,
-            scroll_offset: 0,
-            full_mode: true,
-            expanded_entry: None,
-            visible_entries,
-            selected: HashSet::default(),
-            selection_anchor: None,
-            focus_stack: Vec::new(),
-        }
-    }
+    use crate::cmd::jj_tui::test_support::{make_node, make_node_with_bookmarks, make_tree};
 
     struct TestState {
         tree: TreeState,

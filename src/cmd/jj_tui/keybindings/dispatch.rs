@@ -1,5 +1,6 @@
+use super::ModeId;
 use super::mode_id_from_state;
-use super::{Action, ModeId};
+use crate::cmd::jj_tui::action::Action;
 use crate::cmd::jj_tui::controller::ControllerContext;
 use ratatui::crossterm::event::KeyEvent;
 

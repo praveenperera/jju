@@ -1,7 +1,10 @@
 use super::ActionTemplate::*;
+use super::BindingDef;
 use super::KeyDef::*;
 use super::ModeId::*;
-use super::{Action, BindingDef, BookmarkSelectAction, KeyCode, RebaseType};
+use crate::cmd::jj_tui::action::Action;
+use crate::cmd::jj_tui::state::{BookmarkSelectAction, RebaseType};
+use ratatui::crossterm::event::KeyCode;
 
 macro_rules! act {
     ($action:ident) => {

@@ -330,73 +330,7 @@ fn build_row_vm(args: RowVmArgs<'_>) -> TreeRowVm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cmd::jj_tui::tree::{TreeState, VisibleEntry};
-    use ahash::HashSet;
-    use syntect::highlighting::ThemeSet;
-    use syntect::parsing::SyntaxSet;
-
-    fn make_node(change_id: &str, depth: usize) -> TreeNode {
-        TreeNode {
-            change_id: change_id.to_string(),
-            unique_prefix_len: 4,
-            commit_id: format!("{change_id}000000"),
-            unique_commit_prefix_len: 7,
-            description: String::new(),
-            full_description: String::new(),
-            bookmarks: vec![],
-            is_working_copy: false,
-            has_conflicts: false,
-            is_divergent: false,
-            divergent_versions: vec![],
-            parent_ids: vec![],
-            depth,
-            author_name: String::new(),
-            author_email: String::new(),
-            timestamp: String::new(),
-        }
-    }
-
-    fn make_tree(nodes: Vec<TreeNode>) -> TreeState {
-        let visible_entries: Vec<VisibleEntry> = nodes
-            .iter()
-            .enumerate()
-            .map(|(i, n)| VisibleEntry {
-                node_index: i,
-                visual_depth: n.depth,
-                has_separator_before: false,
-            })
-            .collect();
-        let topology = crate::cmd::jj_tui::tree::TreeTopology::from_nodes(&nodes);
-
-        TreeState {
-            nodes,
-            topology,
-            cursor: 0,
-            scroll_offset: 0,
-            full_mode: true,
-            expanded_entry: None,
-            visible_entries,
-            selected: HashSet::default(),
-            selection_anchor: None,
-            focus_stack: Vec::new(),
-        }
-    }
-
-    fn make_app_with_tree(tree: TreeState) -> App {
-        App {
-            tree,
-            mode: ModeState::Normal,
-            should_quit: false,
-            split_view: false,
-            diff_stats_cache: std::collections::HashMap::new(),
-            status_message: None,
-            pending_key: None,
-            pending_operation: None,
-            last_op: None,
-            syntax_set: SyntaxSet::load_defaults_newlines(),
-            theme_set: ThemeSet::load_defaults(),
-        }
-    }
+    use crate::cmd::jj_tui::test_support::{make_app_with_tree, make_node, make_tree};
 
     #[test]
     fn test_build_normal_view_cursor_tracking() {
