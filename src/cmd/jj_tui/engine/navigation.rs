@@ -26,7 +26,10 @@ pub(super) fn handle(ctx: &mut ReduceCtx<'_>, action: Action) {
             }
         }
         Action::ToggleFocus => ctx.tree.toggle_focus(),
-        Action::ToggleNeighborhood => ctx.tree.toggle_neighborhood(),
+        Action::ToggleNeighborhood => {
+            ctx.tree.toggle_neighborhood();
+            ctx.effects.push(Effect::RefreshTree);
+        }
         Action::ExpandNeighborhood => {
             if !ctx.tree.expand_neighborhood() {
                 ctx.set_status("Neighborhood already at maximum size", MessageKind::Warning);

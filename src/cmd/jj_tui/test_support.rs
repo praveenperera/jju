@@ -1,6 +1,8 @@
 use super::app::App;
 use super::state::ModeState;
-use super::tree::{BookmarkInfo, TreeNode, TreeState, TreeTopology, ViewMode, VisibleEntry};
+use super::tree::{
+    BookmarkInfo, TreeLoadScope, TreeNode, TreeState, TreeTopology, ViewMode, VisibleEntry,
+};
 use ahash::HashSet;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -56,6 +58,7 @@ pub(crate) fn make_tree(nodes: Vec<TreeNode>) -> TreeState {
         cursor: 0,
         scroll_offset: 0,
         full_mode: true,
+        load_scope: TreeLoadScope::Stack,
         view_mode: ViewMode::Tree,
         expanded_entry: None,
         visible_entries,

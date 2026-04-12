@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use crate::cmd::jj_tui::preview::{DisplaySlot, NodeId};
-use crate::cmd::jj_tui::tree::{TreeNode, TreeState, TreeTopology, ViewMode, VisibleEntry};
+use crate::cmd::jj_tui::tree::{
+    TreeLoadScope, TreeNode, TreeState, TreeTopology, ViewMode, VisibleEntry,
+};
 use ahash::HashSet;
 
 pub(super) fn make_node(change_id: &str, depth: usize) -> TreeNode {
@@ -39,6 +41,7 @@ pub(super) fn make_tree(nodes: Vec<TreeNode>, full_mode: bool) -> TreeState {
         cursor: 0,
         scroll_offset: 0,
         full_mode,
+        load_scope: TreeLoadScope::Stack,
         view_mode: ViewMode::Tree,
         expanded_entry: None,
         visible_entries,

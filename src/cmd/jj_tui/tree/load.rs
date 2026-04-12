@@ -1,4 +1,4 @@
-use super::{BookmarkInfo, DivergentVersion, JjRepo, TreeNode, TreeState};
+use super::{BookmarkInfo, DivergentVersion, JjRepo, TreeLoadScope, TreeNode, TreeState};
 use ahash::{HashMap, HashSet};
 use eyre::Result;
 use jj_lib::commit::Commit;
@@ -9,14 +9,18 @@ use std::time::Instant;
 
 const CHANGE_ID_MIN_LEN: usize = 4;
 
-pub(super) fn load_tree_state(jj_repo: &JjRepo, base: &str) -> Result<TreeState> {
+pub(super) fn load_tree_state(
+    jj_repo: &JjRepo,
+    base: &str,
+    load_scope: TreeLoadScope,
+) -> Result<TreeState> {
     let started_at = Instant::now();
     let working_copy = jj_repo.working_copy_commit()?;
-    let revset = format!("{base} | ancestors(immutable_heads().., 2) | @::");
+    let revset = revset_for_scope(base, load_scope);
     let commits = jj_repo.eval_revset(&revset)?;
 
     if commits.is_empty() {
-        return Ok(TreeState::empty());
+        return Ok(TreeState::empty(load_scope));
     }
 
     jj_repo.with_short_prefix_index(|prefix_index| {
@@ -104,8 +108,15 @@ pub(super) fn load_tree_state(jj_repo: &JjRepo, base: &str) -> Result<TreeState>
             started_at.elapsed()
         );
 
-        Ok(TreeState::from_nodes(nodes))
+        Ok(TreeState::from_nodes(nodes, load_scope))
     })
+}
+
+fn revset_for_scope(base: &str, load_scope: TreeLoadScope) -> String {
+    match load_scope {
+        TreeLoadScope::Stack => format!("{base} | ancestors(immutable_heads().., 2) | @::"),
+        TreeLoadScope::Neighborhood => format!("{base} | ancestors(immutable_heads()..) | @::"),
+    }
 }
 
 fn build_change_id_display_map(
@@ -122,6 +133,28 @@ fn build_change_id_display_map(
     }
 
     Ok(change_ids)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::revset_for_scope;
+    use crate::cmd::jj_tui::tree::TreeLoadScope;
+
+    #[test]
+    fn stack_scope_keeps_capped_revset() {
+        assert_eq!(
+            revset_for_scope("trunk()", TreeLoadScope::Stack),
+            "trunk() | ancestors(immutable_heads().., 2) | @::"
+        );
+    }
+
+    #[test]
+    fn neighborhood_scope_uses_uncapped_revset() {
+        assert_eq!(
+            revset_for_scope("trunk()", TreeLoadScope::Neighborhood),
+            "trunk() | ancestors(immutable_heads()..) | @::"
+        );
+    }
 }
 
 fn build_divergent_commit_ids(commits: &[Commit]) -> HashMap<String, Vec<String>> {

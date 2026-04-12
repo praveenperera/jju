@@ -15,6 +15,7 @@ pub fn refresh_tree(
         .and_then(|n| n.parent_ids.first().cloned());
     let old_cursor = tree.cursor;
     let old_full_mode = tree.full_mode;
+    let old_load_scope = tree.load_scope;
     let old_view_mode = tree.view_mode.clone();
 
     let focus_stack_change_ids: Vec<String> = tree
@@ -24,7 +25,7 @@ pub fn refresh_tree(
         .collect();
 
     let jj_repo = JjRepo::load(None)?;
-    *tree = TreeState::load(&jj_repo)?;
+    *tree = TreeState::load_with_scope(&jj_repo, "trunk()", old_load_scope)?;
     tree.full_mode = old_full_mode;
     tree.clear_selection();
     diff_stats_cache.clear();

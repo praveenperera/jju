@@ -17,6 +17,12 @@ const NEIGHBORHOOD_ANCESTOR_STEP: usize = 4;
 const NEIGHBORHOOD_DESCENDANT_STEP: usize = 2;
 const NEIGHBORHOOD_SIBLING_STEP: usize = 1;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TreeLoadScope {
+    Stack,
+    Neighborhood,
+}
+
 #[derive(Clone, Debug)]
 pub struct BookmarkInfo {
     pub name: String,
@@ -136,6 +142,7 @@ pub struct TreeState {
     pub cursor: usize,
     pub scroll_offset: usize,
     pub full_mode: bool,
+    pub load_scope: TreeLoadScope,
     pub view_mode: ViewMode,
     pub expanded_entry: Option<usize>,
     pub visible_entries: Vec<VisibleEntry>,
@@ -145,21 +152,26 @@ pub struct TreeState {
 }
 
 impl TreeState {
-    pub fn load(jj_repo: &JjRepo) -> Result<Self> {
-        load::load_tree_state(jj_repo, "trunk()")
-    }
-
     pub fn load_with_base(jj_repo: &JjRepo, base: &str) -> Result<Self> {
-        load::load_tree_state(jj_repo, base)
+        Self::load_with_scope(jj_repo, base, TreeLoadScope::Stack)
     }
 
-    fn empty() -> Self {
+    pub fn load_with_scope(
+        jj_repo: &JjRepo,
+        base: &str,
+        load_scope: TreeLoadScope,
+    ) -> Result<Self> {
+        load::load_tree_state(jj_repo, base, load_scope)
+    }
+
+    fn empty(load_scope: TreeLoadScope) -> Self {
         Self {
             nodes: Vec::new(),
             topology: TreeTopology::default(),
             cursor: 0,
             scroll_offset: 0,
             full_mode: true,
+            load_scope,
             view_mode: ViewMode::Tree,
             expanded_entry: None,
             visible_entries: Vec::new(),
@@ -169,7 +181,7 @@ impl TreeState {
         }
     }
 
-    fn from_nodes(nodes: Vec<TreeNode>) -> Self {
+    fn from_nodes(nodes: Vec<TreeNode>, load_scope: TreeLoadScope) -> Self {
         let topology = TreeTopology::from_nodes(&nodes);
         let visible_entries = visible::compute_visible_entries(
             &nodes,
@@ -187,6 +199,7 @@ impl TreeState {
             cursor: 0,
             scroll_offset: 0,
             full_mode: true,
+            load_scope,
             view_mode: ViewMode::Tree,
             expanded_entry: None,
             visible_entries,
@@ -374,6 +387,7 @@ impl TreeState {
 
     pub fn enable_neighborhood(&mut self) {
         let anchor_change_id = self.current_node().map(|node| node.change_id.clone());
+        self.load_scope = TreeLoadScope::Neighborhood;
         self.focus_stack.clear();
         self.set_view_mode(ViewMode::Neighborhood(NeighborhoodState::follow_cursor()));
         if let Some(change_id) = anchor_change_id {
@@ -383,6 +397,7 @@ impl TreeState {
 
     pub fn disable_neighborhood(&mut self) {
         let anchor_change_id = self.current_node().map(|node| node.change_id.clone());
+        self.load_scope = TreeLoadScope::Stack;
         self.set_view_mode(ViewMode::Tree);
         if let Some(change_id) = anchor_change_id {
             self.restore_cursor_to_change_id(&change_id);

@@ -45,7 +45,7 @@ impl JjRepo {
         self.with_revset_context("", |extensions, context| {
             let mut diagnostics = RevsetDiagnostics::new();
             let short_prefixes_revset =
-                "present(@) | ancestors(immutable_heads().., 2) | present(trunk())";
+                "present(@) | ancestors(immutable_heads()..) | present(trunk())";
             let disambiguate_expr = revset::parse(&mut diagnostics, short_prefixes_revset, context)
                 .wrap_err("failed to parse short-prefixes revset")?;
 

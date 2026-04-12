@@ -15,7 +15,7 @@ use super::runner;
 use super::state::{
     DiffStats, MessageKind, ModeState, PendingOperation, PendingSquash, StatusMessage,
 };
-use super::tree::TreeState;
+use super::tree::{TreeLoadScope, TreeState};
 use super::ui;
 use super::vm;
 use crate::jj_lib_helpers::{CommitDetails, JjRepo};
@@ -68,7 +68,12 @@ impl App {
         let keybindings_warning = keybindings::initialize();
         let repo_path = std::env::current_dir()?;
         let jj_repo = JjRepo::load(Some(&repo_path))?;
-        let mut tree = TreeState::load(&jj_repo)?;
+        let load_scope = if options.start_in_neighborhood {
+            TreeLoadScope::Neighborhood
+        } else {
+            TreeLoadScope::Stack
+        };
+        let mut tree = TreeState::load_with_scope(&jj_repo, "trunk()", load_scope)?;
         apply_startup_options(&mut tree, options);
         let syntax_set = SyntaxSet::load_defaults_newlines();
         let theme_set = ThemeSet::load_defaults();
@@ -536,6 +541,7 @@ mod tests {
     use super::{AppOptions, ModeState, apply_startup_options};
     use crate::cmd::jj_tui::app::App;
     use crate::cmd::jj_tui::test_support::{make_app_with_tree, make_node, make_tree};
+    use crate::cmd::jj_tui::tree::TreeLoadScope;
 
     fn visible_ids(app: &App) -> Vec<String> {
         app.tree
@@ -564,6 +570,7 @@ mod tests {
         );
 
         assert!(tree.is_neighborhood_mode());
+        assert_eq!(tree.load_scope, TreeLoadScope::Neighborhood);
         assert_eq!(
             tree.current_node().map(|node| node.change_id.as_str()),
             Some("c")

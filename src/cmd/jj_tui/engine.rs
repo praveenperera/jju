@@ -177,6 +177,7 @@ mod tests {
     use super::*;
     use crate::cmd::jj_tui::state::{BookmarkPickerState, BookmarkSelectAction};
     use crate::cmd::jj_tui::test_support::{make_node, make_node_with_bookmarks, make_tree};
+    use crate::cmd::jj_tui::tree::TreeLoadScope;
 
     struct TestState {
         tree: TreeState,
@@ -470,6 +471,26 @@ mod tests {
         assert_eq!(effects.len(), 2);
         assert!(matches!(effects[0], Effect::RefreshTree));
         assert!(matches!(effects[1], Effect::SetStatus { .. }));
+    }
+
+    #[test]
+    fn test_toggle_neighborhood_switches_scope_and_refreshes() {
+        let tree = make_tree(vec![make_node("aaaa", 0), make_node("bbbb", 1)]);
+        let mut state = TestState::new(tree);
+
+        let effects = state.reduce(Action::ToggleNeighborhood);
+
+        assert!(state.tree.is_neighborhood_mode());
+        assert_eq!(state.tree.load_scope, TreeLoadScope::Neighborhood);
+        assert_eq!(effects.len(), 1);
+        assert!(matches!(effects[0], Effect::RefreshTree));
+
+        let effects = state.reduce(Action::ToggleNeighborhood);
+
+        assert!(!state.tree.is_neighborhood_mode());
+        assert_eq!(state.tree.load_scope, TreeLoadScope::Stack);
+        assert_eq!(effects.len(), 1);
+        assert!(matches!(effects[0], Effect::RefreshTree));
     }
 
     #[test]
