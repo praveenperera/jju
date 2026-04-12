@@ -84,7 +84,7 @@ pub(crate) fn render_tree_with_vms(frame: &mut Frame, app: &App, area: Rect, vms
     }
 
     let viewport_height = inner.height as usize;
-    let scroll_offset = app.tree.scroll_offset;
+    let scroll_offset = app.tree.view.scroll_offset;
 
     let mut lines: Vec<Line> = Vec::new();
     let mut line_count = 0;

@@ -68,7 +68,7 @@ impl<'a> PreviewBuilder<'a> {
             };
         }
 
-        let visible_topology = self.tree.topology.project_visible(&visible_nodes);
+        let visible_topology = self.tree.snapshot.topology.project_visible(&visible_nodes);
         let result = ops::apply_rebase_preview(
             visible_topology,
             ops::RebasePreviewOp {
@@ -87,14 +87,14 @@ impl<'a> PreviewBuilder<'a> {
 }
 
 fn visible_node_indices(tree: &TreeState) -> Vec<usize> {
-    tree.visible_entries
+    tree.visible_entries()
         .iter()
         .map(|entry| entry.node_index)
         .collect()
 }
 
 fn visible_visual_depths(tree: &TreeState) -> Vec<usize> {
-    tree.visible_entries
+    tree.visible_entries()
         .iter()
         .map(|entry| entry.visual_depth)
         .collect()
@@ -105,10 +105,9 @@ mod tests {
     use super::test_support::{find_slot, make_node, make_tree, visible_topology};
     use super::*;
     use crate::cmd::jj_tui::tree::{
-        TreeLoadScope, TreeState, TreeTopology, ViewMode, VisibleEntry,
+        TreeLoadScope, TreeProjection, TreeSnapshot, TreeState, TreeTopology, TreeViewState,
+        ViewMode, VisibleEntry,
     };
-    use ahash::HashSet;
-
     #[test]
     fn test_from_tree_linear() {
         let tree = make_tree(
@@ -240,19 +239,17 @@ mod tests {
             },
         ];
         let topology = TreeTopology::from_nodes(&nodes);
-        let tree = TreeState {
-            nodes,
-            topology,
-            cursor: 0,
-            scroll_offset: 0,
+        let snapshot = TreeSnapshot { nodes, topology };
+        let view = TreeViewState {
             full_mode: false,
-            load_scope: TreeLoadScope::Stack,
             view_mode: ViewMode::Tree,
-            expanded_entry: None,
-            visible_entries,
-            selected: HashSet::default(),
-            selection_anchor: None,
-            focus_stack: Vec::new(),
+            ..TreeViewState::new(TreeLoadScope::Stack)
+        };
+        let projection = TreeProjection { visible_entries };
+        let tree = TreeState {
+            snapshot,
+            view,
+            projection,
         };
 
         let relations = visible_topology(&tree);

@@ -7,29 +7,30 @@ pub fn current_rev(tree: &TreeState) -> String {
 }
 
 pub fn get_revs_for_action(tree: &TreeState) -> Vec<String> {
-    if tree.selected.is_empty() {
+    if tree.view.selected.is_empty() {
         vec![current_rev(tree)]
     } else {
-        tree.selected
+        tree.view
+            .selected
             .iter()
             .filter_map(|&idx| {
-                tree.visible_entries
+                tree.visible_entries()
                     .get(idx)
-                    .map(|entry| tree.nodes[entry.node_index].change_id.clone())
+                    .map(|entry| tree.nodes()[entry.node_index].change_id.clone())
             })
             .collect()
     }
 }
 
 pub fn get_rev_at_cursor(tree: &TreeState, cursor: usize) -> Option<String> {
-    tree.visible_entries
+    tree.visible_entries()
         .get(cursor)
-        .map(|entry| tree.nodes[entry.node_index].change_id.clone())
+        .map(|entry| tree.nodes()[entry.node_index].change_id.clone())
 }
 
 pub fn extend_selection_to_cursor(tree: &mut TreeState) {
-    if let Some(anchor) = tree.selection_anchor {
-        tree.selected.clear();
-        tree.select_range(anchor, tree.cursor);
+    if let Some(anchor) = tree.view.selection_anchor {
+        tree.view.selected.clear();
+        tree.select_range(anchor, tree.view.cursor);
     }
 }

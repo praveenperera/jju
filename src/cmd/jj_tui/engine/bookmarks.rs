@@ -12,7 +12,7 @@ pub(super) fn is_bookmark_move_backwards(
     dest_rev: &str,
 ) -> bool {
     let Some(current_node) = tree
-        .nodes
+        .nodes()
         .iter()
         .find(|node| node.has_bookmark(bookmark_name))
     else {
@@ -23,7 +23,7 @@ pub(super) fn is_bookmark_move_backwards(
 }
 
 pub(super) fn bookmark_is_on_rev(tree: &TreeState, bookmark_name: &str, rev: &str) -> bool {
-    tree.nodes
+    tree.nodes()
         .iter()
         .any(|node| node.change_id == rev && node.has_bookmark(bookmark_name))
 }
@@ -63,7 +63,7 @@ pub(super) fn previous_char_boundary(text: &str, cursor: usize) -> usize {
 
 fn sort_bookmarks_by_proximity(bookmarks: &mut [String], tree: &TreeState) {
     let bookmark_indices = tree.bookmark_to_visible_index();
-    let cursor = tree.cursor;
+    let cursor = tree.view.cursor;
 
     bookmarks.sort_by(|left, right| {
         let left_index = bookmark_indices.get(left).copied();

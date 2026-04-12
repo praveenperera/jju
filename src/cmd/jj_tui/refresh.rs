@@ -13,26 +13,32 @@ pub fn refresh_tree(
     let parent_change_id = tree
         .current_node()
         .and_then(|n| n.parent_ids.first().cloned());
-    let old_cursor = tree.cursor;
-    let old_full_mode = tree.full_mode;
-    let old_load_scope = tree.load_scope;
-    let old_view_mode = tree.view_mode.clone();
+    let old_cursor = tree.view.cursor;
+    let old_full_mode = tree.view.full_mode;
+    let old_load_scope = tree.view.load_scope;
+    let old_view_mode = tree.view.view_mode.clone();
 
     let focus_stack_change_ids: Vec<String> = tree
+        .view
         .focus_stack
         .iter()
-        .filter_map(|&idx| tree.nodes.get(idx).map(|n| n.change_id.clone()))
+        .filter_map(|&idx| tree.nodes().get(idx).map(|node| node.change_id.clone()))
         .collect();
 
     let jj_repo = JjRepo::load(None)?;
     *tree = TreeState::load_with_scope(&jj_repo, "trunk()", old_load_scope)?;
-    tree.full_mode = old_full_mode;
+    tree.view.full_mode = old_full_mode;
+    tree.set_view_mode(tree.view.view_mode.clone());
     tree.clear_selection();
     diff_stats_cache.clear();
 
     if matches!(&old_view_mode, ViewMode::Tree) {
         for change_id in focus_stack_change_ids {
-            if let Some(node_idx) = tree.nodes.iter().position(|n| n.change_id == change_id) {
+            if let Some(node_idx) = tree
+                .nodes()
+                .iter()
+                .position(|node| node.change_id == change_id)
+            {
                 tree.focus_on(node_idx);
             }
         }
@@ -46,21 +52,21 @@ pub fn refresh_tree(
     }
 
     let find_visible = |cid: &str| {
-        tree.visible_entries
+        tree.visible_entries()
             .iter()
-            .position(|e| tree.nodes[e.node_index].change_id == cid)
+            .position(|entry| tree.nodes()[entry.node_index].change_id == cid)
     };
 
     if let Some(ref cid) = current_change_id
         && let Some(idx) = find_visible(cid)
     {
-        tree.cursor = idx;
+        tree.view.cursor = idx;
     } else if let Some(ref pid) = parent_change_id
         && let Some(idx) = find_visible(pid)
     {
-        tree.cursor = idx;
+        tree.view.cursor = idx;
     } else {
-        tree.cursor = old_cursor.min(tree.visible_count().saturating_sub(1));
+        tree.view.cursor = old_cursor.min(tree.visible_count().saturating_sub(1));
     }
 
     if matches!(

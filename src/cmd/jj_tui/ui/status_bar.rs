@@ -31,7 +31,11 @@ pub(super) fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         ModeState::Conflicts(_) => "CONFLICTS",
     };
 
-    let full_indicator = if app.tree.full_mode { " [FULL]" } else { "" };
+    let full_indicator = if app.tree.view.full_mode {
+        " [FULL]"
+    } else {
+        ""
+    };
     let neighborhood_indicator = app
         .tree
         .neighborhood_state()
@@ -62,8 +66,8 @@ pub(super) fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         _ => String::new(),
     };
 
-    let selection_indicator = if !app.tree.selected.is_empty() {
-        format!(" [{}sel]", app.tree.selected.len())
+    let selection_indicator = if !app.tree.view.selected.is_empty() {
+        format!(" [{}sel]", app.tree.view.selected.len())
     } else {
         String::new()
     };
@@ -77,7 +81,7 @@ pub(super) fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     };
     let hints = keybindings::status_bar_hints(&keybindings::StatusHintContext {
         mode: mode_id,
-        has_selection: !app.tree.selected.is_empty(),
+        has_selection: !app.tree.view.selected.is_empty(),
         has_focus: app.tree.is_focused(),
         neighborhood_active: app.tree.is_neighborhood_mode(),
         current_has_bookmark: app.current_has_bookmark(),
@@ -110,10 +114,10 @@ fn current_info(app: &App) -> String {
     if let ModeState::Rebasing(state) = &app.mode {
         let dest_name = app
             .tree
-            .visible_entries
+            .visible_entries()
             .get(state.dest_cursor)
             .map(|entry| {
-                let node = &app.tree.nodes[entry.node_index];
+                let node = &app.tree.nodes()[entry.node_index];
                 if node.bookmarks.is_empty() {
                     node.change_id.chars().take(8).collect::<String>()
                 } else {
@@ -126,10 +130,10 @@ fn current_info(app: &App) -> String {
     } else if let ModeState::MovingBookmark(state) = &app.mode {
         let dest_name = app
             .tree
-            .visible_entries
+            .visible_entries()
             .get(state.dest_cursor)
             .map(|entry| {
-                let node = &app.tree.nodes[entry.node_index];
+                let node = &app.tree.nodes()[entry.node_index];
                 node.change_id.chars().take(8).collect::<String>()
             })
             .unwrap_or_else(|| "?".to_string());
@@ -138,10 +142,10 @@ fn current_info(app: &App) -> String {
     } else if let ModeState::Squashing(state) = &app.mode {
         let dest_name = app
             .tree
-            .visible_entries
+            .visible_entries()
             .get(state.dest_cursor)
             .map(|entry| {
-                let node = &app.tree.nodes[entry.node_index];
+                let node = &app.tree.nodes()[entry.node_index];
                 if node.bookmarks.is_empty() {
                     node.change_id.chars().take(8).collect::<String>()
                 } else {

@@ -226,26 +226,26 @@ mod tests {
         ]);
         let mut state = TestState::new(tree);
 
-        assert_eq!(state.tree.cursor, 0);
+        assert_eq!(state.tree.view.cursor, 0);
 
         state.reduce(Action::MoveCursorDown);
-        assert_eq!(state.tree.cursor, 1);
+        assert_eq!(state.tree.view.cursor, 1);
 
         state.reduce(Action::MoveCursorDown);
-        assert_eq!(state.tree.cursor, 2);
+        assert_eq!(state.tree.view.cursor, 2);
 
         // should not go past end
         state.reduce(Action::MoveCursorDown);
-        assert_eq!(state.tree.cursor, 2);
+        assert_eq!(state.tree.view.cursor, 2);
 
         state.reduce(Action::MoveCursorUp);
-        assert_eq!(state.tree.cursor, 1);
+        assert_eq!(state.tree.view.cursor, 1);
 
         state.reduce(Action::MoveCursorTop);
-        assert_eq!(state.tree.cursor, 0);
+        assert_eq!(state.tree.view.cursor, 0);
 
         state.reduce(Action::MoveCursorBottom);
-        assert_eq!(state.tree.cursor, 2);
+        assert_eq!(state.tree.view.cursor, 2);
     }
 
     #[test]
@@ -301,7 +301,7 @@ mod tests {
             make_node_with_bookmarks("rev3", 1, &["near2"]),
             make_node_with_bookmarks("rev4", 1, &["far"]),
         ]);
-        tree.cursor = 0;
+        tree.view.cursor = 0;
 
         let all_bookmarks = vec![
             "near2".to_string(),
@@ -310,7 +310,7 @@ mod tests {
             "near1".to_string(),
             "pin2".to_string(),
         ];
-        let pinned = tree.nodes[0].bookmark_names();
+        let pinned = tree.nodes()[0].bookmark_names();
 
         let ordered = bookmarks::build_move_bookmark_picker_list(all_bookmarks, pinned, &tree);
         assert_eq!(
@@ -328,7 +328,7 @@ mod tests {
     #[test]
     fn test_confirm_bookmark_picker_move_already_here_enters_move_away_flow() {
         let mut tree = make_tree(vec![make_node_with_bookmarks("rev0", 0, &["a"])]);
-        tree.cursor = 0;
+        tree.view.cursor = 0;
 
         let mut state = TestState::new(tree);
         state.mode = ModeState::BookmarkPicker(BookmarkPickerState {
@@ -364,20 +364,20 @@ mod tests {
         let tree = make_tree(vec![make_node("aaaa", 0), make_node("bbbb", 1)]);
         let mut state = TestState::new(tree);
 
-        assert!(state.tree.selected.is_empty());
+        assert!(state.tree.view.selected.is_empty());
 
         state.reduce(Action::ToggleSelection);
-        assert!(state.tree.selected.contains(&0));
+        assert!(state.tree.view.selected.contains(&0));
 
         state.reduce(Action::ToggleSelection);
-        assert!(!state.tree.selected.contains(&0));
+        assert!(!state.tree.view.selected.contains(&0));
 
-        state.tree.cursor = 1;
+        state.tree.view.cursor = 1;
         state.reduce(Action::ToggleSelection);
-        assert!(state.tree.selected.contains(&1));
+        assert!(state.tree.view.selected.contains(&1));
 
         state.reduce(Action::ClearSelection);
-        assert!(state.tree.selected.is_empty());
+        assert!(state.tree.view.selected.is_empty());
     }
 
     #[test]
@@ -404,18 +404,18 @@ mod tests {
         // enter selection mode
         state.reduce(Action::EnterSelecting);
         assert!(matches!(state.mode, ModeState::Selecting));
-        assert!(state.tree.selected.contains(&0));
-        assert_eq!(state.tree.selection_anchor, Some(0));
+        assert!(state.tree.view.selected.contains(&0));
+        assert_eq!(state.tree.view.selection_anchor, Some(0));
 
         // move down should extend selection
         state.reduce(Action::MoveCursorDown);
-        assert!(state.tree.selected.contains(&0));
-        assert!(state.tree.selected.contains(&1));
+        assert!(state.tree.view.selected.contains(&0));
+        assert!(state.tree.view.selected.contains(&1));
 
         state.reduce(Action::MoveCursorDown);
-        assert!(state.tree.selected.contains(&0));
-        assert!(state.tree.selected.contains(&1));
-        assert!(state.tree.selected.contains(&2));
+        assert!(state.tree.view.selected.contains(&0));
+        assert!(state.tree.view.selected.contains(&1));
+        assert!(state.tree.view.selected.contains(&2));
     }
 
     #[test]
@@ -435,16 +435,16 @@ mod tests {
         let mut state = TestState::new(tree);
 
         state.reduce(Action::PageDown(5));
-        assert_eq!(state.tree.cursor, 5);
+        assert_eq!(state.tree.view.cursor, 5);
 
         state.reduce(Action::PageUp(3));
-        assert_eq!(state.tree.cursor, 2);
+        assert_eq!(state.tree.view.cursor, 2);
 
         state.reduce(Action::PageUp(10)); // should clamp to 0
-        assert_eq!(state.tree.cursor, 0);
+        assert_eq!(state.tree.view.cursor, 0);
 
         state.reduce(Action::PageDown(100)); // should clamp to max
-        assert_eq!(state.tree.cursor, 9);
+        assert_eq!(state.tree.view.cursor, 9);
     }
 
     #[test]
@@ -475,14 +475,14 @@ mod tests {
         let effects = state.reduce(Action::ToggleNeighborhood);
 
         assert!(state.tree.is_neighborhood_mode());
-        assert_eq!(state.tree.load_scope, TreeLoadScope::Neighborhood);
+        assert_eq!(state.tree.view.load_scope, TreeLoadScope::Neighborhood);
         assert_eq!(effects.len(), 1);
         assert!(matches!(effects[0], Effect::RefreshTree));
 
         let effects = state.reduce(Action::ToggleNeighborhood);
 
         assert!(!state.tree.is_neighborhood_mode());
-        assert_eq!(state.tree.load_scope, TreeLoadScope::Stack);
+        assert_eq!(state.tree.view.load_scope, TreeLoadScope::Stack);
         assert_eq!(effects.len(), 1);
         assert!(matches!(effects[0], Effect::RefreshTree));
     }

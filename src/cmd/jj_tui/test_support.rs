@@ -1,9 +1,9 @@
 use super::app::App;
 use super::state::ModeState;
 use super::tree::{
-    BookmarkInfo, TreeLoadScope, TreeNode, TreeState, TreeTopology, ViewMode, VisibleEntry,
+    BookmarkInfo, TreeLoadScope, TreeNode, TreeProjection, TreeSnapshot, TreeState, TreeTopology,
+    TreeViewState, ViewMode, VisibleEntry,
 };
-use ahash::HashSet;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
@@ -51,20 +51,18 @@ pub(crate) fn make_tree(nodes: Vec<TreeNode>) -> TreeState {
         })
         .collect();
     let topology = TreeTopology::from_nodes(&nodes);
+    let snapshot = TreeSnapshot { nodes, topology };
+    let view = TreeViewState {
+        full_mode: true,
+        view_mode: ViewMode::Tree,
+        ..TreeViewState::new(TreeLoadScope::Stack)
+    };
+    let projection = TreeProjection { visible_entries };
 
     TreeState {
-        nodes,
-        topology,
-        cursor: 0,
-        scroll_offset: 0,
-        full_mode: true,
-        load_scope: TreeLoadScope::Stack,
-        view_mode: ViewMode::Tree,
-        expanded_entry: None,
-        visible_entries,
-        selected: HashSet::default(),
-        selection_anchor: None,
-        focus_stack: Vec::new(),
+        snapshot,
+        view,
+        projection,
     }
 }
 

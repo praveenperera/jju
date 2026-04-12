@@ -79,7 +79,7 @@ pub fn build_tree_view(app: &App, _viewport_width: usize) -> Vec<TreeRowVm> {
 
 /// Build view for normal mode (and selecting mode)
 fn build_normal_view(app: &App) -> Vec<TreeRowVm> {
-    build_operation_view(app, app.tree.cursor, |_visible_idx, _node| {
+    build_operation_view(app, app.tree.view.cursor, |_visible_idx, _node| {
         (NodeRole::Normal, None)
     })
 }
@@ -94,14 +94,14 @@ fn build_rebase_view(
 ) -> Vec<TreeRowVm> {
     let source_node_index = app
         .tree
-        .visible_entries
+        .visible_entries()
         .iter()
-        .find(|entry| app.tree.nodes[entry.node_index].change_id == source_rev)
+        .find(|entry| app.tree.nodes()[entry.node_index].change_id == source_rev)
         .map(|entry| entry.node_index)
         .unwrap_or(0);
     let dest_node_index = app
         .tree
-        .visible_entries
+        .visible_entries()
         .get(dest_cursor)
         .map(|entry| entry.node_index)
         .unwrap_or(source_node_index);
@@ -128,7 +128,7 @@ fn build_rebase_view(
         .iter()
         .enumerate()
         .map(|(slot_idx, slot)| {
-            let node = &app.tree.nodes[slot.node_id.0];
+            let node = &app.tree.nodes()[slot.node_id.0];
             let is_cursor = cursor_slot_idx == Some(slot_idx);
 
             let marker = match slot.role {
@@ -203,7 +203,7 @@ fn build_operation_view(
     cursor_idx: usize,
     mut role_marker: impl FnMut(usize, &TreeNode) -> (NodeRole, Option<Marker>),
 ) -> Vec<TreeRowVm> {
-    let is_expanded_mode = app.tree.expanded_entry.is_some();
+    let is_expanded_mode = app.tree.view.expanded_entry.is_some();
 
     app.tree
         .visible_nodes()
@@ -228,9 +228,9 @@ fn build_operation_view(
                 visual_depth: entry.visual_depth,
                 node,
                 is_cursor,
-                is_selected: app.tree.selected.contains(&visible_idx),
+                is_selected: app.tree.view.selected.contains(&visible_idx),
                 is_dimmed,
-                is_zoom_root: app.tree.focus_stack.contains(&entry.node_index),
+                is_zoom_root: app.tree.view.focus_stack.contains(&entry.node_index),
                 role,
                 marker,
                 details,
@@ -355,7 +355,7 @@ mod tests {
             make_node("cccc", 2),
         ]);
         let mut app = make_app_with_tree(tree);
-        app.tree.cursor = 1;
+        app.tree.view.cursor = 1;
 
         let vms = build_tree_view(&app, 80);
 
@@ -373,8 +373,8 @@ mod tests {
             make_node("cccc", 2),
         ]);
         let mut app = make_app_with_tree(tree);
-        app.tree.selected.insert(0);
-        app.tree.selected.insert(2);
+        app.tree.view.selected.insert(0);
+        app.tree.view.selected.insert(2);
 
         let vms = build_tree_view(&app, 80);
 

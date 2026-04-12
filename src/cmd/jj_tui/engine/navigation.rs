@@ -22,7 +22,8 @@ pub(super) fn handle(ctx: &mut ReduceCtx<'_>, action: Action) {
         Action::PageDown(amount) => ctx.tree.page_down(amount),
         Action::CenterCursor(viewport_height) => {
             if viewport_height > 0 {
-                ctx.tree.scroll_offset = ctx.tree.cursor.saturating_sub(viewport_height / 2);
+                ctx.tree.view.scroll_offset =
+                    ctx.tree.view.cursor.saturating_sub(viewport_height / 2);
             }
         }
         Action::ToggleFocus => ctx.tree.toggle_focus(),
@@ -59,15 +60,15 @@ pub(super) fn handle(ctx: &mut ReduceCtx<'_>, action: Action) {
             }
         }
         Action::EnterSelecting => {
-            ctx.tree.selection_anchor = Some(ctx.tree.cursor);
-            ctx.tree.selected.insert(ctx.tree.cursor);
+            ctx.tree.view.selection_anchor = Some(ctx.tree.view.cursor);
+            ctx.tree.view.selected.insert(ctx.tree.view.cursor);
             *ctx.mode = ModeState::Selecting;
         }
         Action::ExitSelecting => {
             *ctx.mode = ModeState::Normal;
-            ctx.tree.selection_anchor = None;
+            ctx.tree.view.selection_anchor = None;
         }
-        Action::ToggleSelection => ctx.tree.toggle_selected(ctx.tree.cursor),
+        Action::ToggleSelection => ctx.tree.toggle_selected(ctx.tree.view.cursor),
         Action::ClearSelection => ctx.tree.clear_selection(),
         Action::RefreshTree => {
             ctx.effects.push(Effect::RefreshTree);

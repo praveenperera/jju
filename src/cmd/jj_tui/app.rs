@@ -118,7 +118,7 @@ impl App {
 
             // build view models first to get accurate cursor height
             let vms = vm::build_tree_view(self, viewport_width);
-            let cursor_vm = vms.get(self.tree.cursor);
+            let cursor_vm = vms.get(self.tree.view.cursor);
             let cursor_height = cursor_vm.map_or(1, |vm| {
                 vm.height + if vm.has_separator_before { 1 } else { 0 }
             });
@@ -156,7 +156,7 @@ impl App {
             pending_key: self.pending_key,
             viewport_height,
             has_focus: self.tree.is_focused(),
-            has_selection: !self.tree.selected.is_empty(),
+            has_selection: !self.tree.view.selected.is_empty(),
         };
 
         // map key to action
@@ -249,10 +249,10 @@ impl App {
 
     pub fn ensure_expanded_row_data(&mut self) {
         if let Some(entry) = self.tree.current_entry()
-            && self.tree.is_expanded(self.tree.cursor)
+            && self.tree.is_expanded(self.tree.view.cursor)
         {
             let (commit_id, change_id, needs_details) = {
-                let node = &self.tree.nodes[entry.node_index];
+                let node = &self.tree.nodes()[entry.node_index];
                 (
                     node.commit_id.clone(),
                     node.change_id.clone(),
@@ -360,14 +360,14 @@ impl App {
             commit_ids.push(node.commit_id.clone());
         }
 
-        for entry in &self.tree.visible_entries {
-            let commit_id = self.tree.nodes[entry.node_index].commit_id.clone();
+        for entry in self.tree.visible_entries() {
+            let commit_id = self.tree.nodes()[entry.node_index].commit_id.clone();
             if seen.insert(commit_id.clone()) {
                 commit_ids.push(commit_id);
             }
         }
 
-        for node in &self.tree.nodes {
+        for node in self.tree.nodes() {
             if seen.insert(node.commit_id.clone()) {
                 commit_ids.push(node.commit_id.clone());
             }
@@ -441,9 +441,9 @@ mod tests {
 
     fn visible_ids(app: &App) -> Vec<String> {
         app.tree
-            .visible_entries
+            .visible_entries()
             .iter()
-            .map(|entry| app.tree.nodes[entry.node_index].change_id.clone())
+            .map(|entry| app.tree.nodes()[entry.node_index].change_id.clone())
             .collect()
     }
 
@@ -466,7 +466,7 @@ mod tests {
         );
 
         assert!(tree.is_neighborhood_mode());
-        assert_eq!(tree.load_scope, TreeLoadScope::Neighborhood);
+        assert_eq!(tree.view.load_scope, TreeLoadScope::Neighborhood);
         assert_eq!(
             tree.current_node().map(|node| node.change_id.as_str()),
             Some("c")
@@ -488,7 +488,7 @@ mod tests {
         let tree = make_tree(nodes);
         let mut app = make_app_with_tree(tree);
 
-        app.tree.cursor = 4;
+        app.tree.view.cursor = 4;
         app.tree.enable_neighborhood();
         let initial_visible = visible_ids(&app);
 
@@ -529,7 +529,7 @@ mod tests {
         let tree = make_tree(nodes);
         let mut app = make_app_with_tree(tree);
 
-        app.tree.cursor = 4;
+        app.tree.view.cursor = 4;
         app.tree.enable_neighborhood();
         assert_eq!(visible_ids(&app), vec!["a", "b", "c", "d", "e", "f", "g"]);
 

@@ -2,9 +2,9 @@
 
 use crate::cmd::jj_tui::preview::{DisplaySlot, NodeId};
 use crate::cmd::jj_tui::tree::{
-    TreeLoadScope, TreeNode, TreeState, TreeTopology, ViewMode, VisibleEntry,
+    TreeLoadScope, TreeNode, TreeProjection, TreeSnapshot, TreeState, TreeTopology, TreeViewState,
+    ViewMode, VisibleEntry,
 };
-use ahash::HashSet;
 
 pub(super) fn make_node(change_id: &str, depth: usize) -> TreeNode {
     TreeNode {
@@ -34,30 +34,28 @@ pub(super) fn make_tree(nodes: Vec<TreeNode>, full_mode: bool) -> TreeState {
         })
         .collect();
     let topology = TreeTopology::from_nodes(&nodes);
+    let snapshot = TreeSnapshot { nodes, topology };
+    let view = TreeViewState {
+        full_mode,
+        view_mode: ViewMode::Tree,
+        ..TreeViewState::new(TreeLoadScope::Stack)
+    };
+    let projection = TreeProjection { visible_entries };
 
     TreeState {
-        nodes,
-        topology,
-        cursor: 0,
-        scroll_offset: 0,
-        full_mode,
-        load_scope: TreeLoadScope::Stack,
-        view_mode: ViewMode::Tree,
-        expanded_entry: None,
-        visible_entries,
-        selected: HashSet::default(),
-        selection_anchor: None,
-        focus_stack: Vec::new(),
+        snapshot,
+        view,
+        projection,
     }
 }
 
 pub(super) fn visible_topology(tree: &TreeState) -> TreeTopology {
     let visible_nodes: Vec<usize> = tree
-        .visible_entries
+        .visible_entries()
         .iter()
         .map(|entry| entry.node_index)
         .collect();
-    tree.topology.project_visible(&visible_nodes)
+    tree.snapshot.topology.project_visible(&visible_nodes)
 }
 
 pub(super) fn find_slot(slots: &[DisplaySlot], node_id: usize) -> &DisplaySlot {

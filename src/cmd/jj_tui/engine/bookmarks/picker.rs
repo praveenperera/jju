@@ -87,7 +87,7 @@ fn confirm_bookmark_select(ctx: &mut ReduceCtx<'_>) {
         BookmarkSelectAction::Move => {
             *ctx.mode = ModeState::MovingBookmark(MovingBookmarkState {
                 bookmark_name: bookmark,
-                dest_cursor: ctx.tree.cursor,
+                dest_cursor: ctx.tree.view.cursor,
             });
             ctx.effects.push(Effect::SaveOperationForUndo);
         }
@@ -175,7 +175,7 @@ fn confirm_bookmark_picker(ctx: &mut ReduceCtx<'_>) {
             if bookmark_is_on_rev(ctx.tree, &bookmark_name, &target_rev) {
                 *ctx.mode = ModeState::MovingBookmark(MovingBookmarkState {
                     bookmark_name,
-                    dest_cursor: ctx.tree.cursor,
+                    dest_cursor: ctx.tree.view.cursor,
                 });
                 ctx.effects.push(Effect::SaveOperationForUndo);
                 return;

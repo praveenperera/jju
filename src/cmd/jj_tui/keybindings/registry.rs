@@ -242,7 +242,9 @@ pub(crate) fn warning_duration() -> Duration {
 mod tests {
     use super::*;
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEMP_CONFIG_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     #[test]
     fn test_override_replaces_builtin_keys_for_command() {
@@ -398,11 +400,9 @@ keys = [["X", "p"]]
     }
 
     fn write_temp_config(contents: &str) -> PathBuf {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time")
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!("jju-keybindings-{suffix}.toml"));
+        let suffix = TEMP_CONFIG_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let pid = std::process::id();
+        let path = std::env::temp_dir().join(format!("jju-keybindings-{pid}-{suffix}.toml"));
         fs::write(&path, contents).expect("write config");
         path
     }

@@ -12,7 +12,7 @@ pub fn print_tree(tree: &TreeState, full: bool) {
     let mut hidden_count = 0;
     let mut depth_stack: Vec<usize> = Vec::new(); // tracks structural depths for visual depth calc
 
-    for node in &tree.nodes {
+    for node in tree.nodes() {
         let is_visible = full || !node.bookmarks.is_empty() || node.is_working_copy;
 
         if !is_visible {

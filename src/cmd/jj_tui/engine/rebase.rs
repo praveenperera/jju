@@ -11,8 +11,8 @@ pub fn compute_moving_indices(tree: &TreeState, mode: &ModeState) -> HashSet<usi
     let mut in_source_tree = false;
     let mut source_struct_depth = 0usize;
 
-    for (idx, entry) in tree.visible_entries.iter().enumerate() {
-        let node = &tree.nodes[entry.node_index];
+    for (idx, entry) in tree.visible_entries().iter().enumerate() {
+        let node = &tree.nodes()[entry.node_index];
 
         if node.change_id == state.source_rev {
             indices.insert(idx);
