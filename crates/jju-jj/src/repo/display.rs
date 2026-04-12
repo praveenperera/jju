@@ -4,7 +4,6 @@ use jj_lib::commit::Commit;
 use jj_lib::id_prefix::IdPrefixIndex;
 
 impl JjRepo {
-    /// Get the first line of a commit's description
     pub fn description_first_line(commit: &Commit) -> String {
         commit
             .description()
@@ -14,17 +13,14 @@ impl JjRepo {
             .to_string()
     }
 
-    /// Get the author name for a commit
     pub fn author_name(commit: &Commit) -> String {
         commit.author().name.clone()
     }
 
-    /// Get the author email for a commit
     pub fn author_email(commit: &Commit) -> String {
         commit.author().email.clone()
     }
 
-    /// Get the author timestamp formatted as a relative time string with absolute date
     pub fn author_timestamp_relative(commit: &Commit) -> String {
         let timestamp = commit.author().timestamp;
         let millis = timestamp.timestamp.0;

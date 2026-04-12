@@ -1,11 +1,11 @@
 use super::rebase::compute_moving_indices;
 use super::selection::{current_rev, get_rev_at_cursor, get_revs_for_action};
-use super::{Action, Effect, MessageKind, ModeState, PendingOperation, ReduceCtx};
+use super::{Action, Effect, MessageKind, ModeState, ReduceCtx};
 use crate::cmd::jj_tui::handlers;
 use crate::cmd::jj_tui::state::{
-    ConfirmAction, ConfirmState, ConflictsState, DiffState, PendingSquash, RebaseState, RebaseType,
-    SquashState,
+    ConfirmAction, ConfirmState, ConflictsState, DiffState, RebaseState, RebaseType, SquashState,
 };
+use jju_core::interactive::{InteractiveOperation, SquashOperation};
 
 pub(super) fn handle(ctx: &mut ReduceCtx<'_>, action: Action) {
     match action {
@@ -366,11 +366,14 @@ fn execute_squash(ctx: &mut ReduceCtx<'_>) {
         return;
     }
 
-    *ctx.pending_operation = Some(PendingOperation::Squash(PendingSquash {
-        source_rev: state.source_rev.clone(),
-        target_rev: target,
-        op_before: state.op_before.clone(),
-    }));
+    ctx.effects
+        .push(Effect::RunInteractive(InteractiveOperation::Squash(
+            SquashOperation {
+                source_rev: state.source_rev.clone(),
+                target_rev: target,
+                op_before: state.op_before.clone(),
+            },
+        )));
     *ctx.mode = ModeState::Normal;
 }
 
@@ -419,7 +422,10 @@ fn start_resolve_from_conflicts(ctx: &mut ReduceCtx<'_>) {
     if let ModeState::Conflicts(state) = ctx.mode
         && let Some(file) = state.files.get(state.selected_index).cloned()
     {
-        *ctx.pending_operation = Some(PendingOperation::Resolve { file });
+        ctx.effects
+            .push(Effect::RunInteractive(InteractiveOperation::Resolve {
+                file,
+            }));
         *ctx.mode = ModeState::Normal;
     }
 }

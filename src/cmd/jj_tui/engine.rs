@@ -12,7 +12,7 @@ mod selection;
 
 use super::action::Action;
 use super::effect::Effect;
-use super::state::{MessageKind, ModeState, PendingOperation};
+use super::state::{MessageKind, ModeState};
 use super::tree::TreeState;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -23,7 +23,6 @@ pub struct ReduceCtx<'a> {
     pub should_quit: &'a mut bool,
     pub split_view: &'a mut bool,
     pub pending_key: &'a mut Option<char>,
-    pub pending_operation: &'a mut Option<PendingOperation>,
     pub syntax_set: &'a SyntaxSet,
     pub theme_set: &'a ThemeSet,
     pub effects: Vec<Effect>,
@@ -41,7 +40,6 @@ impl<'a> ReduceCtx<'a> {
         should_quit: &'a mut bool,
         split_view: &'a mut bool,
         pending_key: &'a mut Option<char>,
-        pending_operation: &'a mut Option<PendingOperation>,
         resources: ReduceResources<'a>,
     ) -> Self {
         Self {
@@ -50,7 +48,6 @@ impl<'a> ReduceCtx<'a> {
             should_quit,
             split_view,
             pending_key,
-            pending_operation,
             syntax_set: resources.syntax_set,
             theme_set: resources.theme_set,
             effects: Vec::new(),
@@ -185,7 +182,6 @@ mod tests {
         should_quit: bool,
         split_view: bool,
         pending_key: Option<char>,
-        pending_operation: Option<PendingOperation>,
         syntax_set: SyntaxSet,
         theme_set: ThemeSet,
     }
@@ -198,7 +194,6 @@ mod tests {
                 should_quit: false,
                 split_view: false,
                 pending_key: None,
-                pending_operation: None,
                 syntax_set: SyntaxSet::load_defaults_newlines(),
                 theme_set: ThemeSet::load_defaults(),
             }
@@ -212,7 +207,6 @@ mod tests {
                     &mut self.should_quit,
                     &mut self.split_view,
                     &mut self.pending_key,
-                    &mut self.pending_operation,
                     ReduceResources {
                         syntax_set: &self.syntax_set,
                         theme_set: &self.theme_set,
@@ -675,6 +669,10 @@ mod tests {
                 ..
             }
         )));
-        assert!(state.pending_operation.is_none());
+        assert!(
+            !effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::RunInteractive(_)))
+        );
     }
 }

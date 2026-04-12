@@ -1,5 +1,5 @@
 [workspace]
-members = ["xtask"]
+members = ["xtask", "crates/jju-core", "crates/jju-jj"]
 resolver = "2"
 
 [package]
@@ -54,3 +54,5 @@ ahash = "0.8.12"
 regex = "1"
 serde = { version = "1.0.228", features = ["derive"] }
 toml = "0.8.23"
+jju-core = { path = "crates/jju-core" }
+jju-jj = { path = "crates/jju-jj" }

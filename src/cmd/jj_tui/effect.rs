@@ -4,6 +4,7 @@
 //! The engine produces effects, and the runner executes them.
 
 use super::state::{MessageKind, RebaseType};
+use jju_core::interactive::InteractiveOperation;
 
 /// All possible side effects produced by the engine
 #[derive(Debug, Clone)]
@@ -63,6 +64,7 @@ pub enum Effect {
     RunCreatePR {
         bookmark: String,
     },
+    RunInteractive(InteractiveOperation),
     // UI
     SetStatus {
         text: String,

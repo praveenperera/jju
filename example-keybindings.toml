@@ -1,4 +1,4 @@
-version = 1
+version = 2
 
 # copy this file to $XDG_CONFIG_HOME/jju/keybindings.toml
 # or to ~/.config/jju/keybindings.toml when XDG_CONFIG_HOME is unset
@@ -36,12 +36,12 @@ keys = [["X", "e"]]
 
 [[binding]]
 mode = "normal"
-command = "resolve-divergence"
+command = "resolve_divergence"
 keys = [["X", "r"]]
 
 [[binding]]
 mode = "normal"
-command = "create-pr"
+command = "create_pr"
 keys = [["X", "p"]]
 
 # typed filter modes use AnyChar to capture text input

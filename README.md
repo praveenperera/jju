@@ -139,7 +139,7 @@ Create a keybinding config at `$XDG_CONFIG_HOME/jju/keybindings.toml` or, if `XD
 The file format is:
 
 ```toml
-version = 1
+version = 2
 
 [[binding]]
 mode = "normal"
@@ -159,7 +159,7 @@ keys = [["j"], ["Down"]]
 Keep the default `down` bindings and add `J` as another alias:
 
 ```toml
-version = 1
+version = 2
 
 [[binding]]
 mode = "normal"
@@ -170,7 +170,7 @@ keys = [["j"], ["J"], ["Down"]]
 Move the git prefix from `g` to `X` by rebinding the prefix key and every command that uses it:
 
 ```toml
-version = 1
+version = 2
 
 [[binding]]
 mode = "normal"
@@ -194,12 +194,12 @@ keys = [["X", "e"]]
 
 [[binding]]
 mode = "normal"
-command = "resolve-divergence"
+command = "resolve_divergence"
 keys = [["X", "r"]]
 
 [[binding]]
 mode = "normal"
-command = "create-pr"
+command = "create_pr"
 keys = [["X", "p"]]
 ```
 

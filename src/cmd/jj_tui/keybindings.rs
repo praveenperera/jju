@@ -7,6 +7,7 @@
 //! - Help popup content
 
 mod bindings;
+mod catalog;
 mod config;
 mod dispatch;
 mod display;

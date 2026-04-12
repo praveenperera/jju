@@ -1,19 +1,15 @@
-use super::common::run_with_stderr;
-use duct::cmd;
-use eyre::Result;
-
-pub fn edit(rev: &str) -> Result<()> {
-    run_with_stderr(cmd!("jj", "edit", rev))
+pub fn edit(rev: &str) -> eyre::Result<()> {
+    jju_jj::ops::RevisionOps.edit(rev)
 }
 
-pub fn new(rev: &str) -> Result<()> {
-    run_with_stderr(cmd!("jj", "new", rev))
+pub fn new(rev: &str) -> eyre::Result<()> {
+    jju_jj::ops::RevisionOps.new_commit(rev)
 }
 
-pub fn commit(message: &str) -> Result<()> {
-    run_with_stderr(cmd!("jj", "commit", "-m", message))
+pub fn commit(message: &str) -> eyre::Result<()> {
+    jju_jj::ops::RevisionOps.commit(message)
 }
 
-pub fn abandon(revset: &str) -> Result<()> {
-    run_with_stderr(cmd!("jj", "abandon", revset))
+pub fn abandon(revset: &str) -> eyre::Result<()> {
+    jju_jj::ops::RevisionOps.abandon(revset)
 }

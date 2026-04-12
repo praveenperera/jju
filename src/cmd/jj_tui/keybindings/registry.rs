@@ -1,5 +1,6 @@
+use super::catalog;
 use super::config::{self, BindingOverride};
-use super::{Binding, BindingSpec, KeyPattern, ModeId, bindings as builtin_bindings};
+use super::{Binding, BindingSpec, KeyPattern, ModeId};
 use ahash::{HashMap, HashMapExt};
 use eyre::{Result, eyre};
 use std::path::{Path, PathBuf};
@@ -58,7 +59,7 @@ fn load_registry_with_warning(path: Option<&Path>) -> RegistryLoad {
 }
 
 fn build_registry(path: Option<&Path>) -> Result<Registry> {
-    let mut specs = builtin_bindings::builtin_specs();
+    let mut specs = catalog::command_specs();
     if let Some(path) = path
         && path.exists()
     {
@@ -68,7 +69,7 @@ fn build_registry(path: Option<&Path>) -> Result<Registry> {
 }
 
 fn builtin_registry() -> Registry {
-    match compile_registry(builtin_bindings::builtin_specs()) {
+    match compile_registry(catalog::command_specs()) {
         Ok(registry) => registry,
         Err(error) => panic!("invalid built-in keybindings: {error}"),
     }
@@ -247,7 +248,7 @@ mod tests {
     fn test_override_replaces_builtin_keys_for_command() {
         let path = write_temp_config(
             r#"
-version = 1
+version = 2
 
 [[binding]]
 mode = "normal"
@@ -293,7 +294,7 @@ keys = [["["]]
     fn test_override_rejects_duplicate_keys() {
         let path = write_temp_config(
             r#"
-version = 1
+version = 2
 
 [[binding]]
 mode = "normal"
@@ -312,7 +313,7 @@ keys = [["k"]]
     fn test_invalid_config_falls_back_with_warning() {
         let path = write_temp_config(
             r#"
-version = 1
+version = 2
 
 [[binding]]
 mode = "normal"
@@ -337,7 +338,7 @@ keys = [["x"]]
     fn test_prefix_override_requires_matching_prefix_binding() {
         let path = write_temp_config(
             r#"
-version = 1
+version = 2
 
 [[binding]]
 mode = "normal"
@@ -356,7 +357,7 @@ keys = [["x", "f"]]
     fn test_prefix_override_updates_prefix_title() {
         let path = write_temp_config(
             r#"
-version = 1
+version = 2
 
 [[binding]]
 mode = "normal"
@@ -380,12 +381,12 @@ keys = [["X", "e"]]
 
 [[binding]]
 mode = "normal"
-command = "resolve-divergence"
+command = "resolve_divergence"
 keys = [["X", "r"]]
 
 [[binding]]
 mode = "normal"
-command = "create-pr"
+command = "create_pr"
 keys = [["X", "p"]]
 "#,
         );

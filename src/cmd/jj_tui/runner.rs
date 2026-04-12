@@ -6,6 +6,7 @@
 mod bookmarks;
 mod error;
 mod git;
+mod interactive;
 mod operations;
 mod revision;
 
@@ -60,23 +61,25 @@ impl<'a> RunCtx<'a> {
     fn error(&mut self, text: impl Into<String>) {
         self.set_status(text, MessageKind::Error);
     }
+
+    fn refresh_tree(&mut self) {
+        if let Err(error) = refresh::refresh_tree(self.tree, self.diff_stats_cache) {
+            self.error(format!("Failed to refresh: {error}"));
+        } else {
+            self.result.tree_refreshed = true;
+        }
+    }
 }
 
 /// Execute a list of effects
 pub fn run_effects(
     mut ctx: RunCtx<'_>,
     effects: Vec<Effect>,
-    _terminal: &mut DefaultTerminal,
+    terminal: &mut DefaultTerminal,
 ) -> RunResult {
     for effect in effects {
         match effect {
-            Effect::RefreshTree => {
-                if let Err(error) = refresh::refresh_tree(ctx.tree, ctx.diff_stats_cache) {
-                    ctx.error(format!("Failed to refresh: {error}"));
-                } else {
-                    ctx.result.tree_refreshed = true;
-                }
-            }
+            Effect::RefreshTree => ctx.refresh_tree(),
             Effect::SaveOperationForUndo => {
                 if let Ok(op_id) = crate::cmd::jj_tui::commands::get_current_op_id() {
                     *ctx.last_op = Some(op_id);
@@ -101,6 +104,9 @@ pub fn run_effects(
             Effect::RunBookmarkSet { .. }
             | Effect::RunBookmarkSetBackwards { .. }
             | Effect::RunBookmarkDelete { .. } => bookmarks::handle(&mut ctx, effect),
+            Effect::RunInteractive(operation) => {
+                interactive::handle(&mut ctx, terminal, operation);
+            }
             Effect::SetStatus { text, kind } => ctx.set_status(text, kind),
             Effect::LoadConflictFiles => {}
         }

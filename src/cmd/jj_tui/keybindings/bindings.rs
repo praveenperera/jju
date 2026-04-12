@@ -83,21 +83,21 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         .help("Navigation", "Move cursor up"),
         BindingSpec::new(
             Normal,
-            "working-copy",
+            "working_copy",
             act!(JumpToWorkingCopy),
             vec![single!(KeyDef::Char('@'))],
         )
         .help("Navigation", "Jump to working copy"),
         BindingSpec::new(
             Normal,
-            "page-up",
+            "page_up",
             BindingBehavior::Action(PageUpHalfViewport),
             vec![single!(KeyDef::Ctrl('u'))],
         )
         .help("Navigation", "Page up"),
         BindingSpec::new(
             Normal,
-            "page-down",
+            "page_down",
             BindingBehavior::Action(PageDownHalfViewport),
             vec![single!(KeyDef::Ctrl('d'))],
         )
@@ -216,28 +216,28 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         .help("Selection", "Abandon selected"),
         BindingSpec::new(
             Normal,
-            "rebase-single",
+            "rebase_single",
             act!(EnterRebaseMode(RebaseType::Single)),
             vec![single!(KeyDef::Char('r'))],
         )
         .help("Rebase", "Rebase single (-r)"),
         BindingSpec::new(
             Normal,
-            "rebase-desc",
+            "rebase_desc",
             act!(EnterRebaseMode(RebaseType::WithDescendants)),
             vec![single!(KeyDef::Char('s'))],
         )
         .help("Rebase", "Rebase + descendants (-s)"),
         BindingSpec::new(
             Normal,
-            "trunk-single",
+            "trunk_single",
             act!(EnterConfirmRebaseOntoTrunk(RebaseType::Single)),
             vec![single!(KeyDef::Char('t'))],
         )
         .help("Rebase", "Quick rebase onto trunk"),
         BindingSpec::new(
             Normal,
-            "trunk-desc",
+            "trunk_desc",
             act!(EnterConfirmRebaseOntoTrunk(RebaseType::WithDescendants)),
             vec![single!(KeyDef::Char('T'))],
         )
@@ -253,13 +253,13 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         .help("Bookmarks & Git", "Push current bookmark"),
         BindingSpec::new(
             Normal,
-            "push-all",
+            "push_all",
             act!(GitPushAll),
             vec![single!(KeyDef::Char('P'))],
         ),
         BindingSpec::new(
             Normal,
-            "stack-sync",
+            "stack_sync",
             act!(EnterConfirmStackSync),
             vec![single!(KeyDef::Char('S'))],
         )
@@ -297,7 +297,7 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         .prefix_title("git"),
         BindingSpec::new(
             Normal,
-            "resolve-divergence",
+            "resolve_divergence",
             act!(ResolveDivergence),
             vec![chord!('g', KeyDef::Char('r'))],
         )
@@ -305,7 +305,7 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         .prefix_title("git"),
         BindingSpec::new(
             Normal,
-            "create-pr",
+            "create_pr",
             act!(CreatePR),
             vec![chord!('g', KeyDef::Char('p'))],
         )
@@ -345,7 +345,7 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         .prefix_title("nav"),
         BindingSpec::new(
             Normal,
-            "neighborhood-more",
+            "neighborhood_more",
             act!(ExpandNeighborhood),
             vec![
                 chord!('z', KeyDef::Char('+')),
@@ -356,7 +356,7 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         .prefix_title("nav"),
         BindingSpec::new(
             Normal,
-            "neighborhood-less",
+            "neighborhood_less",
             act!(ShrinkNeighborhood),
             vec![chord!('z', KeyDef::Char('-'))],
         )
@@ -390,7 +390,7 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         ),
         BindingSpec::new(
             Help,
-            "scroll-down",
+            "scroll_down",
             act!(ScrollHelpDown(1)),
             vec![
                 single!(KeyDef::Char('j')),
@@ -399,7 +399,7 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         ),
         BindingSpec::new(
             Help,
-            "scroll-up",
+            "scroll_up",
             act!(ScrollHelpUp(1)),
             vec![
                 single!(KeyDef::Char('k')),
@@ -408,19 +408,19 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         ),
         BindingSpec::new(
             Help,
-            "page-down",
+            "page_down",
             act!(ScrollHelpDown(20)),
             vec![single!(KeyDef::Char('d'))],
         ),
         BindingSpec::new(
             Help,
-            "page-up",
+            "page_up",
             act!(ScrollHelpUp(20)),
             vec![single!(KeyDef::Char('u'))],
         ),
         BindingSpec::new(
             Diff,
-            "scroll-down",
+            "scroll_down",
             act!(ScrollDiffDown(1)),
             vec![
                 single!(KeyDef::Char('j')),
@@ -429,7 +429,7 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         ),
         BindingSpec::new(
             Diff,
-            "scroll-up",
+            "scroll_up",
             act!(ScrollDiffUp(1)),
             vec![
                 single!(KeyDef::Char('k')),
@@ -438,13 +438,13 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         ),
         BindingSpec::new(
             Diff,
-            "page-down",
+            "page_down",
             act!(ScrollDiffDown(20)),
             vec![single!(KeyDef::Char('d'))],
         ),
         BindingSpec::new(
             Diff,
-            "page-up",
+            "page_up",
             act!(ScrollDiffUp(20)),
             vec![single!(KeyDef::Char('u'))],
         ),
@@ -527,7 +527,7 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         ),
         BindingSpec::new(
             Rebase,
-            "dest-down",
+            "dest_down",
             act!(MoveRebaseDestDown),
             vec![
                 single!(KeyDef::Char('j')),
@@ -536,7 +536,7 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         ),
         BindingSpec::new(
             Rebase,
-            "dest-up",
+            "dest_up",
             act!(MoveRebaseDestUp),
             vec![
                 single!(KeyDef::Char('k')),
@@ -563,7 +563,7 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         ),
         BindingSpec::new(
             Squash,
-            "dest-down",
+            "dest_down",
             act!(MoveSquashDestDown),
             vec![
                 single!(KeyDef::Char('j')),
@@ -572,7 +572,7 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         ),
         BindingSpec::new(
             Squash,
-            "dest-up",
+            "dest_up",
             act!(MoveSquashDestUp),
             vec![
                 single!(KeyDef::Char('k')),
@@ -593,7 +593,7 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         ),
         BindingSpec::new(
             MovingBookmark,
-            "dest-down",
+            "dest_down",
             act!(MoveBookmarkDestDown),
             vec![
                 single!(KeyDef::Char('j')),
@@ -602,7 +602,7 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         ),
         BindingSpec::new(
             MovingBookmark,
-            "dest-up",
+            "dest_up",
             act!(MoveBookmarkDestUp),
             vec![
                 single!(KeyDef::Char('k')),

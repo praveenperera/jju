@@ -1,6 +1,7 @@
 use super::selection::current_rev;
 use super::{Action, Effect, MessageKind, ModeState, ReduceCtx};
 use crate::cmd::jj_tui::state::BookmarkSelectAction;
+use jju_core::interactive::InteractiveOperation;
 
 pub(super) fn handle(ctx: &mut ReduceCtx<'_>, action: Action) {
     match action {
@@ -79,7 +80,9 @@ fn edit_description(ctx: &mut ReduceCtx<'_>) {
         return;
     }
 
-    *ctx.pending_operation = Some(super::PendingOperation::EditDescription { rev });
+    ctx.effects.push(Effect::RunInteractive(
+        InteractiveOperation::EditDescription { rev },
+    ));
 }
 
 fn run_simple_refresh(ctx: &mut ReduceCtx<'_>, effect: Effect) {

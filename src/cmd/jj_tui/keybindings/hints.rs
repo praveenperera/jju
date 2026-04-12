@@ -1,3 +1,4 @@
+use super::catalog::command_id as cmd;
 use super::display::{KeyFormat, first_key, first_key_any_pending, join_keys, keys_for_label};
 use super::{DisplayKind, ModeId};
 
@@ -24,65 +25,69 @@ pub fn status_bar_hints(ctx: &StatusHintContext) -> String {
                 join_segments(&[
                     format!(
                         "{}:full",
-                        key_for_hint_any_pending(ModeId::Normal, "neighborhood", KeyFormat::Concat)
+                        key_for_hint_any_pending(
+                            ModeId::Normal,
+                            cmd::NEIGHBORHOOD,
+                            KeyFormat::Concat
+                        )
                     ),
                     format!(
                         "{}/{}:size",
                         key_for_hint_any_pending(
                             ModeId::Normal,
-                            "neighborhood-more",
+                            cmd::NEIGHBORHOOD_MORE,
                             KeyFormat::Concat
                         ),
                         key_for_hint_any_pending(
                             ModeId::Normal,
-                            "neighborhood-less",
+                            cmd::NEIGHBORHOOD_LESS,
                             KeyFormat::Concat
                         )
                     ),
-                    kv(ModeId::Normal, None, "diff", "diff"),
-                    kv(ModeId::Normal, None, "desc", "desc"),
-                    kv(ModeId::Normal, None, "help", "help"),
-                    kv(ModeId::Normal, None, "quit", "quit"),
+                    kv(ModeId::Normal, None, cmd::DIFF, "diff"),
+                    kv(ModeId::Normal, None, cmd::DESC, "desc"),
+                    kv(ModeId::Normal, None, cmd::HELP, "help"),
+                    kv(ModeId::Normal, None, cmd::QUIT, "quit"),
                 ])
             } else if ctx.has_focus {
                 join_segments(&[
-                    kv(ModeId::Normal, None, "zoom", "unfocus"),
-                    kv(ModeId::Normal, None, "full", "toggle-full"),
-                    kv(ModeId::Normal, None, "help", "help"),
-                    kv(ModeId::Normal, None, "quit", "quit"),
+                    kv(ModeId::Normal, None, cmd::ZOOM, "unfocus"),
+                    kv(ModeId::Normal, None, cmd::FULL, "toggle-full"),
+                    kv(ModeId::Normal, None, cmd::HELP, "help"),
+                    kv(ModeId::Normal, None, cmd::QUIT, "quit"),
                 ])
             } else if ctx.current_has_bookmark {
                 join_segments(&[
-                    kv(ModeId::Normal, None, "push", "push"),
-                    kv(ModeId::Normal, None, "stack-sync", "sync"),
-                    kv(ModeId::Normal, None, "bookmark", "bookmark"),
-                    kv(ModeId::Normal, None, "rebase-single", "rebase"),
-                    kv(ModeId::Normal, None, "help", "help"),
-                    kv(ModeId::Normal, None, "quit", "quit"),
+                    kv(ModeId::Normal, None, cmd::PUSH, "push"),
+                    kv(ModeId::Normal, None, cmd::STACK_SYNC, "sync"),
+                    kv(ModeId::Normal, None, cmd::BOOKMARK, "bookmark"),
+                    kv(ModeId::Normal, None, cmd::REBASE_SINGLE, "rebase"),
+                    kv(ModeId::Normal, None, cmd::HELP, "help"),
+                    kv(ModeId::Normal, None, cmd::QUIT, "quit"),
                 ])
             } else {
                 join_segments(&[
                     format!(
                         "{}/{}:rebase",
-                        key_for_hint(ModeId::Normal, None, "rebase-single"),
-                        key_for_hint(ModeId::Normal, None, "rebase-desc")
+                        key_for_hint(ModeId::Normal, None, cmd::REBASE_SINGLE),
+                        key_for_hint(ModeId::Normal, None, cmd::REBASE_DESC)
                     ),
-                    kv(ModeId::Normal, None, "trunk-single", "trunk"),
-                    kv(ModeId::Normal, None, "desc", "desc"),
-                    kv(ModeId::Normal, None, "stack-sync", "sync"),
-                    kv(ModeId::Normal, None, "bookmark", "bookmark"),
-                    kv(ModeId::Normal, None, "git", "git"),
+                    kv(ModeId::Normal, None, cmd::TRUNK_SINGLE, "trunk"),
+                    kv(ModeId::Normal, None, cmd::DESC, "desc"),
+                    kv(ModeId::Normal, None, cmd::STACK_SYNC, "sync"),
+                    kv(ModeId::Normal, None, cmd::BOOKMARK, "bookmark"),
+                    kv(ModeId::Normal, None, cmd::GIT, "git"),
                     kv(ModeId::Normal, None, "nav", "nav"),
-                    kv(ModeId::Normal, None, "help", "help"),
-                    kv(ModeId::Normal, None, "quit", "quit"),
+                    kv(ModeId::Normal, None, cmd::HELP, "help"),
+                    kv(ModeId::Normal, None, cmd::QUIT, "quit"),
                 ])
             }
         }
         ModeId::Help => join_segments(&[
             format!(
                 "{}/{}:scroll",
-                key_for_hint(ModeId::Help, None, "scroll-down"),
-                key_for_hint(ModeId::Help, None, "scroll-up")
+                key_for_hint(ModeId::Help, None, cmd::SCROLL_DOWN),
+                key_for_hint(ModeId::Help, None, cmd::SCROLL_UP)
             ),
             {
                 let keys = keys_for_label(ModeId::Help, None, "close", true, KeyFormat::Space);
@@ -92,18 +97,18 @@ pub fn status_bar_hints(ctx: &StatusHintContext) -> String {
         ModeId::Diff => join_segments(&[
             format!(
                 "{}/{}:scroll",
-                key_for_hint(ModeId::Diff, None, "scroll-down"),
-                key_for_hint(ModeId::Diff, None, "scroll-up")
+                key_for_hint(ModeId::Diff, None, cmd::SCROLL_DOWN),
+                key_for_hint(ModeId::Diff, None, cmd::SCROLL_UP)
             ),
             format!(
                 "{}/{}:page",
-                key_for_hint(ModeId::Diff, None, "page-down"),
-                key_for_hint(ModeId::Diff, None, "page-up")
+                key_for_hint(ModeId::Diff, None, cmd::PAGE_DOWN),
+                key_for_hint(ModeId::Diff, None, cmd::PAGE_UP)
             ),
             format!(
                 "{}/{}:top/bottom",
-                key_for_hint_any_pending(ModeId::Diff, "top", KeyFormat::Concat),
-                key_for_hint_any_pending(ModeId::Diff, "bottom", KeyFormat::Concat)
+                key_for_hint_any_pending(ModeId::Diff, cmd::TOP, KeyFormat::Concat),
+                key_for_hint_any_pending(ModeId::Diff, cmd::BOTTOM, KeyFormat::Concat)
             ),
             {
                 let keys = keys_for_label(ModeId::Diff, None, "close", true, KeyFormat::Space);
@@ -123,11 +128,11 @@ pub fn status_bar_hints(ctx: &StatusHintContext) -> String {
         ModeId::Selecting => join_segments(&[
             format!(
                 "{}/{}:extend",
-                key_for_hint(ModeId::Selecting, None, "down"),
-                key_for_hint(ModeId::Selecting, None, "up")
+                key_for_hint(ModeId::Selecting, None, cmd::DOWN),
+                key_for_hint(ModeId::Selecting, None, cmd::UP)
             ),
-            kv(ModeId::Selecting, None, "abandon", "abandon"),
-            kv(ModeId::Selecting, None, "exit", "exit"),
+            kv(ModeId::Selecting, None, cmd::ABANDON, "abandon"),
+            kv(ModeId::Selecting, None, cmd::EXIT, "exit"),
         ]),
         ModeId::Rebase => {
             let branches_label = if ctx.rebase_allow_branches.unwrap_or(false) {
@@ -138,70 +143,70 @@ pub fn status_bar_hints(ctx: &StatusHintContext) -> String {
             join_segments(&[
                 format!(
                     "{}/{}:dest",
-                    key_for_hint(ModeId::Rebase, None, "dest-down"),
-                    key_for_hint(ModeId::Rebase, None, "dest-up")
+                    key_for_hint(ModeId::Rebase, None, cmd::DEST_DOWN),
+                    key_for_hint(ModeId::Rebase, None, cmd::DEST_UP)
                 ),
-                kv(ModeId::Rebase, None, "branches", branches_label),
-                kv(ModeId::Rebase, None, "run", "run"),
-                kv(ModeId::Rebase, None, "cancel", "cancel"),
+                kv(ModeId::Rebase, None, cmd::BRANCHES, branches_label),
+                kv(ModeId::Rebase, None, cmd::RUN, "run"),
+                kv(ModeId::Rebase, None, cmd::CANCEL, "cancel"),
             ])
         }
         ModeId::Squash => join_segments(&[
             format!(
                 "{}/{}:dest",
-                key_for_hint(ModeId::Squash, None, "dest-down"),
-                key_for_hint(ModeId::Squash, None, "dest-up")
+                key_for_hint(ModeId::Squash, None, cmd::DEST_DOWN),
+                key_for_hint(ModeId::Squash, None, cmd::DEST_UP)
             ),
-            kv(ModeId::Squash, None, "run", "run"),
-            kv(ModeId::Squash, None, "cancel", "cancel"),
+            kv(ModeId::Squash, None, cmd::RUN, "run"),
+            kv(ModeId::Squash, None, cmd::CANCEL, "cancel"),
         ]),
         ModeId::MovingBookmark => join_segments(&[
             format!(
                 "{}/{}:dest",
-                key_for_hint(ModeId::MovingBookmark, None, "dest-down"),
-                key_for_hint(ModeId::MovingBookmark, None, "dest-up")
+                key_for_hint(ModeId::MovingBookmark, None, cmd::DEST_DOWN),
+                key_for_hint(ModeId::MovingBookmark, None, cmd::DEST_UP)
             ),
-            kv(ModeId::MovingBookmark, None, "run", "run"),
-            kv(ModeId::MovingBookmark, None, "cancel", "cancel"),
+            kv(ModeId::MovingBookmark, None, cmd::RUN, "run"),
+            kv(ModeId::MovingBookmark, None, cmd::CANCEL, "cancel"),
         ]),
         ModeId::BookmarkSelect => join_segments(&[
             format!(
                 "{}/{}:navigate",
-                key_for_hint(ModeId::BookmarkSelect, None, "down"),
-                key_for_hint(ModeId::BookmarkSelect, None, "up")
+                key_for_hint(ModeId::BookmarkSelect, None, cmd::DOWN),
+                key_for_hint(ModeId::BookmarkSelect, None, cmd::UP)
             ),
-            kv(ModeId::BookmarkSelect, None, "select", "select"),
-            kv(ModeId::BookmarkSelect, None, "cancel", "cancel"),
+            kv(ModeId::BookmarkSelect, None, cmd::SELECT, "select"),
+            kv(ModeId::BookmarkSelect, None, cmd::CANCEL, "cancel"),
         ]),
         ModeId::BookmarkPicker => join_segments(&[
             "type:filter".to_string(),
             format!(
                 "{}/{}:navigate",
-                key_for_hint(ModeId::BookmarkPicker, None, "up"),
-                key_for_hint(ModeId::BookmarkPicker, None, "down")
+                key_for_hint(ModeId::BookmarkPicker, None, cmd::UP),
+                key_for_hint(ModeId::BookmarkPicker, None, cmd::DOWN)
             ),
-            kv(ModeId::BookmarkPicker, None, "confirm", "select"),
-            kv(ModeId::BookmarkPicker, None, "cancel", "cancel"),
+            kv(ModeId::BookmarkPicker, None, cmd::CONFIRM, "select"),
+            kv(ModeId::BookmarkPicker, None, cmd::CANCEL, "cancel"),
         ]),
         ModeId::PushSelect => join_segments(&[
             format!(
                 "{}/{}:navigate",
-                key_for_hint(ModeId::PushSelect, None, "up"),
-                key_for_hint(ModeId::PushSelect, None, "down")
+                key_for_hint(ModeId::PushSelect, None, cmd::UP),
+                key_for_hint(ModeId::PushSelect, None, cmd::DOWN)
             ),
-            kv(ModeId::PushSelect, None, "toggle", "toggle"),
-            kv(ModeId::PushSelect, None, "all", "all"),
-            kv(ModeId::PushSelect, None, "none", "none"),
-            kv(ModeId::PushSelect, None, "push", "push"),
-            kv(ModeId::PushSelect, None, "cancel", "cancel"),
+            kv(ModeId::PushSelect, None, cmd::TOGGLE, "toggle"),
+            kv(ModeId::PushSelect, None, cmd::ALL, "all"),
+            kv(ModeId::PushSelect, None, cmd::NONE, "none"),
+            kv(ModeId::PushSelect, None, cmd::PUSH, "push"),
+            kv(ModeId::PushSelect, None, cmd::CANCEL, "cancel"),
         ]),
         ModeId::Conflicts => join_segments(&[
             format!(
                 "{}/{}:nav",
-                key_for_hint(ModeId::Conflicts, None, "down"),
-                key_for_hint(ModeId::Conflicts, None, "up")
+                key_for_hint(ModeId::Conflicts, None, cmd::DOWN),
+                key_for_hint(ModeId::Conflicts, None, cmd::UP)
             ),
-            kv(ModeId::Conflicts, None, "resolve", "resolve"),
+            kv(ModeId::Conflicts, None, cmd::RESOLVE, "resolve"),
             {
                 let keys = keys_for_label(ModeId::Conflicts, None, "exit", true, KeyFormat::Space);
                 format!("{}:exit", join_keys(&keys, "/"))

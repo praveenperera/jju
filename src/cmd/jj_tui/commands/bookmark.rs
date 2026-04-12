@@ -1,28 +1,11 @@
-use super::common::run_with_stderr;
-use duct::cmd;
-use eyre::Result;
-
-pub fn set(name: &str, rev: &str) -> Result<()> {
-    run_with_stderr(cmd!("jj", "bookmark", "set", name, "-r", rev))
+pub fn set(name: &str, rev: &str) -> eyre::Result<()> {
+    jju_jj::ops::BookmarkOps.set(name, rev)
 }
 
-pub fn set_allow_backwards(name: &str, rev: &str) -> Result<()> {
-    run_with_stderr(cmd!(
-        "jj",
-        "bookmark",
-        "set",
-        name,
-        "-r",
-        rev,
-        "--allow-backwards"
-    ))
+pub fn set_allow_backwards(name: &str, rev: &str) -> eyre::Result<()> {
+    jju_jj::ops::BookmarkOps.set_allow_backwards(name, rev)
 }
 
-pub fn delete(name: &str) -> Result<()> {
-    run_with_stderr(cmd!("jj", "bookmark", "delete", name))
-}
-
-pub fn track(name: &str) -> Result<()> {
-    let remote_ref = format!("{name}@origin");
-    run_with_stderr(cmd!("jj", "bookmark", "track", &remote_ref))
+pub fn delete(name: &str) -> eyre::Result<()> {
+    jju_jj::ops::BookmarkOps.delete(name)
 }

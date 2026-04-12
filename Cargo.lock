@@ -2015,6 +2015,8 @@ dependencies = [
  "eyre",
  "itertools",
  "jj-lib",
+ "jju-core",
+ "jju-jj",
  "log",
  "pollster",
  "ratatui",
@@ -2026,6 +2028,29 @@ dependencies = [
  "tui-popup",
  "tui-tree-widget",
  "unicode-width",
+]
+
+[[package]]
+name = "jju-core"
+version = "0.1.0"
+dependencies = [
+ "eyre",
+]
+
+[[package]]
+name = "jju-jj"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "chrono",
+ "colored",
+ "duct",
+ "eyre",
+ "itertools",
+ "jj-lib",
+ "jju-core",
+ "log",
+ "regex",
 ]
 
 [[package]]

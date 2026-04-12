@@ -37,9 +37,9 @@ pub(super) fn parse_overrides(text: &str) -> Result<Vec<BindingOverride>> {
     let file: KeybindingsFile =
         toml::from_str(text).map_err(|error| eyre!("failed to parse keybindings TOML: {error}"))?;
 
-    if file.version != 1 {
+    if file.version != 2 {
         bail!(
-            "unsupported keybindings config version {}, expected 1",
+            "unsupported keybindings config version {}, expected 2",
             file.version
         );
     }
@@ -147,7 +147,7 @@ mod tests {
     fn test_parse_single_key_override() {
         let overrides = parse_overrides(
             r#"
-version = 1
+version = 2
 
 [[binding]]
 mode = "normal"
@@ -173,7 +173,7 @@ keys = [["j"], ["Down"]]
     fn test_parse_chord_override() {
         let overrides = parse_overrides(
             r#"
-version = 1
+version = 2
 
 [[binding]]
 mode = "normal"
@@ -193,7 +193,7 @@ keys = [["g", "f"]]
     fn test_parse_rejects_long_sequences() {
         let error = parse_overrides(
             r#"
-version = 1
+version = 2
 
 [[binding]]
 mode = "normal"

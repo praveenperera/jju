@@ -41,7 +41,6 @@ impl JjRepo {
         bookmarks
     }
 
-    /// Get all local bookmark names in the repository
     pub fn all_local_bookmarks(&self) -> Vec<String> {
         self.repo
             .view()
@@ -50,7 +49,6 @@ impl JjRepo {
             .collect()
     }
 
-    /// Get parent commits for a commit
     pub fn parent_commits(&self, commit: &Commit) -> Result<Vec<Commit>> {
         commit
             .parents()
@@ -69,7 +67,6 @@ impl JjRepo {
             .wrap_err_with(|| format!("failed to load commit {commit_id_hex}"))
     }
 
-    /// Check if a commit has conflicts in its tree
     pub fn has_conflict(commit: &Commit) -> bool {
         commit.has_conflict()
     }

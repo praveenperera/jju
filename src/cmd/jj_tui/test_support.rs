@@ -77,7 +77,6 @@ pub(crate) fn make_app_with_tree(tree: TreeState) -> App {
         diff_stats_cache: std::collections::HashMap::new(),
         status_message: None,
         pending_key: None,
-        pending_operation: None,
         last_op: None,
         syntax_set: SyntaxSet::load_defaults_newlines(),
         theme_set: ThemeSet::load_defaults(),

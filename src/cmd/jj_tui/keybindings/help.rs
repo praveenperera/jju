@@ -1,4 +1,4 @@
-use super::ModeId::Normal;
+use super::catalog;
 use super::display::{
     KeyFormat, display_key_pattern, format_binding_key, join_keys, keys_for_label,
 };
@@ -48,14 +48,8 @@ pub fn build_help_view() -> Vec<HelpSectionView> {
             .push(HelpItemView { keys, description });
     }
 
-    let alias_items = [
-        (Normal, None, "down", "Navigation"),
-        (Normal, None, "up", "Navigation"),
-        (Normal, None, "details", "View"),
-    ];
-
-    for (mode, prefix, label, section) in alias_items {
-        let keys = keys_for_label(mode, prefix, label, true, KeyFormat::Space);
+    for (mode, prefix, label, section) in catalog::HELP_ALIAS_ITEMS {
+        let keys = keys_for_label(*mode, *prefix, label, true, KeyFormat::Space);
         if keys.len() > 1 {
             let joined = join_keys(&keys, "/");
             if let Some(items) = sections.get_mut(section) {

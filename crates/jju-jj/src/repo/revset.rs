@@ -13,7 +13,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 impl JjRepo {
-    /// Evaluate a revset string and return matching commits
     pub fn eval_revset(&self, revset_str: &str) -> Result<Vec<Commit>> {
         self.with_revset_context("jj-lib@localhost", |extensions, context| {
             let mut diagnostics = RevsetDiagnostics::new();
@@ -41,7 +40,6 @@ impl JjRepo {
         })
     }
 
-    /// Evaluate a revset and return a single commit (error if 0 or >1 results)
     pub fn eval_revset_single(&self, revset_str: &str) -> Result<Commit> {
         let commits = self.eval_revset(revset_str)?;
         let mut commits = commits.into_iter();
@@ -57,12 +55,10 @@ impl JjRepo {
         }
     }
 
-    /// Get the working copy commit
     pub fn working_copy_commit(&self) -> Result<Commit> {
         self.eval_revset_single("@")
     }
 
-    /// Get the revset aliases map with jj's default aliases
     fn aliases_map(&self) -> revset::RevsetAliasesMap {
         let mut aliases_map = revset::RevsetAliasesMap::new();
 
