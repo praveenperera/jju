@@ -86,6 +86,9 @@ mod tests {
             pending_key: None,
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
+            repo_path: std::env::current_dir().unwrap_or_default(),
+            detail_hydrator: None,
+            detail_generation: 0,
         };
 
         let backend = TestBackend::new(80, 20);
@@ -127,6 +130,9 @@ mod tests {
             pending_key: None,
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
+            repo_path: std::env::current_dir().unwrap_or_default(),
+            detail_hydrator: None,
+            detail_generation: 0,
         };
 
         let plan = pane_plan(&app, false);
@@ -154,6 +160,9 @@ mod tests {
             pending_key: None,
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
+            repo_path: std::env::current_dir().unwrap_or_default(),
+            detail_hydrator: None,
+            detail_generation: 0,
         };
 
         let plan = pane_plan(&app, true);
@@ -176,6 +185,9 @@ mod tests {
             pending_key: None,
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme_set: ThemeSet::load_defaults(),
+            repo_path: std::env::current_dir().unwrap_or_default(),
+            detail_hydrator: None,
+            detail_generation: 0,
         };
 
         let plan = pane_plan(&app, true);

@@ -119,6 +119,28 @@ mod tests {
     }
 
     #[test]
+    fn test_dispatch_nav_neighborhood_chord() {
+        let mode = ModeState::Normal;
+
+        let action = handle_key(
+            &ctx(&mode, Some('z'), 20, false, false),
+            KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE),
+        );
+        assert_eq!(action, Action::ToggleNeighborhood);
+    }
+
+    #[test]
+    fn test_dispatch_nav_neighborhood_more_chord() {
+        let mode = ModeState::Normal;
+
+        let action = handle_key(
+            &ctx(&mode, Some('z'), 20, false, false),
+            KeyEvent::new(KeyCode::Char('='), KeyModifiers::NONE),
+        );
+        assert_eq!(action, Action::ExpandNeighborhood);
+    }
+
+    #[test]
     fn test_dispatch_bookmark_picker_arrows() {
         let state = BookmarkPickerState {
             all_bookmarks: vec![],
@@ -152,6 +174,7 @@ mod tests {
             mode: ModeId::Normal,
             has_selection: false,
             has_focus: false,
+            neighborhood_active: false,
             current_has_bookmark: false,
             rebase_allow_branches: None,
         });
@@ -162,11 +185,32 @@ mod tests {
     }
 
     #[test]
+    fn test_hint_neighborhood_uses_zn_full() {
+        let hints = status_bar_hints(&StatusHintContext {
+            mode: ModeId::Normal,
+            has_selection: false,
+            has_focus: false,
+            neighborhood_active: true,
+            current_has_bookmark: false,
+            rebase_allow_branches: None,
+        });
+        assert!(
+            hints.contains("zn:full"),
+            "expected `zn:full` in hints; got: {hints}"
+        );
+        assert!(
+            hints.contains("z+/z-:size") || hints.contains("z=/z-:size"),
+            "expected neighborhood size hint; got: {hints}"
+        );
+    }
+
+    #[test]
     fn test_hint_bookmark_picker_uses_arrows() {
         let hints = status_bar_hints(&StatusHintContext {
             mode: ModeId::BookmarkPicker,
             has_selection: false,
             has_focus: false,
+            neighborhood_active: false,
             current_has_bookmark: false,
             rebase_allow_branches: None,
         });
@@ -182,6 +226,7 @@ mod tests {
             mode: ModeId::Diff,
             has_selection: false,
             has_focus: false,
+            neighborhood_active: false,
             current_has_bookmark: false,
             rebase_allow_branches: None,
         });

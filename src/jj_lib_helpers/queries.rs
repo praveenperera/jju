@@ -1,41 +1,44 @@
 use super::JjRepo;
-use eyre::{Context, Result};
+use ahash::HashMap;
+use eyre::{Context, Result, bail};
 use itertools::Itertools;
+use jj_lib::backend::CommitId;
 use jj_lib::commit::Commit;
+use jj_lib::object_id::ObjectId;
 use jj_lib::ref_name::{RemoteName, RemoteRefSymbol};
 use jj_lib::repo::Repo;
 
 impl JjRepo {
-    /// Get local bookmarks on a specific commit with divergence status
-    /// A bookmark is diverged if local differs from origin
-    pub fn bookmarks_with_state(&self, commit: &Commit) -> Vec<(String, bool)> {
+    pub fn bookmarks_by_commit_id(&self) -> HashMap<String, Vec<(String, bool)>> {
         let origin = RemoteName::new("origin");
-        self.repo
-            .view()
-            .local_bookmarks()
-            .filter_map(|(name, target)| {
-                let resolved = target.as_resolved().and_then(|target| target.as_ref());
-                if resolved != Some(commit.id()) {
-                    return None;
-                }
+        let mut bookmarks = HashMap::default();
 
-                let symbol = RemoteRefSymbol {
-                    name,
-                    remote: origin,
-                };
-                let is_diverged = self
-                    .repo
-                    .view()
-                    .get_remote_bookmark(symbol)
-                    .target
-                    .as_resolved()
-                    .and_then(|target| target.as_ref())
-                    .map(|remote_id| remote_id != commit.id())
-                    .unwrap_or(false);
+        for (name, target) in self.repo.view().local_bookmarks() {
+            let Some(commit_id) = target.as_resolved().and_then(|target| target.as_ref()) else {
+                continue;
+            };
 
-                Some((name.as_str().to_string(), is_diverged))
-            })
-            .collect()
+            let symbol = RemoteRefSymbol {
+                name,
+                remote: origin,
+            };
+            let is_diverged = self
+                .repo
+                .view()
+                .get_remote_bookmark(symbol)
+                .target
+                .as_resolved()
+                .and_then(|target| target.as_ref())
+                .map(|remote_id| remote_id != commit_id)
+                .unwrap_or(false);
+
+            bookmarks
+                .entry(commit_id.hex())
+                .or_insert_with(Vec::new)
+                .push((name.as_str().to_string(), is_diverged));
+        }
+
+        bookmarks
     }
 
     /// Get all local bookmark names in the repository
@@ -55,60 +58,19 @@ impl JjRepo {
             .wrap_err("failed to get parent commits")
     }
 
+    pub fn commit_by_id_hex(&self, commit_id_hex: &str) -> Result<Commit> {
+        let Some(commit_id) = CommitId::try_from_hex(commit_id_hex) else {
+            bail!("invalid commit id: {commit_id_hex}");
+        };
+
+        self.repo
+            .store()
+            .get_commit(&commit_id)
+            .wrap_err_with(|| format!("failed to load commit {commit_id_hex}"))
+    }
+
     /// Check if a commit has conflicts in its tree
     pub fn has_conflict(commit: &Commit) -> bool {
         commit.has_conflict()
-    }
-
-    /// Check if a commit is divergent (same change_id, multiple visible commits)
-    pub fn is_commit_divergent(&self, commit: &Commit) -> bool {
-        self.repo
-            .resolve_change_id(commit.change_id())
-            .ok()
-            .flatten()
-            .map(|targets| targets.is_divergent())
-            .unwrap_or(false)
-    }
-
-    /// Get all visible commit IDs for a divergent change_id
-    /// Returns empty vec if not divergent (single commit for change_id)
-    pub fn get_divergent_commit_ids(&self, commit: &Commit) -> Vec<jj_lib::backend::CommitId> {
-        let Some(targets) = self
-            .repo
-            .resolve_change_id(commit.change_id())
-            .ok()
-            .flatten()
-        else {
-            return Vec::new();
-        };
-        if targets.is_divergent() {
-            targets
-                .visible_with_offsets()
-                .map(|(_, commit_id)| commit_id.clone())
-                .collect()
-        } else {
-            Vec::new()
-        }
-    }
-
-    /// Get divergent commits for a change_id, sorted by timestamp (newest first)
-    pub fn get_divergent_commits(&self, commit: &Commit) -> Result<Vec<Commit>> {
-        let commit_ids = self.get_divergent_commit_ids(commit);
-        if commit_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut commits: Vec<Commit> = commit_ids
-            .into_iter()
-            .filter_map(|commit_id| self.repo.store().get_commit(&commit_id).ok())
-            .collect();
-
-        commits.sort_by(|left, right| {
-            let left_ts = left.author().timestamp.timestamp.0;
-            let right_ts = right.author().timestamp.timestamp.0;
-            right_ts.cmp(&left_ts)
-        });
-
-        Ok(commits)
     }
 }

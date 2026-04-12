@@ -1,5 +1,7 @@
-use super::JjRepo;
+use super::{CommitDetails, JjRepo};
+use eyre::Result;
 use jj_lib::commit::Commit;
+use jj_lib::id_prefix::IdPrefixIndex;
 
 impl JjRepo {
     /// Get the first line of a commit's description
@@ -48,5 +50,21 @@ impl JjRepo {
             "just now".to_string()
         };
         format!("{relative} ({absolute})")
+    }
+
+    pub fn commit_details_with_index(
+        &self,
+        commit: &Commit,
+        index: &IdPrefixIndex,
+    ) -> Result<CommitDetails> {
+        let (_, unique_commit_prefix_len) = self.commit_id_with_index(index, commit, 7)?;
+
+        Ok(CommitDetails {
+            unique_commit_prefix_len,
+            full_description: commit.description().to_string(),
+            author_name: Self::author_name(commit),
+            author_email: Self::author_email(commit),
+            timestamp: Self::author_timestamp_relative(commit),
+        })
     }
 }

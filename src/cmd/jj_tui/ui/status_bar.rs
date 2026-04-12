@@ -32,6 +32,11 @@ pub(super) fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     let full_indicator = if app.tree.full_mode { " [FULL]" } else { "" };
+    let neighborhood_indicator = app
+        .tree
+        .neighborhood_state()
+        .map(|state| format!(" [NEIGHBORHOOD:{}]", state.level + 1))
+        .unwrap_or_default();
     let split_indicator = if app.split_view { " [SPLIT]" } else { "" };
 
     let focus_indicator = if app.tree.is_focused() {
@@ -74,12 +79,13 @@ pub(super) fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         mode: mode_id,
         has_selection: !app.tree.selected.is_empty(),
         has_focus: app.tree.is_focused(),
+        neighborhood_active: app.tree.is_neighborhood_mode(),
         current_has_bookmark: app.current_has_bookmark(),
         rebase_allow_branches,
     });
 
     let left = format!(
-        " {mode_indicator}{full_indicator}{split_indicator}{focus_indicator}{pending_indicator}{selection_indicator}{current_info}"
+        " {mode_indicator}{full_indicator}{neighborhood_indicator}{split_indicator}{focus_indicator}{pending_indicator}{selection_indicator}{current_info}"
     );
     let right = format!("{hints} ");
 

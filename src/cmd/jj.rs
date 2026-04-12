@@ -10,6 +10,10 @@ use std::ffi::OsString;
 #[derive(Debug, Clone, Parser)]
 #[command(name = "jju", author, version, about, styles = crate::cli::get_styles())]
 pub struct Jj {
+    /// Start the TUI in neighborhood mode centered on the working copy
+    #[arg(short, long)]
+    pub neighborhood: bool,
+
     #[command(subcommand)]
     pub subcommand: Option<JjCmd>,
 }
@@ -88,8 +92,17 @@ pub fn run(args: &[OsString]) -> Result<()> {
 }
 
 pub fn run_with_flags(flags: Jj) -> Result<()> {
+    let neighborhood = flags.neighborhood;
     match flags.subcommand {
-        None => crate::cmd::jj_tui::run(),
+        None => {
+            if neighborhood {
+                crate::cmd::jj_tui::run_with_options(crate::cmd::jj_tui::AppOptions {
+                    start_in_neighborhood: true,
+                })
+            } else {
+                crate::cmd::jj_tui::run()
+            }
+        }
         Some(JjCmd::StackSync { push, force }) => {
             stack_sync::StackSyncCommand::new(push, force).run()
         }
@@ -116,5 +129,38 @@ pub fn run_with_flags(flags: Jj) -> Result<()> {
             dry_run,
         })
         .run(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Jj, JjCmd};
+    use clap::Parser;
+
+    #[test]
+    fn parses_neighborhood_flag_without_subcommand() {
+        let flags = Jj::parse_from(["jju", "--neighborhood"]);
+
+        assert!(flags.neighborhood);
+        assert!(flags.subcommand.is_none());
+    }
+
+    #[test]
+    fn parses_neighborhood_short_flag_without_subcommand() {
+        let flags = Jj::parse_from(["jju", "-n"]);
+
+        assert!(flags.neighborhood);
+        assert!(flags.subcommand.is_none());
+    }
+
+    #[test]
+    fn parses_tree_subcommand_without_neighborhood() {
+        let flags = Jj::parse_from(["jju", "tree", "--full"]);
+
+        assert!(!flags.neighborhood);
+        assert!(matches!(
+            flags.subcommand,
+            Some(JjCmd::Tree { full: true, .. })
+        ));
     }
 }

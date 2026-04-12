@@ -21,6 +21,9 @@ pub enum Action {
 
     // Focus/View
     ToggleFocus,
+    ToggleNeighborhood,
+    ExpandNeighborhood,
+    ShrinkNeighborhood,
     Unfocus,
     ToggleExpanded,
     ToggleFullMode,

@@ -16,6 +16,15 @@ use jj_lib::workspace::{Workspace, default_working_copy_factories};
 use std::path::Path;
 use std::sync::Arc;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CommitDetails {
+    pub unique_commit_prefix_len: usize,
+    pub full_description: String,
+    pub author_name: String,
+    pub author_email: String,
+    pub timestamp: String,
+}
+
 /// Creates a minimal UserSettings for jj operations
 pub fn create_user_settings() -> Result<UserSettings> {
     let config_text = r#"

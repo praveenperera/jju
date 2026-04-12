@@ -242,22 +242,36 @@ fn build_operation_view(
 
 /// Build details for an expanded row
 fn build_row_details(node: &TreeNode, stats: Option<&DiffStats>) -> RowDetails {
-    let author = if node.author_email.is_empty() {
-        node.author_name.clone()
+    let Some(details) = node.details.as_ref() else {
+        let split_at = node.commit_id.len().min(12);
+        let (commit_id_prefix, commit_id_suffix) = node.commit_id.split_at(split_at);
+
+        return RowDetails {
+            commit_id_prefix: commit_id_prefix.to_string(),
+            commit_id_suffix: commit_id_suffix.to_string(),
+            author: "loading...".to_string(),
+            timestamp: "loading...".to_string(),
+            full_description: "loading...".to_string(),
+            diff_stats: stats.cloned(),
+        };
+    };
+
+    let author = if details.author_email.is_empty() {
+        details.author_name.clone()
     } else {
-        format!("{} <{}>", node.author_name, node.author_email)
+        format!("{} <{}>", details.author_name, details.author_email)
     };
 
     let (commit_prefix, commit_suffix) = node
         .commit_id
-        .split_at(node.unique_commit_prefix_len.min(node.commit_id.len()));
+        .split_at(details.unique_commit_prefix_len.min(node.commit_id.len()));
 
     RowDetails {
         commit_id_prefix: commit_prefix.to_string(),
         commit_id_suffix: commit_suffix.to_string(),
         author,
-        timestamp: node.timestamp.clone(),
-        full_description: node.full_description.clone(),
+        timestamp: details.timestamp.clone(),
+        full_description: details.full_description.clone(),
         diff_stats: stats.cloned(),
     }
 }
@@ -331,6 +345,7 @@ fn build_row_vm(args: RowVmArgs<'_>) -> TreeRowVm {
 mod tests {
     use super::*;
     use crate::cmd::jj_tui::test_support::{make_app_with_tree, make_node, make_tree};
+    use crate::jj_lib_helpers::CommitDetails;
 
     #[test]
     fn test_build_normal_view_cursor_tracking() {
@@ -395,5 +410,37 @@ mod tests {
         assert_eq!(dest_vm.role, NodeRole::Destination);
         assert!(matches!(source_vm.marker, Some(Marker::Source)));
         assert!(matches!(dest_vm.marker, Some(Marker::Destination { .. })));
+    }
+
+    #[test]
+    fn test_build_row_details_uses_loading_placeholder_while_pending() {
+        let node = make_node("aaaa", 0);
+
+        let details = build_row_details(&node, None);
+
+        assert_eq!(details.author, "loading...");
+        assert_eq!(details.timestamp, "loading...");
+        assert_eq!(details.full_description, "loading...");
+    }
+
+    #[test]
+    fn test_build_row_details_uses_hydrated_commit_metadata() {
+        let mut node = make_node("aaaa", 0);
+        node.commit_id = "1234567890abcdef".to_string();
+        node.details = Some(CommitDetails {
+            unique_commit_prefix_len: 8,
+            full_description: "full body".to_string(),
+            author_name: "Praveen".to_string(),
+            author_email: "praveen@example.com".to_string(),
+            timestamp: "2 days ago".to_string(),
+        });
+
+        let details = build_row_details(&node, None);
+
+        assert_eq!(details.commit_id_prefix, "12345678");
+        assert_eq!(details.commit_id_suffix, "90abcdef");
+        assert_eq!(details.author, "Praveen <praveen@example.com>");
+        assert_eq!(details.timestamp, "2 days ago");
+        assert_eq!(details.full_description, "full body");
     }
 }

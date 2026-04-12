@@ -45,6 +45,14 @@ cargo install jju
 jju
 ```
 
+Start directly in neighborhood mode:
+
+```bash
+jju -n
+# or
+jju --neighborhood
+```
+
 ## Commands
 
 | Command | Alias | Description |
@@ -67,6 +75,8 @@ jju
 | `@`                 | Jump to working copy            |
 | `Ctrl+u` / `Ctrl+d` | Page up / down                  |
 | `q`                 | Quit                            |
+| `zn`                | Toggle neighborhood mode        |
+| `z+` / `z-`         | Grow / shrink neighborhood      |
 
 ### Actions
 

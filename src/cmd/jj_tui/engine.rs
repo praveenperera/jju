@@ -84,6 +84,9 @@ pub fn reduce(mut ctx: ReduceCtx<'_>, action: Action) -> Vec<Effect> {
         | Action::PageDown(_)
         | Action::CenterCursor(_)
         | Action::ToggleFocus
+        | Action::ToggleNeighborhood
+        | Action::ExpandNeighborhood
+        | Action::ShrinkNeighborhood
         | Action::Unfocus
         | Action::ToggleExpanded
         | Action::ToggleFullMode

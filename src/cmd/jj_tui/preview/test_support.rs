@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::cmd::jj_tui::preview::{DisplaySlot, NodeId};
-use crate::cmd::jj_tui::tree::{TreeNode, TreeState, TreeTopology, VisibleEntry};
+use crate::cmd::jj_tui::tree::{TreeNode, TreeState, TreeTopology, ViewMode, VisibleEntry};
 use ahash::HashSet;
 
 pub(super) fn make_node(change_id: &str, depth: usize) -> TreeNode {
@@ -9,9 +9,7 @@ pub(super) fn make_node(change_id: &str, depth: usize) -> TreeNode {
         change_id: change_id.to_string(),
         unique_prefix_len: 4,
         commit_id: format!("{change_id}000000"),
-        unique_commit_prefix_len: 7,
         description: String::new(),
-        full_description: String::new(),
         bookmarks: vec![],
         is_working_copy: false,
         has_conflicts: false,
@@ -19,9 +17,7 @@ pub(super) fn make_node(change_id: &str, depth: usize) -> TreeNode {
         divergent_versions: vec![],
         parent_ids: vec![],
         depth,
-        author_name: String::new(),
-        author_email: String::new(),
-        timestamp: String::new(),
+        details: None,
     }
 }
 
@@ -43,6 +39,7 @@ pub(super) fn make_tree(nodes: Vec<TreeNode>, full_mode: bool) -> TreeState {
         cursor: 0,
         scroll_offset: 0,
         full_mode,
+        view_mode: ViewMode::Tree,
         expanded_entry: None,
         visible_entries,
         selected: HashSet::default(),

@@ -1,6 +1,6 @@
 use super::app::App;
 use super::state::ModeState;
-use super::tree::{BookmarkInfo, TreeNode, TreeState, TreeTopology, VisibleEntry};
+use super::tree::{BookmarkInfo, TreeNode, TreeState, TreeTopology, ViewMode, VisibleEntry};
 use ahash::HashSet;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -10,9 +10,7 @@ pub(crate) fn make_node(change_id: &str, depth: usize) -> TreeNode {
         change_id: change_id.to_string(),
         unique_prefix_len: 4,
         commit_id: format!("{change_id}000000"),
-        unique_commit_prefix_len: 7,
         description: String::new(),
-        full_description: String::new(),
         bookmarks: vec![],
         is_working_copy: false,
         has_conflicts: false,
@@ -20,9 +18,7 @@ pub(crate) fn make_node(change_id: &str, depth: usize) -> TreeNode {
         divergent_versions: vec![],
         parent_ids: vec![],
         depth,
-        author_name: String::new(),
-        author_email: String::new(),
-        timestamp: String::new(),
+        details: None,
     }
 }
 
@@ -60,6 +56,7 @@ pub(crate) fn make_tree(nodes: Vec<TreeNode>) -> TreeState {
         cursor: 0,
         scroll_offset: 0,
         full_mode: true,
+        view_mode: ViewMode::Tree,
         expanded_entry: None,
         visible_entries,
         selected: HashSet::default(),
@@ -81,5 +78,8 @@ pub(crate) fn make_app_with_tree(tree: TreeState) -> App {
         last_op: None,
         syntax_set: SyntaxSet::load_defaults_newlines(),
         theme_set: ThemeSet::load_defaults(),
+        repo_path: std::env::current_dir().unwrap_or_default(),
+        detail_hydrator: None,
+        detail_generation: 0,
     }
 }

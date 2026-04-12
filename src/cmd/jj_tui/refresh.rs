@@ -1,7 +1,7 @@
 //! Shared tree refresh helpers for jj_tui
 
 use super::state::DiffStats;
-use super::tree::TreeState;
+use super::tree::{NeighborhoodAnchor, NeighborhoodState, TreeState, ViewMode};
 use crate::jj_lib_helpers::JjRepo;
 
 /// Reload the tree while preserving cursor and focus state when possible
@@ -14,6 +14,8 @@ pub fn refresh_tree(
         .current_node()
         .and_then(|n| n.parent_ids.first().cloned());
     let old_cursor = tree.cursor;
+    let old_full_mode = tree.full_mode;
+    let old_view_mode = tree.view_mode.clone();
 
     let focus_stack_change_ids: Vec<String> = tree
         .focus_stack
@@ -23,13 +25,23 @@ pub fn refresh_tree(
 
     let jj_repo = JjRepo::load(None)?;
     *tree = TreeState::load(&jj_repo)?;
+    tree.full_mode = old_full_mode;
     tree.clear_selection();
     diff_stats_cache.clear();
 
-    for change_id in focus_stack_change_ids {
-        if let Some(node_idx) = tree.nodes.iter().position(|n| n.change_id == change_id) {
-            tree.focus_on(node_idx);
+    if matches!(&old_view_mode, ViewMode::Tree) {
+        for change_id in focus_stack_change_ids {
+            if let Some(node_idx) = tree.nodes.iter().position(|n| n.change_id == change_id) {
+                tree.focus_on(node_idx);
+            }
         }
+    } else if let Some((anchor, level)) =
+        refresh_anchor(&old_view_mode, current_change_id.as_deref())
+    {
+        tree.set_view_mode(ViewMode::Neighborhood(NeighborhoodState {
+            anchor: NeighborhoodAnchor::Fixed(anchor),
+            level,
+        }));
     }
 
     let find_visible = |cid: &str| {
@@ -50,5 +62,32 @@ pub fn refresh_tree(
         tree.cursor = old_cursor.min(tree.visible_count().saturating_sub(1));
     }
 
+    if matches!(
+        &old_view_mode,
+        ViewMode::Neighborhood(NeighborhoodState {
+            anchor: NeighborhoodAnchor::FollowCursor,
+            ..
+        })
+    ) {
+        tree.resume_neighborhood_follow_cursor();
+    }
+
     Ok(())
+}
+
+fn refresh_anchor(
+    view_mode: &ViewMode,
+    current_change_id: Option<&str>,
+) -> Option<(String, usize)> {
+    match view_mode {
+        ViewMode::Tree => None,
+        ViewMode::Neighborhood(NeighborhoodState {
+            anchor: NeighborhoodAnchor::FollowCursor,
+            level,
+        }) => current_change_id.map(|change_id| (change_id.to_string(), *level)),
+        ViewMode::Neighborhood(NeighborhoodState {
+            anchor: NeighborhoodAnchor::Fixed(change_id),
+            level,
+        }) => Some((change_id.clone(), *level)),
+    }
 }

@@ -6,6 +6,7 @@ pub struct StatusHintContext {
     pub mode: ModeId,
     pub has_selection: bool,
     pub has_focus: bool,
+    pub neighborhood_active: bool,
     pub current_has_bookmark: bool,
     pub rebase_allow_branches: Option<bool>,
 }
@@ -18,6 +19,30 @@ pub fn status_bar_hints(ctx: &StatusHintContext) -> String {
                     kv(ModeId::Normal, None, "abandon", "abandon"),
                     kv(ModeId::Normal, None, "toggle", "toggle"),
                     kv(ModeId::Normal, None, "esc", "clear"),
+                ])
+            } else if ctx.neighborhood_active {
+                join_segments(&[
+                    format!(
+                        "{}:full",
+                        key_for_hint_any_pending(ModeId::Normal, "neighborhood", KeyFormat::Concat)
+                    ),
+                    format!(
+                        "{}/{}:size",
+                        key_for_hint_any_pending(
+                            ModeId::Normal,
+                            "neighborhood-more",
+                            KeyFormat::Concat
+                        ),
+                        key_for_hint_any_pending(
+                            ModeId::Normal,
+                            "neighborhood-less",
+                            KeyFormat::Concat
+                        )
+                    ),
+                    kv(ModeId::Normal, None, "diff", "diff"),
+                    kv(ModeId::Normal, None, "desc", "desc"),
+                    kv(ModeId::Normal, None, "help", "help"),
+                    kv(ModeId::Normal, None, "quit", "quit"),
                 ])
             } else if ctx.has_focus {
                 join_segments(&[

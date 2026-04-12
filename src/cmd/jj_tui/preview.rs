@@ -104,7 +104,7 @@ fn visible_visual_depths(tree: &TreeState) -> Vec<usize> {
 mod tests {
     use super::test_support::{find_slot, make_node, make_tree, visible_topology};
     use super::*;
-    use crate::cmd::jj_tui::tree::{TreeState, TreeTopology, VisibleEntry};
+    use crate::cmd::jj_tui::tree::{TreeState, TreeTopology, ViewMode, VisibleEntry};
     use ahash::HashSet;
 
     #[test]
@@ -244,6 +244,7 @@ mod tests {
             cursor: 0,
             scroll_offset: 0,
             full_mode: false,
+            view_mode: ViewMode::Tree,
             expanded_entry: None,
             visible_entries,
             selected: HashSet::default(),

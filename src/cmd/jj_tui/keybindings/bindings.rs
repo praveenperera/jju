@@ -337,6 +337,33 @@ pub(super) fn builtin_specs() -> Vec<BindingSpec> {
         .prefix_title("nav"),
         BindingSpec::new(
             Normal,
+            "neighborhood",
+            act!(ToggleNeighborhood),
+            vec![chord!('z', KeyDef::Char('n'))],
+        )
+        .help("Navigation", "Toggle neighborhood mode")
+        .prefix_title("nav"),
+        BindingSpec::new(
+            Normal,
+            "neighborhood-more",
+            act!(ExpandNeighborhood),
+            vec![
+                chord!('z', KeyDef::Char('+')),
+                chord!('z', KeyDef::Char('=')),
+            ],
+        )
+        .help("Navigation", "Show more neighborhood")
+        .prefix_title("nav"),
+        BindingSpec::new(
+            Normal,
+            "neighborhood-less",
+            act!(ShrinkNeighborhood),
+            vec![chord!('z', KeyDef::Char('-'))],
+        )
+        .help("Navigation", "Show less neighborhood")
+        .prefix_title("nav"),
+        BindingSpec::new(
+            Normal,
             "set",
             act!(EnterMoveBookmarkMode),
             vec![chord!('b', KeyDef::Char('m'))],

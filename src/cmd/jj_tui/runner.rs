@@ -21,6 +21,7 @@ use std::time::Duration;
 pub struct RunResult {
     pub status_message: Option<(String, MessageKind)>,
     pub status_duration: Option<Duration>,
+    pub tree_refreshed: bool,
 }
 
 pub struct RunCtx<'a> {
@@ -72,6 +73,8 @@ pub fn run_effects(
             Effect::RefreshTree => {
                 if let Err(error) = refresh::refresh_tree(ctx.tree, ctx.diff_stats_cache) {
                     ctx.error(format!("Failed to refresh: {error}"));
+                } else {
+                    ctx.result.tree_refreshed = true;
                 }
             }
             Effect::SaveOperationForUndo => {

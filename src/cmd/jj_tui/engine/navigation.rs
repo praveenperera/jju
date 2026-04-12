@@ -26,6 +26,17 @@ pub(super) fn handle(ctx: &mut ReduceCtx<'_>, action: Action) {
             }
         }
         Action::ToggleFocus => ctx.tree.toggle_focus(),
+        Action::ToggleNeighborhood => ctx.tree.toggle_neighborhood(),
+        Action::ExpandNeighborhood => {
+            if !ctx.tree.expand_neighborhood() {
+                ctx.set_status("Neighborhood already at maximum size", MessageKind::Warning);
+            }
+        }
+        Action::ShrinkNeighborhood => {
+            if !ctx.tree.shrink_neighborhood() {
+                ctx.set_status("Neighborhood already at minimum size", MessageKind::Warning);
+            }
+        }
         Action::Unfocus => ctx.tree.unfocus(),
         Action::ToggleExpanded => ctx.tree.toggle_expanded(),
         Action::ToggleFullMode => ctx.tree.toggle_full_mode(),
