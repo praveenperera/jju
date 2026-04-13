@@ -1,4 +1,5 @@
-use super::{Effect, MessageKind, RunCtx, error, operations};
+use super::{Effect, RunCtx, error, operations};
+use crate::cmd::jj_tui::state::MessageKind;
 
 pub(super) fn handle(ctx: &mut RunCtx<'_>, effect: Effect) {
     match effect {

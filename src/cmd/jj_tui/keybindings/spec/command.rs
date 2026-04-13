@@ -1,9 +1,9 @@
+mod compile;
+mod metadata;
+
 use super::KeySequence;
-use crate::cmd::jj_tui::{
-    action::Action,
-    keybindings::{ActionTemplate, Binding, DisplayKind, ModeId},
-};
-use eyre::{Result, eyre};
+use crate::cmd::jj_tui::keybindings::{ActionTemplate, Binding, ModeId};
+use eyre::Result;
 
 #[derive(Debug, Clone)]
 pub enum BindingBehavior {
@@ -71,53 +71,10 @@ impl CommandSpec {
     }
 
     pub(crate) fn compile_bindings(&self) -> Result<Vec<Binding>> {
-        if self.keys.is_empty() {
-            return Err(eyre!(
-                "binding `{}` in mode {:?} must define at least one key",
-                self.label,
-                self.mode
-            ));
-        }
-
-        let mut bindings = Vec::with_capacity(self.keys.len());
-        for (index, key) in self.keys.iter().copied().enumerate() {
-            let (pending_prefix, pattern) = key.compile()?;
-            bindings.push(Binding {
-                mode: self.mode,
-                pending_prefix,
-                key: pattern,
-                action: self.compile_action(key)?,
-                display: if index == 0 {
-                    DisplayKind::Primary
-                } else {
-                    DisplayKind::Alias
-                },
-                label: self.label,
-            });
-        }
-        Ok(bindings)
+        compile::compile_bindings(self)
     }
 
     pub(crate) fn effective_prefix_title(&self) -> Option<&'static str> {
-        match self.behavior {
-            BindingBehavior::PendingPrefix { title } => Some(title),
-            BindingBehavior::Action(_) => self.prefix_title,
-        }
-    }
-
-    fn compile_action(&self, key: KeySequence) -> Result<ActionTemplate> {
-        match &self.behavior {
-            BindingBehavior::Action(template) => Ok(template.clone()),
-            BindingBehavior::PendingPrefix { .. } => key
-                .pending_char()
-                .map(|prefix| ActionTemplate::Fixed(Action::SetPendingKey(prefix)))
-                .ok_or_else(|| {
-                    eyre!(
-                        "pending-prefix binding `{}` in mode {:?} must use plain character keys",
-                        self.label,
-                        self.mode
-                    )
-                }),
-        }
+        metadata::effective_prefix_title(self)
     }
 }
