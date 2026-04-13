@@ -9,6 +9,7 @@ pub enum ActionTemplate {
     CenterCursorViewport,
     BookmarkFilterChar,
     PushSelectFilterChar,
+    ClipboardBranchSelectChar,
     NormalEscConditional,
 }
 
@@ -33,6 +34,9 @@ impl ActionTemplate {
             }
             ActionTemplate::PushSelectFilterChar => {
                 Action::PushSelectFilterChar(captured.unwrap_or(' '))
+            }
+            ActionTemplate::ClipboardBranchSelectChar => {
+                Action::CopyBranchSelection(captured.unwrap_or(' ').to_ascii_lowercase())
             }
             ActionTemplate::NormalEscConditional => {
                 if ctx.has_focus {

@@ -1,6 +1,6 @@
 use super::{
-    BookmarkPickerState, BookmarkSelectState, ConfirmState, ConflictsState, DiffState,
-    MovingBookmarkState, PushSelectState, RebaseState, SquashState,
+    BookmarkPickerState, BookmarkSelectState, ClipboardBranchSelectState, ConfirmState,
+    ConflictsState, DiffState, MovingBookmarkState, PushSelectState, RebaseState, SquashState,
 };
 
 /// Unified mode state - single source of truth for current mode and its associated state
@@ -15,6 +15,7 @@ pub enum ModeState {
     MovingBookmark(MovingBookmarkState),
     BookmarkSelect(BookmarkSelectState),
     BookmarkPicker(BookmarkPickerState),
+    ClipboardBranchSelect(ClipboardBranchSelectState),
     PushSelect(PushSelectState),
     Squashing(SquashState),
     Conflicts(ConflictsState),

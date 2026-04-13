@@ -1,4 +1,5 @@
 mod bookmarks;
+mod clipboard;
 mod common;
 mod confirm;
 mod conflicts;
@@ -10,6 +11,7 @@ use super::super::app::App;
 use super::super::keybindings;
 use super::super::state::ModeState;
 use bookmarks::{render_bookmark_picker, render_bookmark_select, render_push_select};
+use clipboard::render_clipboard_branch_select;
 use confirm::render_confirmation;
 use conflicts::render_conflicts_panel;
 use help::render_help;
@@ -36,6 +38,10 @@ pub(super) fn render_overlays(frame: &mut Frame, app: &App) {
 
     if let ModeState::PushSelect(ref state) = app.mode {
         render_push_select(frame, state);
+    }
+
+    if let ModeState::ClipboardBranchSelect(ref state) = app.mode {
+        render_clipboard_branch_select(frame, state);
     }
 
     if let ModeState::Conflicts(ref state) = app.mode {

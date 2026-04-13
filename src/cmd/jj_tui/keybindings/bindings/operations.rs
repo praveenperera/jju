@@ -1,6 +1,7 @@
 use super::super::ActionTemplate::{BookmarkFilterChar, PushSelectFilterChar};
 use super::super::ModeId::{
-    BookmarkPicker, BookmarkSelect, Conflicts, MovingBookmark, PushSelect, Rebase, Squash,
+    BookmarkPicker, BookmarkSelect, ClipboardBranchSelect, Conflicts, MovingBookmark, PushSelect,
+    Rebase, Squash,
 };
 use super::super::{BindingBehavior, BindingSpec, CommandSpec, KeyDef};
 use super::{fixed, single};
@@ -245,6 +246,18 @@ pub(super) fn commands() -> Vec<CommandSpec> {
             "exit",
             fixed(Action::ExitConflicts),
             vec![single(KeyDef::Char('q')), single(KeyDef::Key(KeyCode::Esc))],
+        ),
+        BindingSpec::new(
+            ClipboardBranchSelect,
+            "cancel",
+            fixed(Action::ExitClipboardMode),
+            vec![single(KeyDef::Char('q')), single(KeyDef::Key(KeyCode::Esc))],
+        ),
+        BindingSpec::new(
+            ClipboardBranchSelect,
+            "type",
+            BindingBehavior::Action(super::super::ActionTemplate::ClipboardBranchSelectChar),
+            vec![single(KeyDef::AnyChar)],
         ),
     ]
 }

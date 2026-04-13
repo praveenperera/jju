@@ -1,5 +1,7 @@
 use super::*;
-use crate::cmd::jj_tui::state::{BookmarkPickerState, BookmarkSelectAction};
+use crate::cmd::jj_tui::state::{
+    BookmarkPickerState, BookmarkSelectAction, ClipboardBranchSelectState,
+};
 use crate::cmd::jj_tui::test_support::{TestNodeKind, make_tree};
 use crate::cmd::jj_tui::tree::{NeighborhoodExtent, TreeLoadScope};
 
@@ -149,6 +151,100 @@ fn test_move_bookmark_picker_pins_current_bookmarks_and_sorts_rest_by_proximity(
             "far".to_string(),
         ]
     );
+}
+
+#[test]
+fn test_copy_branch_single_bookmark() {
+    let tree = make_tree(vec![
+        TestNodeKind::Bookmarked(&["main"]).make_node("rev0", 0),
+    ]);
+    let mut state = TestState::new(tree);
+
+    let effects = state.reduce(Action::CopyBranch);
+
+    assert!(matches!(
+        effects.first(),
+        Some(Effect::CopyToClipboard { value, .. }) if value == "main"
+    ));
+}
+
+#[test]
+fn test_copy_branch_multiple_bookmarks_enters_picker_mode() {
+    let tree = make_tree(vec![
+        TestNodeKind::Bookmarked(&["main", "feature"]).make_node("rev0", 0),
+    ]);
+    let mut state = TestState::new(tree);
+
+    let effects = state.reduce(Action::CopyBranch);
+
+    assert!(effects.is_empty());
+    assert!(matches!(
+        state.mode,
+        ModeState::ClipboardBranchSelect(ClipboardBranchSelectState { ref options, .. })
+            if options.len() == 2 && options[0].key == 'a' && options[1].key == 'b'
+    ));
+}
+
+#[test]
+fn test_copy_branch_selection_copies_and_exits_mode() {
+    let tree = make_tree(vec![
+        TestNodeKind::Bookmarked(&["main", "feature"]).make_node("rev0", 0),
+    ]);
+    let mut state = TestState::new(tree);
+    state.mode = ModeState::ClipboardBranchSelect(ClipboardBranchSelectState {
+        target_rev: "rev0".to_string(),
+        options: vec![
+            crate::cmd::jj_tui::state::ClipboardBranchOption {
+                key: 'a',
+                branch: "main".to_string(),
+            },
+            crate::cmd::jj_tui::state::ClipboardBranchOption {
+                key: 'b',
+                branch: "feature".to_string(),
+            },
+        ],
+    });
+
+    let effects = state.reduce(Action::CopyBranchSelection('b'));
+
+    assert!(matches!(
+        effects.first(),
+        Some(Effect::CopyToClipboard { value, .. }) if value == "feature"
+    ));
+    assert!(matches!(state.mode, ModeState::Normal));
+}
+
+#[test]
+fn test_copy_commit_subject_uses_first_line() {
+    let mut tree = make_tree(vec![TestNodeKind::Plain.make_node("rev0", 0)]);
+    tree.snapshot.nodes[0].description = "subject line".to_string();
+    let mut state = TestState::new(tree);
+
+    let effects = state.reduce(Action::CopyCommitSubject);
+
+    assert!(matches!(
+        effects.first(),
+        Some(Effect::CopyToClipboard { value, .. }) if value == "subject line"
+    ));
+}
+
+#[test]
+fn test_copy_selection_revset_uses_visible_order() {
+    let tree = make_tree(vec![
+        TestNodeKind::Plain.make_node("aaaa", 0),
+        TestNodeKind::Plain.make_node("bbbb", 0),
+        TestNodeKind::Plain.make_node("cccc", 0),
+    ]);
+    let mut state = TestState::new(tree);
+    state.tree.view.selected.insert(2);
+    state.tree.view.selected.insert(0);
+
+    let effects = state.reduce(Action::CopySelectionRevset);
+
+    assert!(matches!(
+        effects.first(),
+        Some(Effect::CopyToClipboard { value, .. }) if value == "aaaa | cccc"
+    ));
 }
 
 #[test]

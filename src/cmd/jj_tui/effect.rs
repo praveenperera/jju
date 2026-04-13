@@ -65,6 +65,14 @@ pub enum Effect {
         bookmark: String,
     },
     RunInteractive(InteractiveOperation),
+    CopyToClipboard {
+        value: String,
+        success: String,
+    },
+    CopyCommitMessageToClipboard {
+        commit_id: String,
+        fallback: String,
+    },
     // UI
     SetStatus {
         text: String,

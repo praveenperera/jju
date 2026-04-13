@@ -26,6 +26,7 @@ pub(super) fn scenario_for_context(ctx: &StatusHintContext) -> HintScenario {
         ModeId::MovingBookmark => HintScenario::MovingBookmark,
         ModeId::BookmarkSelect => HintScenario::BookmarkSelect,
         ModeId::BookmarkPicker => HintScenario::BookmarkPicker,
+        ModeId::ClipboardBranchSelect => HintScenario::ClipboardBranchSelect,
         ModeId::PushSelect => HintScenario::PushSelect,
         ModeId::Conflicts => HintScenario::Conflicts,
     }

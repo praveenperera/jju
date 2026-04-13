@@ -77,6 +77,7 @@ pub(super) fn mode_name(mode: ModeId) -> &'static str {
         ModeId::MovingBookmark => "moving_bookmark",
         ModeId::BookmarkSelect => "bookmark_select",
         ModeId::BookmarkPicker => "bookmark_picker",
+        ModeId::ClipboardBranchSelect => "clipboard_branch_select",
         ModeId::PushSelect => "push_select",
         ModeId::Conflicts => "conflicts",
     }

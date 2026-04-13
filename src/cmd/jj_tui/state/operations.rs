@@ -1,4 +1,5 @@
 mod bookmarks;
+mod clipboard;
 mod confirm;
 mod push_select;
 mod rebase;
@@ -6,6 +7,7 @@ mod rebase;
 pub use bookmarks::{
     BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState, MovingBookmarkState,
 };
+pub use clipboard::{ClipboardBranchOption, ClipboardBranchSelectState};
 pub use confirm::{ConfirmAction, ConfirmState};
 pub use push_select::PushSelectState;
 pub use rebase::{RebaseState, RebaseType};

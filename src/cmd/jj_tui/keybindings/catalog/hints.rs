@@ -58,6 +58,7 @@ pub(crate) enum HintScenario {
     MovingBookmark,
     BookmarkSelect,
     BookmarkPicker,
+    ClipboardBranchSelect,
     PushSelect,
     Conflicts,
 }
@@ -78,6 +79,7 @@ pub(crate) fn hint_specs(scenario: HintScenario) -> &'static [HintSpec] {
         HintScenario::MovingBookmark => operations::MOVING_BOOKMARK_HINTS,
         HintScenario::BookmarkSelect => operations::BOOKMARK_SELECT_HINTS,
         HintScenario::BookmarkPicker => operations::BOOKMARK_PICKER_HINTS,
+        HintScenario::ClipboardBranchSelect => operations::CLIPBOARD_BRANCH_SELECT_HINTS,
         HintScenario::PushSelect => operations::PUSH_SELECT_HINTS,
         HintScenario::Conflicts => operations::CONFLICTS_HINTS,
     }

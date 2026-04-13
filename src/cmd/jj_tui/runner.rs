@@ -4,6 +4,7 @@
 //! It handles terminal restore/init for operations that need the terminal.
 
 mod bookmarks;
+mod clipboard;
 mod context;
 mod dispatch;
 mod error;

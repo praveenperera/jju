@@ -1,3 +1,4 @@
+mod clipboard;
 mod confirm;
 mod conflicts;
 mod diff;
@@ -33,6 +34,8 @@ pub(super) fn handle(ctx: &mut ReduceCtx<'_>, action: Action) {
         Action::ScrollDiffDown(amount) => diff::scroll_down(ctx, amount),
         Action::ScrollDiffTop => diff::scroll_top(ctx),
         Action::ScrollDiffBottom => diff::scroll_bottom(ctx),
+        Action::CopyBranchSelection(key) => clipboard::copy_branch_selection(ctx, key),
+        Action::ExitClipboardMode => *ctx.mode = ModeState::Normal,
         Action::EnterConflicts => {
             *ctx.mode = ModeState::Conflicts(ConflictsState::default());
             ctx.effects.push(Effect::LoadConflictFiles);

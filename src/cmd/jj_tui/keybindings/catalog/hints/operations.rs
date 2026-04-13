@@ -86,6 +86,14 @@ pub(super) const BOOKMARK_PICKER_HINTS: &[HintSpec] = &[
     },
 ];
 
+pub(super) const CLIPBOARD_BRANCH_SELECT_HINTS: &[HintSpec] = &[
+    HintSpec::Literal("a-z:copy"),
+    HintSpec::Command {
+        label: cmd::CANCEL,
+        value: "cancel",
+    },
+];
+
 pub(super) const PUSH_SELECT_HINTS: &[HintSpec] = &[
     HintSpec::CommandPair {
         left: cmd::UP,

@@ -43,6 +43,7 @@ pub mod command_id {
     pub const CANCEL: &str = "cancel";
     pub const BRANCHES: &str = "branches";
     pub const CLOSE: &str = "close";
+    pub const COPY: &str = "copy";
     pub const NAV: &str = "nav";
     pub const NO: &str = "no";
     pub const YES: &str = "yes";

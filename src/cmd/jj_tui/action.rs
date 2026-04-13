@@ -105,6 +105,14 @@ pub enum Action {
     GitImport,
     GitExport,
     CreatePR,
+    CopyBranch,
+    CopyCommitSha,
+    CopyRev,
+    CopyCommitMessage,
+    CopyCommitSubject,
+    CopySelectionRevset,
+    CopyBranchSelection(char),
+    ExitClipboardMode,
 
     // Push select mode
     PushSelectUp,

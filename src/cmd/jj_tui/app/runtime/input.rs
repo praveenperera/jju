@@ -50,6 +50,7 @@ impl App {
                 &mut self.tree,
                 &mut self.diff_stats_cache,
                 &mut self.last_op,
+                &self.repo_path,
             ),
             effects,
             terminal,

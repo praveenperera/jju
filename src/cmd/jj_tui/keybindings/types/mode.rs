@@ -12,6 +12,7 @@ pub enum ModeId {
     MovingBookmark,
     BookmarkSelect,
     BookmarkPicker,
+    ClipboardBranchSelect,
     PushSelect,
     Conflicts,
 }
@@ -28,6 +29,7 @@ pub fn mode_id_from_state(mode: &ModeState) -> ModeId {
         ModeState::MovingBookmark(_) => ModeId::MovingBookmark,
         ModeState::BookmarkSelect(_) => ModeId::BookmarkSelect,
         ModeState::BookmarkPicker(_) => ModeId::BookmarkPicker,
+        ModeState::ClipboardBranchSelect(_) => ModeId::ClipboardBranchSelect,
         ModeState::PushSelect(_) => ModeId::PushSelect,
         ModeState::Conflicts(_) => ModeId::Conflicts,
     }

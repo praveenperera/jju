@@ -1,6 +1,7 @@
 use super::super::refresh;
 use super::super::state::{DiffStats, MessageKind};
 use super::super::tree::TreeState;
+use std::path::Path;
 use std::time::Duration;
 
 /// Result of running effects
@@ -15,6 +16,7 @@ pub struct RunCtx<'a> {
     pub tree: &'a mut TreeState,
     pub diff_stats_cache: &'a mut std::collections::HashMap<String, DiffStats>,
     pub last_op: &'a mut Option<String>,
+    pub repo_path: &'a Path,
     pub result: RunResult,
 }
 
@@ -23,11 +25,13 @@ impl<'a> RunCtx<'a> {
         tree: &'a mut TreeState,
         diff_stats_cache: &'a mut std::collections::HashMap<String, DiffStats>,
         last_op: &'a mut Option<String>,
+        repo_path: &'a Path,
     ) -> Self {
         Self {
             tree,
             diff_stats_cache,
             last_op,
+            repo_path,
             result: RunResult::default(),
         }
     }

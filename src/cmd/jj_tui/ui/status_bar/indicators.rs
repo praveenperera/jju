@@ -21,6 +21,7 @@ pub(super) fn mode_indicator(app: &App) -> &'static str {
         ModeState::MovingBookmark(_) => "MOVE BOOKMARK",
         ModeState::BookmarkSelect(_) => "SELECT BM",
         ModeState::BookmarkPicker(_) => "PICK BM",
+        ModeState::ClipboardBranchSelect(_) => "COPY BRANCH",
         ModeState::PushSelect(_) => "PUSH SELECT",
         ModeState::Squashing(_) => "SQUASH",
         ModeState::Conflicts(_) => "CONFLICTS",

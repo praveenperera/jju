@@ -67,6 +67,7 @@ impl Action {
             | Action::ConflictsDown
             | Action::ConflictsJump
             | Action::StartResolveFromConflicts => ActionDomain::Modes,
+            Action::CopyBranchSelection(_) | Action::ExitClipboardMode => ActionDomain::Modes,
             Action::EnterMoveBookmarkMode
             | Action::EnterBookmarkPicker(_)
             | Action::ExitBookmarkMode
@@ -101,7 +102,13 @@ impl Action {
             | Action::GitImport
             | Action::GitExport
             | Action::ResolveDivergence
-            | Action::CreatePR => ActionDomain::Commands,
+            | Action::CreatePR
+            | Action::CopyBranch
+            | Action::CopyCommitSha
+            | Action::CopyRev
+            | Action::CopyCommitMessage
+            | Action::CopyCommitSubject
+            | Action::CopySelectionRevset => ActionDomain::Commands,
             Action::SetPendingKey(_) | Action::ClearPendingKey | Action::Quit | Action::Noop => {
                 ActionDomain::Lifecycle
             }

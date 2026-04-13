@@ -54,6 +54,7 @@ fn bookmark_picker_state<'a>(
         | ModeState::MovingBookmark(_)
         | ModeState::BookmarkSelect(_)
         | ModeState::PushSelect(_)
+        | ModeState::ClipboardBranchSelect(_)
         | ModeState::Help(_)
         | ModeState::Conflicts(_) => None,
     }

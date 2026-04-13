@@ -2,7 +2,10 @@ use super::*;
 use crate::cmd::jj_tui::{
     action::Action,
     controller::{ControllerContext, handle_key},
-    state::{BookmarkPickerState, BookmarkSelectAction, ConflictsState, ModeState},
+    state::{
+        BookmarkPickerState, BookmarkSelectAction, ClipboardBranchSelectState, ConflictsState,
+        ModeState,
+    },
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -152,6 +155,39 @@ fn test_dispatch_nav_neighborhood_more_chord() {
 }
 
 #[test]
+fn test_dispatch_copy_chord() {
+    let mode = ModeState::Normal;
+
+    let action = handle_key(
+        &ctx(&mode, Some('y'), 20, false, false),
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE),
+    );
+    assert_eq!(action, Action::CopyCommitSha);
+}
+
+#[test]
+fn test_dispatch_copy_selection_chord() {
+    let mode = ModeState::Normal;
+
+    let action = handle_key(
+        &ctx(&mode, Some('y'), 20, false, true),
+        KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE),
+    );
+    assert_eq!(action, Action::CopySelectionRevset);
+}
+
+#[test]
+fn test_dispatch_copy_subject_chord() {
+    let mode = ModeState::Normal;
+
+    let action = handle_key(
+        &ctx(&mode, Some('y'), 20, false, false),
+        KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE),
+    );
+    assert_eq!(action, Action::CopyCommitSubject);
+}
+
+#[test]
 fn test_dispatch_bookmark_picker_arrows() {
     let state = BookmarkPickerState {
         all_bookmarks: vec![],
@@ -177,6 +213,19 @@ fn test_dispatch_conflicts_resolve() {
         KeyEvent::new(KeyCode::Char('R'), KeyModifiers::NONE),
     );
     assert_eq!(action, Action::StartResolveFromConflicts);
+}
+
+#[test]
+fn test_dispatch_clipboard_branch_picker_char() {
+    let mode = ModeState::ClipboardBranchSelect(ClipboardBranchSelectState {
+        target_rev: "aaaa".to_string(),
+        options: vec![],
+    });
+    let action = handle_key(
+        &ctx(&mode, None, 20, false, false),
+        KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT),
+    );
+    assert_eq!(action, Action::CopyBranchSelection('a'));
 }
 
 #[test]

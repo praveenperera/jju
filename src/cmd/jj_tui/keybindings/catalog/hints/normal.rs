@@ -87,6 +87,10 @@ pub(super) const NORMAL_BOOKMARKED_HINTS: &[HintSpec] = &[
         value: "bookmark",
     },
     HintSpec::Command {
+        label: cmd::COPY,
+        value: "copy",
+    },
+    HintSpec::Command {
         label: cmd::REBASE_SINGLE,
         value: "rebase",
     },
@@ -121,6 +125,10 @@ pub(super) const NORMAL_DEFAULT_HINTS: &[HintSpec] = &[
     HintSpec::Command {
         label: cmd::BOOKMARK,
         value: "bookmark",
+    },
+    HintSpec::Command {
+        label: cmd::COPY,
+        value: "copy",
     },
     HintSpec::Command {
         label: cmd::GIT,

@@ -11,6 +11,7 @@ pub use diff::{DiffLine, DiffLineKind, DiffState, DiffStats, StyledSpan};
 pub use message::{MessageKind, StatusMessage};
 pub use mode::{HelpState, ModeState};
 pub use operations::{
-    BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState, ConfirmAction, ConfirmState,
-    ConflictsState, MovingBookmarkState, PushSelectState, RebaseState, RebaseType, SquashState,
+    BookmarkPickerState, BookmarkSelectAction, BookmarkSelectState, ClipboardBranchOption,
+    ClipboardBranchSelectState, ConfirmAction, ConfirmState, ConflictsState, MovingBookmarkState,
+    PushSelectState, RebaseState, RebaseType, SquashState,
 };

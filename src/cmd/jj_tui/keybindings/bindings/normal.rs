@@ -98,6 +98,12 @@ pub(super) fn commands() -> Vec<CommandSpec> {
         ),
         CommandSpec::new(
             Normal,
+            "copy",
+            pending_prefix("copy"),
+            vec![single(KeyDef::Char('y'))],
+        ),
+        CommandSpec::new(
+            Normal,
             "full",
             fixed(Action::ToggleFullMode),
             vec![single(KeyDef::Char('f'))],
@@ -238,6 +244,54 @@ pub(super) fn commands() -> Vec<CommandSpec> {
             fixed(Action::GitPushAll),
             vec![single(KeyDef::Char('P'))],
         ),
+        BindingSpec::new(
+            Normal,
+            "branch",
+            fixed(Action::CopyBranch),
+            vec![chord('y', KeyDef::Char('b'))],
+        )
+        .prefix_title("copy")
+        .help("General", "Copy branch"),
+        BindingSpec::new(
+            Normal,
+            "sha",
+            fixed(Action::CopyCommitSha),
+            vec![chord('y', KeyDef::Char('c'))],
+        )
+        .prefix_title("copy")
+        .help("General", "Copy commit sha"),
+        BindingSpec::new(
+            Normal,
+            "rev",
+            fixed(Action::CopyRev),
+            vec![chord('y', KeyDef::Char('r'))],
+        )
+        .prefix_title("copy")
+        .help("General", "Copy rev"),
+        BindingSpec::new(
+            Normal,
+            "message",
+            fixed(Action::CopyCommitMessage),
+            vec![chord('y', KeyDef::Char('m'))],
+        )
+        .prefix_title("copy")
+        .help("General", "Copy commit message"),
+        BindingSpec::new(
+            Normal,
+            "subject",
+            fixed(Action::CopyCommitSubject),
+            vec![chord('y', KeyDef::Char('s'))],
+        )
+        .prefix_title("copy")
+        .help("General", "Copy commit subject"),
+        BindingSpec::new(
+            Normal,
+            "selection",
+            fixed(Action::CopySelectionRevset),
+            vec![chord('y', KeyDef::Char('x'))],
+        )
+        .prefix_title("copy")
+        .help("General", "Copy selection revset"),
         BindingSpec::new(
             Normal,
             "stack_sync",

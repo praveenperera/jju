@@ -1,5 +1,5 @@
 use super::super::effect::Effect;
-use super::{RunCtx, bookmarks, git, interactive, revision};
+use super::{RunCtx, bookmarks, clipboard, git, interactive, revision};
 use ratatui::DefaultTerminal;
 
 pub(super) fn run_effect(ctx: &mut RunCtx<'_>, effect: Effect, terminal: &mut DefaultTerminal) {
@@ -26,6 +26,9 @@ pub(super) fn run_effect(ctx: &mut RunCtx<'_>, effect: Effect, terminal: &mut De
         | Effect::RunBookmarkSetBackwards { .. }
         | Effect::RunBookmarkDelete { .. } => bookmarks::handle(ctx, effect),
         Effect::RunInteractive(operation) => interactive::handle(ctx, terminal, operation),
+        Effect::CopyToClipboard { .. } | Effect::CopyCommitMessageToClipboard { .. } => {
+            clipboard::handle(ctx, effect)
+        }
         Effect::SetStatus { text, kind } => ctx.set_status(text, kind),
         Effect::LoadConflictFiles => {}
     }
