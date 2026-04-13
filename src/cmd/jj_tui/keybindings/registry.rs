@@ -1,11 +1,9 @@
 mod build;
-mod describe;
 #[cfg(test)]
 mod tests;
 
 use super::{Binding, CommandSpec, KeyPattern, ModeId};
 use ahash::HashMap;
-use build::load_registry_with_warning;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -46,11 +44,42 @@ pub fn is_known_prefix(prefix: char) -> bool {
 }
 
 pub(super) fn describe_binding_key(pending: Option<char>, key: KeyPattern) -> String {
-    describe::describe_binding_key(pending, key)
+    match (pending, key) {
+        (
+            Some(prefix),
+            KeyPattern::Exact {
+                code,
+                required_mods,
+            },
+        ) => {
+            format!("{prefix} {}", describe_key(code, required_mods))
+        }
+        (
+            None,
+            KeyPattern::Exact {
+                code,
+                required_mods,
+            },
+        ) => describe_key(code, required_mods),
+        (_, KeyPattern::AnyChar) => "AnyChar".to_string(),
+    }
 }
 
 pub(super) fn mode_name(mode: ModeId) -> &'static str {
-    describe::mode_name(mode)
+    match mode {
+        ModeId::Normal => "normal",
+        ModeId::Help => "help",
+        ModeId::Diff => "diff",
+        ModeId::Confirm => "confirm",
+        ModeId::Selecting => "selecting",
+        ModeId::Rebase => "rebase",
+        ModeId::Squash => "squash",
+        ModeId::MovingBookmark => "moving_bookmark",
+        ModeId::BookmarkSelect => "bookmark_select",
+        ModeId::BookmarkPicker => "bookmark_picker",
+        ModeId::PushSelect => "push_select",
+        ModeId::Conflicts => "conflicts",
+    }
 }
 
 pub(crate) fn warning_duration() -> Duration {
@@ -73,4 +102,25 @@ fn config_path() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .map(|home| home.join(".config/jju/keybindings.toml"))
+}
+
+fn load_registry_with_warning(path: Option<&std::path::Path>) -> RegistryLoad {
+    build::load_registry_with_warning(path)
+}
+
+fn describe_key(
+    code: ratatui::crossterm::event::KeyCode,
+    mods: ratatui::crossterm::event::KeyModifiers,
+) -> String {
+    if mods.contains(ratatui::crossterm::event::KeyModifiers::CONTROL)
+        && let ratatui::crossterm::event::KeyCode::Char(ch) = code
+    {
+        return format!("Ctrl+{ch}");
+    }
+
+    match code {
+        ratatui::crossterm::event::KeyCode::Char(' ') => "Space".to_string(),
+        ratatui::crossterm::event::KeyCode::Char(ch) => ch.to_string(),
+        other => format!("{other:?}"),
+    }
 }
