@@ -1,5 +1,6 @@
 use super::super::ActionTemplate::{
-    CenterCursorViewport, NormalEscConditional, PageDownHalfViewport, PageUpHalfViewport,
+    CenterCursorViewport, NormalEnterConditional, NormalEscConditional, PageDownHalfViewport,
+    PageUpHalfViewport,
 };
 use super::super::ModeId::Normal;
 use super::super::{BindingBehavior, BindingSpec, CommandSpec, KeyDef};
@@ -105,7 +106,7 @@ pub(super) fn commands() -> Vec<CommandSpec> {
         CommandSpec::new(
             Normal,
             "zoom",
-            fixed(Action::ToggleFocus),
+            BindingBehavior::Action(NormalEnterConditional),
             vec![single(KeyDef::Key(KeyCode::Enter))],
         )
         .help("Navigation", "Zoom in/out on node"),

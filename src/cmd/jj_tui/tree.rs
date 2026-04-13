@@ -13,7 +13,7 @@ use eyre::Result;
 pub use projection::TreeProjection;
 pub use topology::TreeTopology;
 pub use types::{
-    BookmarkInfo, DivergentVersion, NeighborhoodAnchor, NeighborhoodState, TreeLoadScope, TreeNode,
+    BookmarkInfo, DivergentVersion, NeighborhoodEntry, NeighborhoodState, TreeLoadScope, TreeNode,
     TreeSnapshot, TreeState, TreeViewState, ViewMode, VisibleEntry,
 };
 

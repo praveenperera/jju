@@ -27,8 +27,7 @@ impl TreeProjection {
                     neighborhood_state(&view.view_mode).map(|state| NeighborhoodFilter {
                         anchor_index,
                         ancestor_limit: state.ancestor_limit(),
-                        descendant_limit: state.descendant_limit(),
-                        sibling_depth_limit: state.sibling_depth_limit(),
+                        preview_depth_limit: state.preview_depth_limit(),
                     })
                 }),
             },

@@ -1,6 +1,4 @@
-use crate::cmd::jj_tui::tree::{
-    NeighborhoodAnchor, NeighborhoodState, TreeLoadScope, TreeState, ViewMode,
-};
+use crate::cmd::jj_tui::tree::{NeighborhoodState, TreeLoadScope, TreeState, ViewMode};
 
 #[derive(Debug, Clone)]
 pub(super) struct TreeRefreshRemapper {
@@ -41,10 +39,6 @@ impl TreeRefreshRemapper {
         tree.view.full_mode = self.full_mode;
         self.restore_mode(tree);
         self.restore_cursor(tree);
-
-        if self.should_resume_follow_cursor() {
-            tree.resume_neighborhood_follow_cursor();
-        }
     }
 
     fn restore_mode(&self, tree: &mut TreeState) {
@@ -52,7 +46,12 @@ impl TreeRefreshRemapper {
             ViewMode::Tree => self.restore_focus_stack(tree),
             ViewMode::Neighborhood(state) => {
                 tree.set_view_mode(ViewMode::Neighborhood(NeighborhoodState {
-                    anchor: restored_anchor(state, self.current_change_id.as_deref()),
+                    anchor_change_id: restored_anchor_change_id(
+                        tree,
+                        state,
+                        self.current_change_id.as_deref(),
+                    ),
+                    history: restored_history(tree, &state.history),
                     level: state.level,
                 }))
             }
@@ -85,28 +84,28 @@ impl TreeRefreshRemapper {
 
         tree.view.cursor = self.old_cursor.min(tree.visible_count().saturating_sub(1));
     }
+}
 
-    fn should_resume_follow_cursor(&self) -> bool {
-        matches!(
-            &self.view_mode,
-            ViewMode::Neighborhood(NeighborhoodState {
-                anchor: NeighborhoodAnchor::FollowCursor,
-                ..
-            })
-        )
+fn restored_anchor_change_id(
+    tree: &TreeState,
+    state: &NeighborhoodState,
+    current_change_id: Option<&str>,
+) -> String {
+    if find_node_index(tree, &state.anchor_change_id).is_some() {
+        state.anchor_change_id.clone()
+    } else if let Some(change_id) = current_change_id {
+        change_id.to_string()
+    } else {
+        state.anchor_change_id.clone()
     }
 }
 
-fn restored_anchor(
-    state: &NeighborhoodState,
-    current_change_id: Option<&str>,
-) -> NeighborhoodAnchor {
-    match &state.anchor {
-        NeighborhoodAnchor::FollowCursor => current_change_id
-            .map(|change_id| NeighborhoodAnchor::Fixed(change_id.to_string()))
-            .unwrap_or(NeighborhoodAnchor::FollowCursor),
-        NeighborhoodAnchor::Fixed(change_id) => NeighborhoodAnchor::Fixed(change_id.clone()),
-    }
+fn restored_history(tree: &TreeState, history: &[String]) -> Vec<String> {
+    history
+        .iter()
+        .filter(|change_id| find_node_index(tree, change_id).is_some())
+        .cloned()
+        .collect()
 }
 
 fn find_node_index(tree: &TreeState, change_id: &str) -> Option<usize> {
@@ -125,7 +124,7 @@ fn find_visible_index(tree: &TreeState, change_id: &str) -> Option<usize> {
 mod tests {
     use super::TreeRefreshRemapper;
     use crate::cmd::jj_tui::test_support::{TestNodeKind, make_tree};
-    use crate::cmd::jj_tui::tree::{NeighborhoodAnchor, NeighborhoodState, ViewMode};
+    use crate::cmd::jj_tui::tree::{NeighborhoodState, ViewMode};
 
     #[test]
     fn restore_focus_stack_reapplies_focus_to_matching_change_ids() {
@@ -155,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn restore_neighborhood_follow_cursor_resumes_follow_mode() {
+    fn restore_neighborhood_keeps_anchor_and_history() {
         let mut old_tree = make_tree(vec![
             TestNodeKind::Plain.make_node("a", 0),
             TestNodeKind::Plain.make_node("b", 1),
@@ -163,7 +162,8 @@ mod tests {
         ]);
         old_tree.view.cursor = 1;
         old_tree.set_view_mode(ViewMode::Neighborhood(NeighborhoodState {
-            anchor: NeighborhoodAnchor::FollowCursor,
+            anchor_change_id: "b".to_string(),
+            history: vec!["a".to_string()],
             level: 2,
         }));
         let remapper = TreeRefreshRemapper::capture(&old_tree);
@@ -175,10 +175,13 @@ mod tests {
         ]);
         remapper.restore(&mut refreshed_tree);
 
-        assert!(refreshed_tree.is_neighborhood_following_cursor());
         assert_eq!(
-            refreshed_tree.neighborhood_state().map(|state| state.level),
-            Some(2)
+            refreshed_tree.neighborhood_state().map(|state| (
+                state.anchor_change_id.clone(),
+                state.history.clone(),
+                state.level
+            )),
+            Some(("b".to_string(), vec!["a".to_string()], 2))
         );
         assert_eq!(
             refreshed_tree

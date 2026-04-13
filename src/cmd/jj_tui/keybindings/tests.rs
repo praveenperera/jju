@@ -19,6 +19,9 @@ fn ctx<'a>(
         viewport_height: vh,
         has_focus: focus,
         has_selection: sel,
+        neighborhood_active: false,
+        has_neighborhood_history: false,
+        can_enter_neighborhood_path: false,
     }
 }
 
@@ -69,6 +72,44 @@ fn test_dispatch_normal_esc_conditional() {
         KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
     );
     assert_eq!(c, Action::Noop);
+}
+
+#[test]
+fn test_dispatch_normal_esc_exits_neighborhood_path() {
+    let mode = ModeState::Normal;
+    let action = handle_key(
+        &ControllerContext {
+            mode: &mode,
+            pending_key: None,
+            viewport_height: 20,
+            has_focus: false,
+            has_selection: false,
+            neighborhood_active: true,
+            has_neighborhood_history: true,
+            can_enter_neighborhood_path: false,
+        },
+        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+    );
+    assert_eq!(action, Action::ExitNeighborhoodPath);
+}
+
+#[test]
+fn test_dispatch_enter_opens_neighborhood_preview() {
+    let mode = ModeState::Normal;
+    let action = handle_key(
+        &ControllerContext {
+            mode: &mode,
+            pending_key: None,
+            viewport_height: 20,
+            has_focus: false,
+            has_selection: false,
+            neighborhood_active: true,
+            has_neighborhood_history: false,
+            can_enter_neighborhood_path: true,
+        },
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    );
+    assert_eq!(action, Action::EnterNeighborhoodPath);
 }
 
 #[test]

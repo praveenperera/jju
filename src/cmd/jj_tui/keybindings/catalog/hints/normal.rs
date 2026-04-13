@@ -29,6 +29,14 @@ pub(super) const NORMAL_NEIGHBORHOOD_HINTS: &[HintSpec] = &[
         value: "size",
     },
     HintSpec::Command {
+        label: cmd::ZOOM,
+        value: "open",
+    },
+    HintSpec::Command {
+        label: cmd::ESC,
+        value: "back",
+    },
+    HintSpec::Command {
         label: cmd::DIFF,
         value: "diff",
     },

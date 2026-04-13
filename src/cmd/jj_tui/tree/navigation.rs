@@ -6,20 +6,17 @@ impl TreeState {
         if self.view.cursor > 0 {
             self.view.cursor -= 1;
         }
-        self.sync_neighborhood_to_cursor();
     }
 
     pub fn move_cursor_down(&mut self) {
         if self.view.cursor + 1 < self.visible_count() {
             self.view.cursor += 1;
         }
-        self.sync_neighborhood_to_cursor();
     }
 
     pub fn move_cursor_top(&mut self) {
         self.view.cursor = 0;
         self.view.scroll_offset = 0;
-        self.sync_neighborhood_to_cursor();
     }
 
     pub fn move_cursor_bottom(&mut self) {
@@ -27,14 +24,12 @@ impl TreeState {
         if count > 0 {
             self.view.cursor = count - 1;
         }
-        self.sync_neighborhood_to_cursor();
     }
 
     pub fn jump_to_working_copy(&mut self) {
         for (index, entry) in self.projection.visible_entries.iter().enumerate() {
             if self.snapshot.nodes[entry.node_index].is_working_copy {
                 self.view.cursor = index;
-                self.sync_neighborhood_to_cursor();
                 return;
             }
         }
@@ -114,13 +109,11 @@ impl TreeState {
 
     pub fn page_up(&mut self, amount: usize) {
         self.view.cursor = self.view.cursor.saturating_sub(amount);
-        self.sync_neighborhood_to_cursor();
     }
 
     pub fn page_down(&mut self, amount: usize) {
         let max = self.visible_count().saturating_sub(1);
         self.view.cursor = (self.view.cursor + amount).min(max);
-        self.sync_neighborhood_to_cursor();
     }
 
     pub fn toggle_expanded(&mut self) {

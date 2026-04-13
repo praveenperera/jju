@@ -53,6 +53,8 @@ jju -n
 jju --neighborhood
 ```
 
+Neighborhood mode stays anchored on the selected revision. Move the cursor freely, use `z+` / `z-` to grow or shrink ancestor and preview depth, press `Enter` on a previewed branch to follow it, and use `Esc` to go back.
+
 ## Commands
 
 | Command | Alias | Description |
@@ -69,9 +71,9 @@ jju --neighborhood
 | ------------------- | ------------------------------- |
 | `j` / `↓`           | Move down                       |
 | `k` / `↑`           | Move up                         |
-| `Enter`             | Toggle focus / zoom             |
+| `Enter`             | Toggle focus / open branch preview |
 | `Tab` / `Space`     | Toggle expanded                 |
-| `Esc`               | Back / Cancel / Clear selection |
+| `Esc`               | Back / cancel / clear selection |
 | `@`                 | Jump to working copy            |
 | `Ctrl+u` / `Ctrl+d` | Page up / down                  |
 | `q`                 | Quit                            |

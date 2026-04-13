@@ -143,6 +143,7 @@ impl<'a> OperationViewBuilder<'a> {
                     build_row_details(node, self.app.diff_stats_cache.get(&node.change_id))
                 });
                 let (role, marker) = role_marker(visible_idx, node);
+                let neighborhood = entry.neighborhood.as_ref();
 
                 RowVmBuilder::new(node, entry.visual_depth)
                     .cursor(is_cursor)
@@ -150,6 +151,12 @@ impl<'a> OperationViewBuilder<'a> {
                     .dimmed(is_expanded_mode && !is_cursor && !is_this_expanded)
                     .zoom_root(self.app.tree.view.focus_stack.contains(&entry.node_index))
                     .role(role)
+                    .neighborhood_preview(
+                        neighborhood.map(|entry| entry.is_preview).unwrap_or(false),
+                        neighborhood
+                            .map(|entry| entry.hidden_count)
+                            .unwrap_or_default(),
+                    )
                     .marker(marker)
                     .details(details)
                     .separator_before(entry.has_separator_before)

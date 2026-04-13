@@ -64,9 +64,11 @@ impl App {
             viewport_height,
             has_focus: self.tree.is_focused(),
             has_selection: !self.tree.view.selected.is_empty(),
+            neighborhood_active: self.tree.is_neighborhood_mode(),
+            has_neighborhood_history: self.tree.has_neighborhood_history(),
+            can_enter_neighborhood_path: self.tree.current_entry_is_neighborhood_preview(),
         };
         let action = controller::handle_key(&ctx, key);
-        let old_mode = self.mode.clone();
         let effects = engine::reduce(
             engine::ReduceCtx::new(
                 &mut self.tree,
@@ -98,8 +100,6 @@ impl App {
             self.load_conflict_files();
         }
 
-        self.transition_neighborhood_mode(&old_mode);
-
         if result.tree_refreshed {
             self.start_detail_hydration();
         }
@@ -123,21 +123,6 @@ impl App {
         if files.is_empty() {
             self.set_status("No conflicts in working copy", MessageKind::Success);
             self.mode = ModeState::Normal;
-        }
-    }
-
-    pub(super) fn transition_neighborhood_mode(&mut self, old_mode: &ModeState) {
-        if !self.tree.is_neighborhood_mode() {
-            return;
-        }
-
-        let old_is_normal = matches!(old_mode, ModeState::Normal);
-        let new_is_normal = matches!(self.mode, ModeState::Normal);
-
-        if old_is_normal && !new_is_normal {
-            self.tree.freeze_neighborhood_anchor();
-        } else if !old_is_normal && new_is_normal {
-            self.tree.resume_neighborhood_follow_cursor();
         }
     }
 }

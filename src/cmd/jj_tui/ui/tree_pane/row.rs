@@ -48,6 +48,13 @@ pub(super) fn render_row(vm: &TreeRowVm) -> Line<'static> {
         Style::default().fg(Color::Reset),
     ));
 
+    if vm.is_neighborhood_preview && vm.neighborhood_hidden_count > 0 {
+        spans.push(Span::styled(
+            format!("  [+{} more, Enter]", vm.neighborhood_hidden_count),
+            Style::default().fg(Color::Cyan),
+        ));
+    }
+
     if let Some(marker) = vm.marker.as_ref() {
         spans.push(render_marker(marker));
     }

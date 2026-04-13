@@ -10,8 +10,7 @@ use neighborhood::neighborhood_entries;
 pub(super) struct NeighborhoodFilter {
     pub anchor_index: usize,
     pub ancestor_limit: usize,
-    pub descendant_limit: usize,
-    pub sibling_depth_limit: usize,
+    pub preview_depth_limit: usize,
 }
 
 pub(super) struct VisibleOptions {
@@ -31,8 +30,7 @@ pub(super) fn compute_visible_entries(
             topology,
             neighborhood.anchor_index,
             neighborhood.ancestor_limit,
-            neighborhood.descendant_limit,
-            neighborhood.sibling_depth_limit,
+            neighborhood.preview_depth_limit,
         );
     }
 

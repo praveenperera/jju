@@ -124,16 +124,19 @@ fn test_non_full_mode_with_hidden_nodes() {
             node_index: 0,
             visual_depth: 0,
             has_separator_before: false,
+            neighborhood: None,
         },
         VisibleEntry {
             node_index: 1,
             visual_depth: 1,
             has_separator_before: false,
+            neighborhood: None,
         },
         VisibleEntry {
             node_index: 2,
             visual_depth: 2,
             has_separator_before: false,
+            neighborhood: None,
         },
     ];
     let topology = TreeTopology::from_nodes(&nodes);

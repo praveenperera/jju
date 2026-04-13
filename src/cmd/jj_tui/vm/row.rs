@@ -17,6 +17,8 @@ pub struct TreeRowVm {
     pub change_id_suffix: String,
     pub bookmarks: Vec<BookmarkInfo>,
     pub description: String,
+    pub is_neighborhood_preview: bool,
+    pub neighborhood_hidden_count: usize,
     pub marker: Option<Marker>,
     pub details: Option<RowDetails>,
     pub height: usize,
@@ -39,6 +41,8 @@ pub(super) struct RowVmBuilder<'a> {
     is_dimmed: bool,
     is_zoom_root: bool,
     role: NodeRole,
+    is_neighborhood_preview: bool,
+    neighborhood_hidden_count: usize,
     marker: Option<Marker>,
     details: Option<RowDetails>,
     has_separator_before: bool,
@@ -54,6 +58,8 @@ impl<'a> RowVmBuilder<'a> {
             is_dimmed: false,
             is_zoom_root: false,
             role: NodeRole::Normal,
+            is_neighborhood_preview: false,
+            neighborhood_hidden_count: 0,
             marker: None,
             details: None,
             has_separator_before: false,
@@ -82,6 +88,12 @@ impl<'a> RowVmBuilder<'a> {
 
     pub(super) fn role(mut self, role: NodeRole) -> Self {
         self.role = role;
+        self
+    }
+
+    pub(super) fn neighborhood_preview(mut self, is_preview: bool, hidden_count: usize) -> Self {
+        self.is_neighborhood_preview = is_preview;
+        self.neighborhood_hidden_count = hidden_count;
         self
     }
 
@@ -129,6 +141,8 @@ impl<'a> RowVmBuilder<'a> {
             change_id_suffix: suffix.to_string(),
             bookmarks: self.node.bookmarks.clone(),
             description,
+            is_neighborhood_preview: self.is_neighborhood_preview,
+            neighborhood_hidden_count: self.neighborhood_hidden_count,
             marker: self.marker,
             height: row_height(self.details.as_ref()),
             details: self.details,

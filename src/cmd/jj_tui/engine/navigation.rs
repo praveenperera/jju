@@ -41,6 +41,16 @@ pub(super) fn handle(ctx: &mut ReduceCtx<'_>, action: Action) {
                 ctx.set_status("Neighborhood already at minimum size", MessageKind::Warning);
             }
         }
+        Action::EnterNeighborhoodPath => {
+            if !ctx.tree.enter_neighborhood_path() {
+                ctx.set_status("No neighborhood path to open", MessageKind::Warning);
+            }
+        }
+        Action::ExitNeighborhoodPath => {
+            if !ctx.tree.exit_neighborhood_path() {
+                ctx.set_status("Already at top neighborhood path", MessageKind::Warning);
+            }
+        }
         Action::Unfocus => ctx.tree.unfocus(),
         Action::ToggleExpanded => ctx.tree.toggle_expanded(),
         Action::ToggleFullMode => ctx.tree.toggle_full_mode(),

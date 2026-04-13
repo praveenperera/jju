@@ -51,6 +51,7 @@ pub(crate) fn make_tree(nodes: Vec<TreeNode>) -> TreeState {
             node_index: index,
             visual_depth: node.depth,
             has_separator_before: false,
+            neighborhood: None,
         })
         .collect();
     let topology = TreeTopology::from_nodes(&nodes);

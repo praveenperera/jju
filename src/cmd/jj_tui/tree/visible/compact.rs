@@ -39,6 +39,7 @@ pub(super) fn full_mode_entries(
                 node_index: *node_index,
                 visual_depth,
                 has_separator_before,
+                neighborhood: None,
             }
         })
         .collect()
@@ -76,6 +77,7 @@ pub(super) fn compact_mode_entries(
             node_index: *node_index,
             visual_depth,
             has_separator_before,
+            neighborhood: None,
         });
     }
 

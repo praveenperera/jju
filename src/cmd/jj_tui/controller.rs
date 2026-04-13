@@ -12,6 +12,9 @@ pub struct ControllerContext<'a> {
     pub viewport_height: usize,
     pub has_focus: bool,
     pub has_selection: bool,
+    pub neighborhood_active: bool,
+    pub has_neighborhood_history: bool,
+    pub can_enter_neighborhood_path: bool,
 }
 
 /// Map a key event to an action based on current mode

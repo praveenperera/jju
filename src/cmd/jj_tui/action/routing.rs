@@ -24,6 +24,8 @@ impl Action {
             | Action::ToggleNeighborhood
             | Action::ExpandNeighborhood
             | Action::ShrinkNeighborhood
+            | Action::EnterNeighborhoodPath
+            | Action::ExitNeighborhoodPath
             | Action::Unfocus
             | Action::ToggleExpanded
             | Action::ToggleFullMode

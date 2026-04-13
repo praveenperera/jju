@@ -14,6 +14,7 @@ pub(super) fn make_tree(nodes: Vec<TreeNode>, full_mode: bool) -> TreeState {
             node_index: i,
             visual_depth: node.depth,
             has_separator_before: false,
+            neighborhood: None,
         })
         .collect();
     let topology = TreeTopology::from_nodes(&nodes);

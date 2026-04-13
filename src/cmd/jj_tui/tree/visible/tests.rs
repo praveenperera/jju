@@ -10,7 +10,7 @@ fn visible_ids(entries: &[VisibleEntry], ids: &[&str]) -> Vec<String> {
 }
 
 #[test]
-fn neighborhood_shows_medium_mainline_window() {
+fn neighborhood_shows_all_revs_down_on_linear_path() {
     let mut nodes = Vec::new();
     let mut ids = Vec::new();
 
@@ -32,29 +32,39 @@ fn neighborhood_shows_medium_mainline_window() {
             neighborhood: Some(NeighborhoodFilter {
                 anchor_index: 4,
                 ancestor_limit: 4,
-                descendant_limit: 2,
-                sibling_depth_limit: 2,
+                preview_depth_limit: 2,
             }),
         },
     );
 
     assert_eq!(
         visible_ids(&entries, &ids),
-        vec!["a", "b", "c", "d", "e", "f", "g"]
+        vec!["a", "b", "c", "d", "e", "f", "g", "h"]
     );
 }
 
 #[test]
-fn neighborhood_includes_direct_forks_only() {
-    let ids = vec!["a", "b", "c", "side1", "side2", "d", "e", "other-root"];
+fn neighborhood_previews_sibling_paths_with_hidden_counts() {
+    let ids = vec![
+        "a",
+        "b",
+        "c",
+        "side1",
+        "side2",
+        "side3",
+        "main1",
+        "main2",
+        "other-root",
+    ];
     let nodes = vec![
         TestNodeKind::Plain.make_node("a", 0),
         TestNodeKind::Plain.make_node("b", 1),
         TestNodeKind::Plain.make_node("c", 2),
         TestNodeKind::Plain.make_node("side1", 3),
         TestNodeKind::Plain.make_node("side2", 4),
-        TestNodeKind::Plain.make_node("d", 3),
-        TestNodeKind::Plain.make_node("e", 4),
+        TestNodeKind::Plain.make_node("side3", 5),
+        TestNodeKind::Plain.make_node("main1", 3),
+        TestNodeKind::Plain.make_node("main2", 4),
         TestNodeKind::Plain.make_node("other-root", 0),
     ];
 
@@ -68,22 +78,25 @@ fn neighborhood_includes_direct_forks_only() {
             neighborhood: Some(NeighborhoodFilter {
                 anchor_index: 2,
                 ancestor_limit: 4,
-                descendant_limit: 2,
-                sibling_depth_limit: 2,
+                preview_depth_limit: 2,
             }),
         },
     );
 
     assert_eq!(
         visible_ids(&entries, &ids),
-        vec!["a", "b", "c", "side1", "side2", "d", "e"]
+        vec!["a", "b", "c", "side1", "side2", "main1", "main2"]
     );
     assert_eq!(entries[3].visual_depth, 3);
     assert_eq!(entries[4].visual_depth, 4);
+
+    let preview = entries[4].neighborhood.as_ref().unwrap();
+    assert!(preview.is_preview);
+    assert_eq!(preview.hidden_count, 1);
 }
 
 #[test]
-fn neighborhood_stops_forward_path_at_fork() {
+fn neighborhood_stops_mainline_at_first_fork_and_previews_all_children() {
     let ids = vec!["a", "b", "c", "left", "right"];
     let nodes = vec![
         TestNodeKind::Plain.make_node("a", 0),
@@ -103,8 +116,7 @@ fn neighborhood_stops_forward_path_at_fork() {
             neighborhood: Some(NeighborhoodFilter {
                 anchor_index: 2,
                 ancestor_limit: 4,
-                descendant_limit: 2,
-                sibling_depth_limit: 2,
+                preview_depth_limit: 2,
             }),
         },
     );
@@ -113,4 +125,6 @@ fn neighborhood_stops_forward_path_at_fork() {
         visible_ids(&entries, &ids),
         vec!["a", "b", "c", "left", "right"]
     );
+    assert!(entries[3].neighborhood.as_ref().unwrap().is_preview);
+    assert!(entries[4].neighborhood.as_ref().unwrap().is_preview);
 }

@@ -28,6 +28,8 @@ pub enum Action {
     ToggleNeighborhood,
     ExpandNeighborhood,
     ShrinkNeighborhood,
+    EnterNeighborhoodPath,
+    ExitNeighborhoodPath,
     Unfocus,
     ToggleExpanded,
     ToggleFullMode,
