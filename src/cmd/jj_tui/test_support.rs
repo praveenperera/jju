@@ -7,37 +7,40 @@ use super::tree::{
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
-pub(crate) fn make_node(change_id: &str, depth: usize) -> TreeNode {
-    TreeNode {
-        change_id: change_id.to_string(),
-        unique_prefix_len: 4,
-        commit_id: format!("{change_id}000000"),
-        description: String::new(),
-        bookmarks: vec![],
-        is_working_copy: false,
-        has_conflicts: false,
-        is_divergent: false,
-        divergent_versions: vec![],
-        parent_ids: vec![],
-        depth,
-        details: None,
-    }
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum TestNodeKind<'a> {
+    Plain,
+    Bookmarked(&'a [&'a str]),
 }
 
-pub(crate) fn make_node_with_bookmarks(
-    change_id: &str,
-    depth: usize,
-    bookmarks: &[&str],
-) -> TreeNode {
-    let mut node = make_node(change_id, depth);
-    node.bookmarks = bookmarks
-        .iter()
-        .map(|&name| BookmarkInfo {
-            name: name.to_string(),
-            is_diverged: false,
-        })
-        .collect();
-    node
+impl TestNodeKind<'_> {
+    pub(crate) fn make_node(self, change_id: &str, depth: usize) -> TreeNode {
+        let bookmarks = match self {
+            Self::Plain => vec![],
+            Self::Bookmarked(bookmarks) => bookmarks
+                .iter()
+                .map(|&name| BookmarkInfo {
+                    name: name.to_string(),
+                    is_diverged: false,
+                })
+                .collect(),
+        };
+
+        TreeNode {
+            change_id: change_id.to_string(),
+            unique_prefix_len: 4,
+            commit_id: format!("{change_id}000000"),
+            description: String::new(),
+            bookmarks,
+            is_working_copy: false,
+            has_conflicts: false,
+            is_divergent: false,
+            divergent_versions: vec![],
+            parent_ids: vec![],
+            depth,
+            details: None,
+        }
+    }
 }
 
 pub(crate) fn make_tree(nodes: Vec<TreeNode>) -> TreeState {

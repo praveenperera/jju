@@ -1,10 +1,14 @@
 //! Action types for jj_tui
 //!
-//! Actions represent user intents - what the user wants to do.
+//! Actions represent user intents - what the user wants to do
 //! The controller maps key events to actions, and the engine
-//! processes actions to produce state changes and effects.
+//! processes actions to produce state changes and effects
+
+mod routing;
 
 use super::state::{BookmarkSelectAction, RebaseType};
+
+pub use routing::ActionDomain;
 
 /// All possible user actions in the TUI
 #[derive(Debug, Clone, PartialEq, Eq)]

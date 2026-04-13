@@ -1,5 +1,7 @@
+use super::CommandSpec;
 use super::bindings;
-use super::{BindingSpec, ModeId};
+
+mod hints;
 
 pub mod command_id {
     pub const ABANDON: &str = "abandon";
@@ -10,6 +12,7 @@ pub mod command_id {
     pub const DEST_UP: &str = "dest_up";
     pub const DIFF: &str = "diff";
     pub const DOWN: &str = "down";
+    pub const ESC: &str = "esc";
     pub const EXIT: &str = "exit";
     pub const FULL: &str = "full";
     pub const GIT: &str = "git";
@@ -39,14 +42,14 @@ pub mod command_id {
     pub const CONFIRM: &str = "confirm";
     pub const CANCEL: &str = "cancel";
     pub const BRANCHES: &str = "branches";
+    pub const CLOSE: &str = "close";
+    pub const NAV: &str = "nav";
+    pub const NO: &str = "no";
+    pub const YES: &str = "yes";
 }
 
-pub fn command_specs() -> Vec<BindingSpec> {
-    bindings::builtin_specs()
+pub fn command_specs() -> Vec<CommandSpec> {
+    bindings::builtin_commands()
 }
 
-pub const HELP_ALIAS_ITEMS: &[(ModeId, Option<char>, &str, &str)] = &[
-    (ModeId::Normal, None, command_id::DOWN, "Navigation"),
-    (ModeId::Normal, None, command_id::UP, "Navigation"),
-    (ModeId::Normal, None, "details", "View"),
-];
+pub(crate) use hints::{DynamicHintValue, HintScenario, HintSpec, hint_specs};

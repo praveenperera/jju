@@ -6,23 +6,6 @@ use crate::cmd::jj_tui::tree::{
     ViewMode, VisibleEntry,
 };
 
-pub(super) fn make_node(change_id: &str, depth: usize) -> TreeNode {
-    TreeNode {
-        change_id: change_id.to_string(),
-        unique_prefix_len: 4,
-        commit_id: format!("{change_id}000000"),
-        description: String::new(),
-        bookmarks: vec![],
-        is_working_copy: false,
-        has_conflicts: false,
-        is_divergent: false,
-        divergent_versions: vec![],
-        parent_ids: vec![],
-        depth,
-        details: None,
-    }
-}
-
 pub(super) fn make_tree(nodes: Vec<TreeNode>, full_mode: bool) -> TreeState {
     let visible_entries: Vec<VisibleEntry> = nodes
         .iter()

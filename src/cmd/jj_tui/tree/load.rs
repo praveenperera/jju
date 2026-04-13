@@ -1,7 +1,13 @@
-use super::{BookmarkInfo, DivergentVersion, JjRepo, TreeLoadScope, TreeNode, TreeState};
-use ahash::{HashMap, HashSet};
+mod divergence;
+mod graph;
+mod identity;
+
+use super::{BookmarkInfo, JjRepo, TreeLoadScope, TreeNode, TreeState};
+use ahash::HashMap;
+use divergence::{build_divergent_commit_ids, divergent_versions_for_commit};
 use eyre::Result;
-use jj_lib::commit::Commit;
+use graph::{build_nodes, ordered_roots};
+use identity::{build_change_id_display_map, parent_ids_for_commit};
 use jj_lib::id_prefix::IdPrefixIndex;
 use jj_lib::object_id::ObjectId;
 use log::info;
@@ -119,22 +125,6 @@ fn revset_for_scope(base: &str, load_scope: TreeLoadScope) -> String {
     }
 }
 
-fn build_change_id_display_map(
-    jj_repo: &JjRepo,
-    prefix_index: &IdPrefixIndex,
-    commits: &[Commit],
-) -> Result<HashMap<String, (String, usize)>> {
-    let mut change_ids = HashMap::default();
-
-    for commit in commits {
-        let full_change_id = commit.change_id().reverse_hex();
-        let display = jj_repo.change_id_with_index(prefix_index, commit, CHANGE_ID_MIN_LEN)?;
-        change_ids.insert(full_change_id, display);
-    }
-
-    Ok(change_ids)
-}
-
 #[cfg(test)]
 mod tests {
     use super::revset_for_scope;
@@ -154,209 +144,5 @@ mod tests {
             revset_for_scope("trunk()", TreeLoadScope::Neighborhood),
             "trunk() | ancestors(immutable_heads()..) | @::"
         );
-    }
-}
-
-fn build_divergent_commit_ids(commits: &[Commit]) -> HashMap<String, Vec<String>> {
-    let mut divergent_by_change = HashMap::<String, Vec<&Commit>>::default();
-
-    for commit in commits {
-        divergent_by_change
-            .entry(commit.change_id().reverse_hex())
-            .or_default()
-            .push(commit);
-    }
-
-    divergent_by_change
-        .into_iter()
-        .filter_map(|(change_id, mut commits)| {
-            if commits.len() < 2 {
-                return None;
-            }
-
-            commits.sort_by(|left, right| {
-                let left_ts = left.author().timestamp.timestamp.0;
-                let right_ts = right.author().timestamp.timestamp.0;
-                right_ts.cmp(&left_ts)
-            });
-
-            Some((
-                change_id,
-                commits
-                    .into_iter()
-                    .map(|commit| commit.id().hex())
-                    .collect::<Vec<_>>(),
-            ))
-        })
-        .collect()
-}
-
-fn divergent_versions_for_commit(
-    divergent_commit_ids: &HashMap<String, Vec<String>>,
-    full_change_id: &str,
-    commit_id: &str,
-    is_working_copy: bool,
-) -> Vec<DivergentVersion> {
-    divergent_commit_ids
-        .get(full_change_id)
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .enumerate()
-        .map(|(index, divergent_commit_id)| DivergentVersion {
-            is_local: index == 0 || (is_working_copy && divergent_commit_id == commit_id),
-            commit_id: divergent_commit_id,
-        })
-        .collect()
-}
-
-fn parent_ids_for_commit(
-    jj_repo: &JjRepo,
-    prefix_index: &IdPrefixIndex,
-    commit: &Commit,
-    change_ids_by_full: &HashMap<String, (String, usize)>,
-    parent_display_cache: &mut HashMap<String, String>,
-) -> Result<Vec<String>> {
-    let parents = jj_repo.parent_commits(commit)?;
-    let mut parent_ids = Vec::with_capacity(parents.len());
-
-    for parent in parents {
-        let full_change_id = parent.change_id().reverse_hex();
-
-        if let Some((display, _)) = change_ids_by_full.get(&full_change_id) {
-            parent_ids.push(display.clone());
-            continue;
-        }
-
-        if let Some(display) = parent_display_cache.get(&full_change_id) {
-            parent_ids.push(display.clone());
-            continue;
-        }
-
-        let (display, _) =
-            jj_repo.change_id_with_index(prefix_index, &parent, CHANGE_ID_MIN_LEN)?;
-        parent_display_cache.insert(full_change_id, display.clone());
-        parent_ids.push(display);
-    }
-
-    Ok(parent_ids)
-}
-
-fn ordered_roots(
-    commit_map: &HashMap<String, TreeNode>,
-    children_map: &HashMap<String, Vec<String>>,
-    working_copy_id: &str,
-    base_id: Option<&str>,
-) -> Vec<String> {
-    let revs_in_set: HashSet<&str> = commit_map.keys().map(String::as_str).collect();
-    let mut roots: Vec<String> = commit_map
-        .values()
-        .filter(|commit| is_root(commit, &revs_in_set, base_id))
-        .map(|commit| commit.change_id.clone())
-        .collect();
-    roots.sort();
-
-    let working_copy_root = roots
-        .iter()
-        .find(|root| subtree_contains(root, working_copy_id, children_map))
-        .cloned();
-    let base_root = base_id.and_then(|id| roots.iter().find(|root| root.as_str() == id).cloned());
-
-    let mut ordered = Vec::with_capacity(roots.len());
-    if let Some(root) = working_copy_root.as_ref() {
-        ordered.push(root.clone());
-    }
-    if let Some(root) = base_root.as_ref()
-        && Some(root) != working_copy_root.as_ref()
-    {
-        ordered.push(root.clone());
-    }
-    for root in roots {
-        if !ordered.contains(&root) {
-            ordered.push(root);
-        }
-    }
-    ordered
-}
-
-fn is_root(commit: &TreeNode, revs_in_set: &HashSet<&str>, base_id: Option<&str>) -> bool {
-    if let Some(base_id) = base_id
-        && commit.change_id == base_id
-    {
-        return true;
-    }
-
-    commit
-        .parent_ids
-        .iter()
-        .all(|parent| !revs_in_set.contains(parent.as_str()))
-}
-
-fn subtree_contains(root: &str, target: &str, children_map: &HashMap<String, Vec<String>>) -> bool {
-    if root == target {
-        return true;
-    }
-
-    let mut stack = vec![root.to_string()];
-    let mut visited = HashSet::default();
-    while let Some(node) = stack.pop() {
-        if !visited.insert(node.clone()) {
-            continue;
-        }
-        if let Some(children) = children_map.get(&node) {
-            for child in children {
-                if child == target {
-                    return true;
-                }
-                stack.push(child.clone());
-            }
-        }
-    }
-    false
-}
-
-fn build_nodes(
-    commit_map: &HashMap<String, TreeNode>,
-    children_map: &HashMap<String, Vec<String>>,
-    roots: &[String],
-) -> Vec<TreeNode> {
-    let mut nodes = Vec::new();
-    let mut visited = HashSet::default();
-
-    for root in roots {
-        traverse(root, commit_map, children_map, &mut nodes, &mut visited, 0);
-    }
-
-    nodes
-}
-
-fn traverse(
-    change_id: &str,
-    commit_map: &HashMap<String, TreeNode>,
-    children_map: &HashMap<String, Vec<String>>,
-    nodes: &mut Vec<TreeNode>,
-    visited: &mut HashSet<String>,
-    depth: usize,
-) {
-    if !visited.insert(change_id.to_string()) {
-        return;
-    }
-
-    let Some(node) = commit_map.get(change_id) else {
-        return;
-    };
-
-    let mut node = node.clone();
-    node.depth = depth;
-    nodes.push(node);
-
-    let Some(children) = children_map.get(change_id) else {
-        return;
-    };
-
-    let mut sorted_children = children.clone();
-    sorted_children.sort();
-    for child in sorted_children {
-        traverse(&child, commit_map, children_map, nodes, visited, depth + 1);
     }
 }

@@ -1,6 +1,6 @@
 use super::super::selection::get_rev_at_cursor;
 use super::super::{Action, Effect, MessageKind, ModeState, ReduceCtx};
-use super::{build_move_bookmark_picker_list, is_bookmark_move_backwards};
+use super::helpers::{build_move_bookmark_picker_list, is_bookmark_move_backwards};
 use crate::cmd::jj_tui::state::{
     BookmarkPickerState, BookmarkSelectAction, ConfirmAction, ConfirmState,
 };

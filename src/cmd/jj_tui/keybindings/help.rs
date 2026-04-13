@@ -1,7 +1,4 @@
-use super::catalog;
-use super::display::{
-    KeyFormat, display_key_pattern, format_binding_key, join_keys, keys_for_label,
-};
+use super::display::{KeyFormat, display_keys_for_command, join_keys};
 
 const HELP_SECTION_ORDER: &[&str] = &[
     "Navigation",
@@ -31,36 +28,33 @@ pub fn build_help_view() -> Vec<HelpSectionView> {
 
     let mut sections: HashMap<&'static str, Vec<HelpItemView>> = HashMap::new();
 
-    for binding in super::bindings() {
-        let Some((section, description)) = binding.help else {
+    for command in super::commands() {
+        let Some(help) = &command.help else {
             continue;
         };
 
-        let keys = if binding.pending_prefix.is_some() {
-            format_binding_key(binding, KeyFormat::Space)
+        let keys = display_keys_for_command(
+            command.mode,
+            command.label,
+            help.include_aliases,
+            KeyFormat::Space,
+        );
+        if keys.is_empty() {
+            continue;
+        }
+        let keys = if help.include_aliases {
+            join_keys(&keys, "/")
         } else {
-            display_key_pattern(&binding.key)
+            keys[0].clone()
         };
 
         sections
-            .entry(section)
+            .entry(help.section)
             .or_default()
-            .push(HelpItemView { keys, description });
-    }
-
-    for (mode, prefix, label, section) in catalog::HELP_ALIAS_ITEMS {
-        let keys = keys_for_label(*mode, *prefix, label, true, KeyFormat::Space);
-        if keys.len() > 1 {
-            let joined = join_keys(&keys, "/");
-            if let Some(items) = sections.get_mut(section) {
-                for item in items.iter_mut() {
-                    if item.keys == keys[0] {
-                        item.keys = joined.clone();
-                        break;
-                    }
-                }
-            }
-        }
+            .push(HelpItemView {
+                keys,
+                description: help.description,
+            });
     }
 
     let mut out = Vec::new();

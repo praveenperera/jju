@@ -1,7 +1,8 @@
 use super::super::app::App;
 use super::super::state::{DiffState, ModeState};
 use super::super::vm::TreeRowVm;
-use super::{Frame, Rect, render_diff, render_diff_pane, render_tree_with_vms};
+use super::{render_diff, render_diff_pane, render_tree_with_vms};
+use ratatui::{Frame, layout::Rect};
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Panes {
