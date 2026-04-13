@@ -2,7 +2,7 @@ mod level;
 mod mode;
 mod path;
 
-use super::{NeighborhoodState, TreeSnapshot, TreeState, TreeViewState, ViewMode};
+use super::{NeighborhoodState, TreeLoadScope, TreeSnapshot, TreeState, TreeViewState, ViewMode};
 
 impl TreeState {
     pub fn is_neighborhood_mode(&self) -> bool {
@@ -35,6 +35,14 @@ impl TreeState {
             ViewMode::Neighborhood(state) => Some(state),
             ViewMode::Tree => None,
         }
+    }
+
+    pub(super) fn sync_neighborhood_load_scope(&mut self) {
+        self.view.load_scope = match self.neighborhood_state() {
+            Some(state) if state.is_full_tree() => TreeLoadScope::Stack,
+            Some(_) => TreeLoadScope::Neighborhood,
+            None => TreeLoadScope::Stack,
+        };
     }
 }
 

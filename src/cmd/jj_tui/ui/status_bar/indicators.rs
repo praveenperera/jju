@@ -38,7 +38,10 @@ pub(super) fn full_indicator(app: &App) -> &'static str {
 pub(super) fn neighborhood_indicator(app: &App) -> String {
     app.tree
         .neighborhood_state()
-        .map(|state| format!(" [NEIGHBORHOOD:{}]", state.level + 1))
+        .map(|state| match state.local_level() {
+            Some(level) => format!(" [NEIGHBORHOOD:{}]", level + 1),
+            None => " [NEIGHBORHOOD:FULL]".to_string(),
+        })
         .unwrap_or_default()
 }
 

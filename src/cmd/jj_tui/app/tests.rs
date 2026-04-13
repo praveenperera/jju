@@ -1,7 +1,9 @@
 use super::startup::apply_startup_options;
 use super::{App, AppOptions};
 use crate::cmd::jj_tui::test_support::{TestNodeKind, make_app_with_tree, make_tree};
-use crate::cmd::jj_tui::tree::TreeLoadScope;
+use crate::cmd::jj_tui::tree::{
+    NeighborhoodExtent, NeighborhoodResize, NeighborhoodState, TreeLoadScope, ViewMode,
+};
 
 fn visible_ids(app: &App) -> Vec<String> {
     app.tree
@@ -89,7 +91,10 @@ fn neighborhood_can_grow_and_shrink_previews() {
         vec!["a", "b", "c", "left1", "left2", "main1", "main2"]
     );
 
-    assert!(app.tree.expand_neighborhood());
+    assert_eq!(
+        app.tree.expand_neighborhood(),
+        NeighborhoodResize::Reprojected
+    );
     assert_eq!(
         visible_ids(&app),
         vec!["a", "b", "c", "left1", "left2", "left3", "main1", "main2"]
@@ -104,8 +109,76 @@ fn neighborhood_can_grow_and_shrink_previews() {
         .map(|entry| entry.hidden_count);
     assert_eq!(left_preview, Some(0));
 
-    assert!(app.tree.shrink_neighborhood());
+    assert_eq!(
+        app.tree.shrink_neighborhood(),
+        NeighborhoodResize::Reprojected
+    );
     assert_eq!(visible_ids(&app), visible_before);
+}
+
+#[test]
+fn neighborhood_expand_reaches_full_tree_extent() {
+    let nodes = (0..40)
+        .map(|depth| TestNodeKind::Plain.make_node(&format!("n{depth:02}"), depth))
+        .collect();
+    let tree = make_tree(nodes);
+    let mut app = make_app_with_tree(tree);
+
+    app.tree.view.cursor = 35;
+    app.tree.enable_neighborhood();
+
+    for _ in 0..6 {
+        assert_eq!(
+            app.tree.expand_neighborhood(),
+            NeighborhoodResize::Reprojected
+        );
+    }
+
+    assert_eq!(
+        app.tree.expand_neighborhood(),
+        NeighborhoodResize::ScopeChanged
+    );
+    assert_eq!(app.tree.view.load_scope, TreeLoadScope::Stack);
+    assert_eq!(
+        app.tree
+            .neighborhood_state()
+            .map(|state| state.extent.clone()),
+        Some(NeighborhoodExtent::FullTree)
+    );
+
+    assert_eq!(
+        app.tree.shrink_neighborhood(),
+        NeighborhoodResize::ScopeChanged
+    );
+    assert_eq!(app.tree.view.load_scope, TreeLoadScope::Neighborhood);
+    assert_eq!(
+        app.tree
+            .neighborhood_state()
+            .map(|state| state.extent.clone()),
+        Some(NeighborhoodExtent::Local(6))
+    );
+}
+
+#[test]
+fn full_tree_neighborhood_matches_tree_projection() {
+    let nodes: Vec<_> = (0..40)
+        .map(|depth| TestNodeKind::Plain.make_node(&format!("n{depth:02}"), depth))
+        .collect();
+    let mut tree = make_tree(nodes.clone());
+    tree.view.cursor = 35;
+
+    let mut tree_mode = make_tree(nodes);
+    tree_mode.view.cursor = 35;
+    let tree_visible = visible_ids(&make_app_with_tree(tree_mode));
+    tree.set_view_mode(ViewMode::Neighborhood(NeighborhoodState {
+        anchor_change_id: "n35".to_string(),
+        history: Vec::new(),
+        extent: NeighborhoodExtent::FullTree,
+    }));
+
+    let app = make_app_with_tree(tree);
+    assert_eq!(visible_ids(&app), tree_visible);
+    assert_eq!(app.tree.view.load_scope, TreeLoadScope::Stack);
 }
 
 #[test]

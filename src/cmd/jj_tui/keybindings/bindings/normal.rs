@@ -330,7 +330,7 @@ pub(super) fn commands() -> Vec<CommandSpec> {
             fixed(Action::ExpandNeighborhood),
             vec![chord('z', KeyDef::Char('+')), chord('z', KeyDef::Char('='))],
         )
-        .help("Navigation", "Show more neighborhood")
+        .help("Navigation", "Zoom neighborhood out")
         .prefix_title("nav"),
         BindingSpec::new(
             Normal,
@@ -338,7 +338,7 @@ pub(super) fn commands() -> Vec<CommandSpec> {
             fixed(Action::ShrinkNeighborhood),
             vec![chord('z', KeyDef::Char('-'))],
         )
-        .help("Navigation", "Show less neighborhood")
+        .help("Navigation", "Zoom neighborhood in")
         .prefix_title("nav"),
         BindingSpec::new(
             Normal,

@@ -24,10 +24,15 @@ impl TreeProjection {
                 full_mode: view.full_mode,
                 focused_root: focused_root_index(view),
                 neighborhood: neighborhood_anchor.and_then(|anchor_index| {
-                    neighborhood_state(&view.view_mode).map(|state| NeighborhoodFilter {
-                        anchor_index,
-                        ancestor_limit: state.ancestor_limit(),
-                        preview_depth_limit: state.preview_depth_limit(),
+                    neighborhood_state(&view.view_mode).and_then(|state| {
+                        let ancestor_limit = state.ancestor_limit()?;
+                        let preview_depth_limit = state.preview_depth_limit()?;
+
+                        Some(NeighborhoodFilter {
+                            anchor_index,
+                            ancestor_limit,
+                            preview_depth_limit,
+                        })
                     })
                 }),
             },

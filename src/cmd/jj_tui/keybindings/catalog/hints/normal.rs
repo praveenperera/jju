@@ -26,7 +26,7 @@ pub(super) const NORMAL_NEIGHBORHOOD_HINTS: &[HintSpec] = &[
         left: cmd::NEIGHBORHOOD_MORE,
         right: cmd::NEIGHBORHOOD_LESS,
         format: KeyFormat::Concat,
-        value: "size",
+        value: "zoom",
     },
     HintSpec::Command {
         label: cmd::ZOOM,

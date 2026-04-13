@@ -210,8 +210,8 @@ fn test_hint_neighborhood_uses_zn_full() {
         "expected `zn:full` in hints; got: {hints}"
     );
     assert!(
-        hints.contains("z+/z-:size") || hints.contains("z=/z-:size"),
-        "expected neighborhood size hint; got: {hints}"
+        hints.contains("z+/z-:zoom") || hints.contains("z=/z-:zoom"),
+        "expected neighborhood zoom hint; got: {hints}"
     );
 }
 

@@ -53,7 +53,7 @@ jju -n
 jju --neighborhood
 ```
 
-Neighborhood mode stays anchored on the selected revision. Move the cursor freely, use `z+` / `z-` to grow or shrink ancestor and preview depth, press `Enter` on a previewed branch to follow it, and use `Esc` to go back.
+Neighborhood mode stays anchored on the selected revision. Move the cursor freely, use `z+` / `z-` to zoom out toward the full tree or back into the anchored neighborhood, press `Enter` on a previewed branch to follow it, and use `Esc` to go back.
 
 ## Commands
 
@@ -78,7 +78,7 @@ Neighborhood mode stays anchored on the selected revision. Move the cursor freel
 | `Ctrl+u` / `Ctrl+d` | Page up / down                  |
 | `q`                 | Quit                            |
 | `zn`                | Toggle neighborhood mode        |
-| `z+` / `z-`         | Grow / shrink neighborhood      |
+| `z+` / `z-`         | Zoom neighborhood out / in      |
 
 ### Actions
 

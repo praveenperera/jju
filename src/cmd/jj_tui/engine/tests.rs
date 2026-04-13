@@ -1,7 +1,7 @@
 use super::*;
 use crate::cmd::jj_tui::state::{BookmarkPickerState, BookmarkSelectAction};
 use crate::cmd::jj_tui::test_support::{TestNodeKind, make_tree};
-use crate::cmd::jj_tui::tree::TreeLoadScope;
+use crate::cmd::jj_tui::tree::{NeighborhoodExtent, TreeLoadScope};
 
 struct TestState {
     tree: TreeState,
@@ -313,6 +313,62 @@ fn test_toggle_neighborhood_switches_scope_and_refreshes() {
 
     assert!(!state.tree.is_neighborhood_mode());
     assert_eq!(state.tree.view.load_scope, TreeLoadScope::Stack);
+    assert_eq!(effects.len(), 1);
+    assert!(matches!(effects[0], Effect::RefreshTree));
+}
+
+#[test]
+fn test_expand_neighborhood_refreshes_when_reaching_full_tree() {
+    let nodes = (0..40)
+        .map(|depth| TestNodeKind::Plain.make_node(&format!("n{depth:02}"), depth))
+        .collect();
+    let mut tree = make_tree(nodes);
+    tree.view.cursor = 35;
+    tree.enable_neighborhood();
+    let mut state = TestState::new(tree);
+
+    for _ in 0..6 {
+        let effects = state.reduce(Action::ExpandNeighborhood);
+        assert!(effects.is_empty());
+    }
+
+    let effects = state.reduce(Action::ExpandNeighborhood);
+
+    assert_eq!(state.tree.view.load_scope, TreeLoadScope::Stack);
+    assert_eq!(
+        state
+            .tree
+            .neighborhood_state()
+            .map(|state| state.extent.clone()),
+        Some(NeighborhoodExtent::FullTree)
+    );
+    assert_eq!(effects.len(), 1);
+    assert!(matches!(effects[0], Effect::RefreshTree));
+}
+
+#[test]
+fn test_shrink_neighborhood_refreshes_when_leaving_full_tree() {
+    let nodes = (0..40)
+        .map(|depth| TestNodeKind::Plain.make_node(&format!("n{depth:02}"), depth))
+        .collect();
+    let mut tree = make_tree(nodes);
+    tree.view.cursor = 35;
+    tree.enable_neighborhood();
+    for _ in 0..7 {
+        let _ = tree.expand_neighborhood();
+    }
+    let mut state = TestState::new(tree);
+
+    let effects = state.reduce(Action::ShrinkNeighborhood);
+
+    assert_eq!(state.tree.view.load_scope, TreeLoadScope::Neighborhood);
+    assert_eq!(
+        state
+            .tree
+            .neighborhood_state()
+            .map(|state| state.extent.clone()),
+        Some(NeighborhoodExtent::Local(6))
+    );
     assert_eq!(effects.len(), 1);
     assert!(matches!(effects[0], Effect::RefreshTree));
 }

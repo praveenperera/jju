@@ -1,5 +1,6 @@
 use super::{Action, Effect, MessageKind, ModeState, ReduceCtx, selection};
 use crate::cmd::jj_tui::state::HelpState;
+use crate::cmd::jj_tui::tree::NeighborhoodResize;
 
 pub(super) fn handle(ctx: &mut ReduceCtx<'_>, action: Action) {
     match action {
@@ -31,16 +32,20 @@ pub(super) fn handle(ctx: &mut ReduceCtx<'_>, action: Action) {
             ctx.tree.toggle_neighborhood();
             ctx.effects.push(Effect::RefreshTree);
         }
-        Action::ExpandNeighborhood => {
-            if !ctx.tree.expand_neighborhood() {
-                ctx.set_status("Neighborhood already at maximum size", MessageKind::Warning);
+        Action::ExpandNeighborhood => match ctx.tree.expand_neighborhood() {
+            NeighborhoodResize::NoChange => {
+                ctx.set_status("Neighborhood already at maximum zoom", MessageKind::Warning);
             }
-        }
-        Action::ShrinkNeighborhood => {
-            if !ctx.tree.shrink_neighborhood() {
-                ctx.set_status("Neighborhood already at minimum size", MessageKind::Warning);
+            NeighborhoodResize::Reprojected => {}
+            NeighborhoodResize::ScopeChanged => ctx.effects.push(Effect::RefreshTree),
+        },
+        Action::ShrinkNeighborhood => match ctx.tree.shrink_neighborhood() {
+            NeighborhoodResize::NoChange => {
+                ctx.set_status("Neighborhood already at minimum zoom", MessageKind::Warning);
             }
-        }
+            NeighborhoodResize::Reprojected => {}
+            NeighborhoodResize::ScopeChanged => ctx.effects.push(Effect::RefreshTree),
+        },
         Action::EnterNeighborhoodPath => {
             if !ctx.tree.enter_neighborhood_path() {
                 ctx.set_status("No neighborhood path to open", MessageKind::Warning);

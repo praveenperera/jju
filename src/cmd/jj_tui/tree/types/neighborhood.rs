@@ -12,10 +12,23 @@ pub struct NeighborhoodEntry {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NeighborhoodExtent {
+    Local(usize),
+    FullTree,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NeighborhoodState {
     pub anchor_change_id: String,
     pub history: Vec<String>,
-    pub level: usize,
+    pub extent: NeighborhoodExtent,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NeighborhoodResize {
+    NoChange,
+    Reprojected,
+    ScopeChanged,
 }
 
 impl NeighborhoodState {
@@ -23,31 +36,57 @@ impl NeighborhoodState {
         Self {
             anchor_change_id,
             history: Vec::new(),
-            level: NEIGHBORHOOD_MIN_LEVEL,
+            extent: NeighborhoodExtent::Local(NEIGHBORHOOD_MIN_LEVEL),
         }
     }
 
-    pub fn ancestor_limit(&self) -> usize {
-        NEIGHBORHOOD_BASE_ANCESTOR_LIMIT + self.level * NEIGHBORHOOD_ANCESTOR_STEP
+    pub fn is_full_tree(&self) -> bool {
+        matches!(self.extent, NeighborhoodExtent::FullTree)
     }
 
-    pub fn preview_depth_limit(&self) -> usize {
-        NEIGHBORHOOD_BASE_PREVIEW_DEPTH_LIMIT + self.level * NEIGHBORHOOD_PREVIEW_DEPTH_STEP
-    }
-
-    pub fn expand(&mut self) -> bool {
-        if self.level >= NEIGHBORHOOD_MAX_LEVEL {
-            return false;
+    pub fn local_level(&self) -> Option<usize> {
+        match self.extent {
+            NeighborhoodExtent::Local(level) => Some(level),
+            NeighborhoodExtent::FullTree => None,
         }
-        self.level += 1;
-        true
     }
 
-    pub fn shrink(&mut self) -> bool {
-        if self.level == NEIGHBORHOOD_MIN_LEVEL {
-            return false;
+    pub fn ancestor_limit(&self) -> Option<usize> {
+        self.local_level()
+            .map(|level| NEIGHBORHOOD_BASE_ANCESTOR_LIMIT + level * NEIGHBORHOOD_ANCESTOR_STEP)
+    }
+
+    pub fn preview_depth_limit(&self) -> Option<usize> {
+        self.local_level().map(|level| {
+            NEIGHBORHOOD_BASE_PREVIEW_DEPTH_LIMIT + level * NEIGHBORHOOD_PREVIEW_DEPTH_STEP
+        })
+    }
+
+    pub fn expand(&mut self) -> NeighborhoodResize {
+        match self.extent {
+            NeighborhoodExtent::Local(level) if level < NEIGHBORHOOD_MAX_LEVEL => {
+                self.extent = NeighborhoodExtent::Local(level + 1);
+                NeighborhoodResize::Reprojected
+            }
+            NeighborhoodExtent::Local(_) => {
+                self.extent = NeighborhoodExtent::FullTree;
+                NeighborhoodResize::ScopeChanged
+            }
+            NeighborhoodExtent::FullTree => NeighborhoodResize::NoChange,
         }
-        self.level -= 1;
-        true
+    }
+
+    pub fn shrink(&mut self) -> NeighborhoodResize {
+        match self.extent {
+            NeighborhoodExtent::FullTree => {
+                self.extent = NeighborhoodExtent::Local(NEIGHBORHOOD_MAX_LEVEL);
+                NeighborhoodResize::ScopeChanged
+            }
+            NeighborhoodExtent::Local(level) if level > NEIGHBORHOOD_MIN_LEVEL => {
+                self.extent = NeighborhoodExtent::Local(level - 1);
+                NeighborhoodResize::Reprojected
+            }
+            NeighborhoodExtent::Local(_) => NeighborhoodResize::NoChange,
+        }
     }
 }

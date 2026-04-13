@@ -1,6 +1,6 @@
 use super::TreeRefreshRemapper;
 use crate::cmd::jj_tui::test_support::{TestNodeKind, make_tree};
-use crate::cmd::jj_tui::tree::{NeighborhoodState, ViewMode};
+use crate::cmd::jj_tui::tree::{NeighborhoodExtent, NeighborhoodState, ViewMode};
 
 #[test]
 fn restore_focus_stack_reapplies_focus_to_matching_change_ids() {
@@ -40,7 +40,7 @@ fn restore_neighborhood_keeps_anchor_and_history() {
     old_tree.set_view_mode(ViewMode::Neighborhood(NeighborhoodState {
         anchor_change_id: "b".to_string(),
         history: vec!["a".to_string()],
-        level: 2,
+        extent: NeighborhoodExtent::Local(2),
     }));
     let remapper = TreeRefreshRemapper::capture(&old_tree);
 
@@ -55,15 +55,55 @@ fn restore_neighborhood_keeps_anchor_and_history() {
         refreshed_tree.neighborhood_state().map(|state| (
             state.anchor_change_id.clone(),
             state.history.clone(),
-            state.level
+            state.extent.clone()
         )),
-        Some(("b".to_string(), vec!["a".to_string()], 2))
+        Some((
+            "b".to_string(),
+            vec!["a".to_string()],
+            NeighborhoodExtent::Local(2)
+        ))
     );
     assert_eq!(
         refreshed_tree
             .current_node()
             .map(|node| node.change_id.as_str()),
         Some("b")
+    );
+}
+
+#[test]
+fn restore_full_tree_neighborhood_keeps_full_tree_extent() {
+    let mut old_tree = make_tree(vec![
+        TestNodeKind::Plain.make_node("a", 0),
+        TestNodeKind::Plain.make_node("b", 1),
+        TestNodeKind::Plain.make_node("c", 2),
+    ]);
+    old_tree.view.cursor = 1;
+    old_tree.set_view_mode(ViewMode::Neighborhood(NeighborhoodState {
+        anchor_change_id: "b".to_string(),
+        history: vec!["a".to_string()],
+        extent: NeighborhoodExtent::FullTree,
+    }));
+    let remapper = TreeRefreshRemapper::capture(&old_tree);
+
+    let mut refreshed_tree = make_tree(vec![
+        TestNodeKind::Plain.make_node("a", 0),
+        TestNodeKind::Plain.make_node("b", 1),
+        TestNodeKind::Plain.make_node("c", 2),
+    ]);
+    remapper.restore(&mut refreshed_tree);
+
+    assert_eq!(
+        refreshed_tree.neighborhood_state().map(|state| (
+            state.anchor_change_id.clone(),
+            state.history.clone(),
+            state.extent.clone()
+        )),
+        Some((
+            "b".to_string(),
+            vec!["a".to_string()],
+            NeighborhoodExtent::FullTree
+        ))
     );
 }
 

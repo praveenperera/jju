@@ -19,7 +19,7 @@ impl TreeRefreshRemapper {
                         self.current_change_id.as_deref(),
                     ),
                     history: restored_history(tree, &state.history),
-                    level: state.level,
+                    extent: state.extent.clone(),
                 }))
             }
         }

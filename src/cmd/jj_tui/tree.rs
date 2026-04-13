@@ -12,9 +12,11 @@ use eyre::Result;
 
 pub use projection::TreeProjection;
 pub use topology::TreeTopology;
+#[cfg(test)]
+pub use types::NeighborhoodExtent;
 pub use types::{
-    BookmarkInfo, DivergentVersion, NeighborhoodEntry, NeighborhoodState, TreeLoadScope, TreeNode,
-    TreeSnapshot, TreeState, TreeViewState, ViewMode, VisibleEntry,
+    BookmarkInfo, DivergentVersion, NeighborhoodEntry, NeighborhoodResize, NeighborhoodState,
+    TreeLoadScope, TreeNode, TreeSnapshot, TreeState, TreeViewState, ViewMode, VisibleEntry,
 };
 
 impl TreeState {
@@ -119,6 +121,7 @@ impl TreeState {
             self.view.focus_stack.clear();
         }
         self.view.view_mode = view_mode;
+        self.sync_neighborhood_load_scope();
         self.recompute_projection();
     }
 }
