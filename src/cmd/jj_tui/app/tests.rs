@@ -1,4 +1,5 @@
-use super::{App, AppOptions, apply_startup_options};
+use super::startup::apply_startup_options;
+use super::{App, AppOptions};
 use crate::cmd::jj_tui::test_support::{TestNodeKind, make_app_with_tree, make_tree};
 use crate::cmd::jj_tui::tree::TreeLoadScope;
 

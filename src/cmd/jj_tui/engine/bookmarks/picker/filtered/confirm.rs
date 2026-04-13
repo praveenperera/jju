@@ -1,10 +1,9 @@
-use super::super::super::{Effect, ModeState, ReduceCtx};
-use crate::cmd::jj_tui::engine::bookmarks::helpers::{
-    bookmark_is_on_rev, is_bookmark_move_backwards,
-};
-use crate::cmd::jj_tui::state::{
-    BookmarkSelectAction, ConfirmAction, ConfirmState, MovingBookmarkState,
-};
+mod move_flow;
+
+use super::super::super::{ModeState, ReduceCtx};
+use crate::cmd::jj_tui::state::BookmarkSelectAction;
+
+struct BookmarkPickerConfirmer<'a, 'b>(&'a mut ReduceCtx<'b>);
 
 pub(super) fn confirm_bookmark_picker(ctx: &mut ReduceCtx<'_>) -> bool {
     let Some(state) = bookmark_picker_state(ctx) else {
@@ -19,27 +18,19 @@ pub(super) fn confirm_bookmark_picker(ctx: &mut ReduceCtx<'_>) -> bool {
     let action = state.action;
     let filter = state.filter.trim().to_string();
 
+    let mut confirmer = BookmarkPickerConfirmer(ctx);
+
     let Some(bookmark_name) = selected_bookmark else {
-        return create_new_bookmark(ctx, action, &filter, &target_rev);
+        return confirmer.create_new_bookmark(action, &filter, &target_rev);
     };
 
     match action {
         BookmarkSelectAction::Move => {
-            confirm_move_bookmark_picker(ctx, bookmark_name, target_rev);
+            confirmer.confirm_move_bookmark_picker(bookmark_name, target_rev)
         }
-        BookmarkSelectAction::Delete => {
-            ctx.effects.push(Effect::SaveOperationForUndo);
-            ctx.effects.push(Effect::RunBookmarkDelete {
-                name: bookmark_name,
-            });
-            ctx.effects.push(Effect::RefreshTree);
-            *ctx.mode = ModeState::Normal;
-        }
+        BookmarkSelectAction::Delete => confirmer.confirm_delete_bookmark_picker(bookmark_name),
         BookmarkSelectAction::CreatePR => {
-            ctx.effects.push(Effect::RunCreatePR {
-                bookmark: bookmark_name,
-            });
-            *ctx.mode = ModeState::Normal;
+            confirmer.confirm_create_pr_bookmark_picker(bookmark_name)
         }
     }
 
@@ -65,62 +56,54 @@ fn bookmark_picker_state<'a>(
     }
 }
 
-fn create_new_bookmark(
-    ctx: &mut ReduceCtx<'_>,
-    action: BookmarkSelectAction,
-    name: &str,
-    target_rev: &str,
-) -> bool {
-    if action != BookmarkSelectAction::Move || name.is_empty() {
-        return false;
+impl BookmarkPickerConfirmer<'_, '_> {
+    pub(super) fn create_new_bookmark(
+        &mut self,
+        action: BookmarkSelectAction,
+        name: &str,
+        target_rev: &str,
+    ) -> bool {
+        if action != BookmarkSelectAction::Move || name.is_empty() {
+            return false;
+        }
+
+        self.0
+            .effects
+            .push(crate::cmd::jj_tui::effect::Effect::SaveOperationForUndo);
+        self.0
+            .effects
+            .push(crate::cmd::jj_tui::effect::Effect::RunBookmarkSet {
+                name: name.to_string(),
+                rev: target_rev.to_string(),
+            });
+        self.0
+            .effects
+            .push(crate::cmd::jj_tui::effect::Effect::RefreshTree);
+        *self.0.mode = ModeState::Normal;
+        true
     }
 
-    ctx.effects.push(Effect::SaveOperationForUndo);
-    ctx.effects.push(Effect::RunBookmarkSet {
-        name: name.to_string(),
-        rev: target_rev.to_string(),
-    });
-    ctx.effects.push(Effect::RefreshTree);
-    *ctx.mode = ModeState::Normal;
-    true
-}
-
-fn confirm_move_bookmark_picker(
-    ctx: &mut ReduceCtx<'_>,
-    bookmark_name: String,
-    target_rev: String,
-) {
-    if bookmark_is_on_rev(ctx.tree, &bookmark_name, &target_rev) {
-        *ctx.mode = ModeState::MovingBookmark(MovingBookmarkState {
-            bookmark_name,
-            dest_cursor: ctx.tree.view.cursor,
-        });
-        ctx.effects.push(Effect::SaveOperationForUndo);
-        return;
+    pub(super) fn confirm_delete_bookmark_picker(&mut self, bookmark_name: String) {
+        self.0
+            .effects
+            .push(crate::cmd::jj_tui::effect::Effect::SaveOperationForUndo);
+        self.0
+            .effects
+            .push(crate::cmd::jj_tui::effect::Effect::RunBookmarkDelete {
+                name: bookmark_name,
+            });
+        self.0
+            .effects
+            .push(crate::cmd::jj_tui::effect::Effect::RefreshTree);
+        *self.0.mode = ModeState::Normal;
     }
 
-    if is_bookmark_move_backwards(ctx.tree, &bookmark_name, &target_rev) {
-        let short_dest = &target_rev[..8.min(target_rev.len())];
-        *ctx.mode = ModeState::Confirming(ConfirmState {
-            action: ConfirmAction::MoveBookmarkBackwards {
-                bookmark_name: bookmark_name.clone(),
-                dest_rev: target_rev.clone(),
-            },
-            message: format!(
-                "Move bookmark '{}' backwards to {}? (This moves the bookmark to an ancestor)",
-                bookmark_name, short_dest
-            ),
-            revs: vec![],
-        });
-        ctx.effects.push(Effect::SaveOperationForUndo);
-        return;
+    pub(super) fn confirm_create_pr_bookmark_picker(&mut self, bookmark_name: String) {
+        self.0
+            .effects
+            .push(crate::cmd::jj_tui::effect::Effect::RunCreatePR {
+                bookmark: bookmark_name,
+            });
+        *self.0.mode = ModeState::Normal;
     }
-
-    ctx.effects.push(Effect::SaveOperationForUndo);
-    ctx.effects.push(Effect::RunBookmarkSet {
-        name: bookmark_name,
-        rev: target_rev,
-    });
-    ctx.effects.push(Effect::RefreshTree);
-    *ctx.mode = ModeState::Normal;
 }

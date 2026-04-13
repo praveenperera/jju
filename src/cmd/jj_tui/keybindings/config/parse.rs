@@ -4,26 +4,8 @@ use eyre::{Result, bail, eyre};
 use ratatui::crossterm::event::KeyCode;
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct KeybindingsFile {
-    version: u32,
-    #[serde(default)]
-    binding: Vec<BindingOverrideToml>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct BindingOverrideToml {
-    mode: String,
-    command: String,
-    keys: Vec<Vec<String>>,
-}
-
 pub(super) fn parse_overrides(text: &str) -> Result<Vec<BindingOverride>> {
-    let file: KeybindingsFile =
-        toml::from_str(text).map_err(|error| eyre!("failed to parse keybindings TOML: {error}"))?;
-
+    let file = parse_keybindings_file(text)?;
     if file.version != 2 {
         bail!(
             "unsupported keybindings config version {}, expected 2",
@@ -46,15 +28,38 @@ fn parse_binding_override(binding: BindingOverrideToml) -> Result<BindingOverrid
         );
     }
 
+    let mode = parse_mode(&binding.mode)?;
+    let keys = binding
+        .keys
+        .into_iter()
+        .map(parse_sequence)
+        .collect::<Result<Vec<_>>>()?;
+
     Ok(BindingOverride {
-        mode: parse_mode(&binding.mode)?,
+        mode,
         command: binding.command,
-        keys: binding
-            .keys
-            .into_iter()
-            .map(parse_sequence)
-            .collect::<Result<Vec<_>>>()?,
+        keys,
     })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KeybindingsFile {
+    version: u32,
+    #[serde(default)]
+    binding: Vec<BindingOverrideToml>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BindingOverrideToml {
+    mode: String,
+    command: String,
+    keys: Vec<Vec<String>>,
+}
+
+fn parse_keybindings_file(text: &str) -> Result<KeybindingsFile> {
+    toml::from_str(text).map_err(|error| eyre!("failed to parse keybindings TOML: {error}"))
 }
 
 fn parse_mode(mode: &str) -> Result<ModeId> {
@@ -108,20 +113,24 @@ fn parse_key(token: &str) -> Result<KeyDef> {
         "Right" => Ok(KeyDef::Key(KeyCode::Right)),
         "Space" => Ok(KeyDef::Char(' ')),
         "AnyChar" => Ok(KeyDef::AnyChar),
-        _ if token.starts_with("Ctrl+") => {
-            let suffix = &token["Ctrl+".len()..];
-            let mut chars = suffix.chars();
-            match (chars.next(), chars.next()) {
-                (Some(ch), None) => Ok(KeyDef::Ctrl(ch.to_ascii_lowercase())),
-                _ => bail!("control bindings must target exactly one character, got `{token}`"),
-            }
-        }
-        _ => {
-            let mut chars = token.chars();
-            match (chars.next(), chars.next()) {
-                (Some(ch), None) => Ok(KeyDef::Char(ch)),
-                _ => bail!("unsupported key token `{token}`"),
-            }
-        }
+        _ if token.starts_with("Ctrl+") => parse_ctrl_key(token),
+        _ => parse_char_key(token),
+    }
+}
+
+fn parse_ctrl_key(token: &str) -> Result<KeyDef> {
+    let suffix = &token["Ctrl+".len()..];
+    let mut chars = suffix.chars();
+    match (chars.next(), chars.next()) {
+        (Some(ch), None) => Ok(KeyDef::Ctrl(ch.to_ascii_lowercase())),
+        _ => bail!("control bindings must target exactly one character, got `{token}`"),
+    }
+}
+
+fn parse_char_key(token: &str) -> Result<KeyDef> {
+    let mut chars = token.chars();
+    match (chars.next(), chars.next()) {
+        (Some(ch), None) => Ok(KeyDef::Char(ch)),
+        _ => bail!("unsupported key token `{token}`"),
     }
 }

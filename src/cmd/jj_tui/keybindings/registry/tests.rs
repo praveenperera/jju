@@ -1,6 +1,7 @@
 use super::build::{build_registry, load_registry_with_warning};
 use super::*;
 use std::fs;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static TEMP_CONFIG_COUNTER: AtomicU64 = AtomicU64::new(0);
