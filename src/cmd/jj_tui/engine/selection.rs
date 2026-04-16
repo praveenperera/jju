@@ -28,6 +28,15 @@ pub fn get_rev_at_cursor(tree: &TreeState, cursor: usize) -> Option<String> {
         .map(|entry| tree.nodes()[entry.node_index].change_id.clone())
 }
 
+pub fn selected_revs_in_visible_order(tree: &TreeState) -> Vec<String> {
+    tree.visible_entries()
+        .iter()
+        .enumerate()
+        .filter(|(index, _entry)| tree.view.selected.contains(index))
+        .map(|(_index, entry)| tree.nodes()[entry.node_index].change_id.clone())
+        .collect()
+}
+
 pub fn extend_selection_to_cursor(tree: &mut TreeState) {
     if let Some(anchor) = tree.view.selection_anchor {
         tree.view.selected.clear();

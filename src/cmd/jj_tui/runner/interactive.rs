@@ -47,8 +47,9 @@ pub(super) fn handle(
 
 fn handle_squash(ctx: &mut RunCtx<'_>, terminal: &mut DefaultTerminal, squash: SquashOperation) {
     ratatui::restore();
+    let source_revset = squash.source_revs.join(" | ");
     let status = Command::new("jj")
-        .args(["squash", "-f", &squash.source_rev, "-t", &squash.target_rev])
+        .args(["squash", "-f", &source_revset, "-t", &squash.target_rev])
         .status();
     *terminal = ratatui::init();
 

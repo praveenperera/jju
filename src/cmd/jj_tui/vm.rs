@@ -25,7 +25,7 @@ pub fn build_tree_view(app: &App, _viewport_width: usize) -> Vec<TreeRowVm> {
             builder.build_bookmark_move_view(&state.bookmark_name, state.dest_cursor)
         }
         ModeState::Squashing(state) => {
-            builder.build_squash_view(&state.source_rev, state.dest_cursor)
+            builder.build_squash_view(&state.source_revs, state.dest_cursor)
         }
         _ => builder.build_normal_view(),
     }
@@ -35,7 +35,7 @@ pub fn build_tree_view(app: &App, _viewport_width: usize) -> Vec<TreeRowVm> {
 mod tests {
     use super::*;
     use crate::cmd::jj_tui::preview::NodeRole;
-    use crate::cmd::jj_tui::state::{ModeState, RebaseState, RebaseType};
+    use crate::cmd::jj_tui::state::{ModeState, RebaseState, RebaseType, SquashState};
     use crate::cmd::jj_tui::test_support::{TestNodeKind, make_app_with_tree, make_tree};
     use crate::jj_lib_helpers::CommitDetails;
 
@@ -99,6 +99,51 @@ mod tests {
         assert_eq!(dest_vm.role, NodeRole::Destination);
         assert!(matches!(source_vm.marker, Some(Marker::Source)));
         assert!(matches!(dest_vm.marker, Some(Marker::Destination { .. })));
+    }
+
+    #[test]
+    fn test_build_squash_view_marks_all_sources() {
+        let tree = make_tree(vec![
+            TestNodeKind::Plain.make_node("aaaa", 0),
+            TestNodeKind::Plain.make_node("bbbb", 0),
+            TestNodeKind::Plain.make_node("cccc", 0),
+        ]);
+        let mut app = make_app_with_tree(tree);
+        app.mode = ModeState::Squashing(SquashState {
+            source_revs: vec!["bbbb".to_string(), "cccc".to_string()],
+            dest_cursor: 0,
+            op_before: String::new(),
+        });
+
+        let vms = build_tree_view(&app, 80);
+
+        let dest_vm = vms.iter().find(|vm| vm.change_id_prefix == "aaaa").unwrap();
+        let source_b = vms.iter().find(|vm| vm.change_id_prefix == "bbbb").unwrap();
+        let source_c = vms.iter().find(|vm| vm.change_id_prefix == "cccc").unwrap();
+
+        assert_eq!(dest_vm.role, NodeRole::Destination);
+        assert_eq!(source_b.role, NodeRole::Source);
+        assert_eq!(source_c.role, NodeRole::Source);
+    }
+
+    #[test]
+    fn test_build_squash_view_does_not_mark_selected_target_as_destination() {
+        let tree = make_tree(vec![
+            TestNodeKind::Plain.make_node("aaaa", 0),
+            TestNodeKind::Plain.make_node("bbbb", 0),
+        ]);
+        let mut app = make_app_with_tree(tree);
+        app.mode = ModeState::Squashing(SquashState {
+            source_revs: vec!["aaaa".to_string(), "bbbb".to_string()],
+            dest_cursor: 0,
+            op_before: String::new(),
+        });
+
+        let vms = build_tree_view(&app, 80);
+        let target_vm = vms.iter().find(|vm| vm.change_id_prefix == "aaaa").unwrap();
+
+        assert_eq!(target_vm.role, NodeRole::Source);
+        assert!(matches!(target_vm.marker, Some(Marker::Source)));
     }
 
     #[test]

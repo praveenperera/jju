@@ -1,9 +1,10 @@
 use super::*;
 use crate::cmd::jj_tui::state::{
-    BookmarkPickerState, BookmarkSelectAction, ClipboardBranchSelectState,
+    BookmarkPickerState, BookmarkSelectAction, ClipboardBranchSelectState, MessageKind, ModeState,
 };
 use crate::cmd::jj_tui::test_support::{TestNodeKind, make_tree};
 use crate::cmd::jj_tui::tree::{NeighborhoodExtent, TreeLoadScope};
+use jju_core::interactive::{InteractiveOperation, SquashOperation};
 
 struct TestState {
     tree: TreeState,
@@ -339,6 +340,141 @@ fn test_selection_mode_extends_on_move() {
     assert!(state.tree.view.selected.contains(&0));
     assert!(state.tree.view.selected.contains(&1));
     assert!(state.tree.view.selected.contains(&2));
+}
+
+#[test]
+fn test_enter_squash_mode_without_selection_uses_cursor_revision() {
+    let tree = make_tree(vec![
+        TestNodeKind::Plain.make_node("aaaa", 0),
+        TestNodeKind::Plain.make_node("bbbb", 1),
+        TestNodeKind::Plain.make_node("cccc", 2),
+    ]);
+    let mut state = TestState::new(tree);
+    state.tree.view.cursor = 2;
+
+    let effects = state.reduce(Action::EnterSquashMode);
+
+    assert!(
+        effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::SaveOperationForUndo))
+    );
+    assert!(matches!(
+        state.mode,
+        ModeState::Squashing(ref squash)
+            if squash.source_revs == vec!["cccc".to_string()] && squash.dest_cursor == 1
+    ));
+}
+
+#[test]
+fn test_enter_squash_mode_uses_selected_revisions_in_visible_order() {
+    let tree = make_tree(vec![
+        TestNodeKind::Plain.make_node("aaaa", 0),
+        TestNodeKind::Plain.make_node("bbbb", 0),
+        TestNodeKind::Plain.make_node("cccc", 0),
+        TestNodeKind::Plain.make_node("dddd", 0),
+    ]);
+    let mut state = TestState::new(tree);
+    state.tree.view.cursor = 3;
+    state.tree.view.selected.insert(3);
+    state.tree.view.selected.insert(1);
+
+    let effects = state.reduce(Action::EnterSquashMode);
+
+    assert!(
+        effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::SaveOperationForUndo))
+    );
+    assert!(matches!(
+        state.mode,
+        ModeState::Squashing(ref squash)
+            if squash.source_revs == vec!["bbbb".to_string(), "dddd".to_string()]
+                && squash.dest_cursor == 0
+    ));
+}
+
+#[test]
+fn test_enter_squash_mode_errors_when_every_visible_revision_is_selected() {
+    let tree = make_tree(vec![
+        TestNodeKind::Plain.make_node("aaaa", 0),
+        TestNodeKind::Plain.make_node("bbbb", 0),
+    ]);
+    let mut state = TestState::new(tree);
+    state.tree.view.selected.insert(0);
+    state.tree.view.selected.insert(1);
+
+    let effects = state.reduce(Action::EnterSquashMode);
+
+    assert!(matches!(state.mode, ModeState::Normal));
+    assert!(effects.iter().any(|effect| matches!(
+        effect,
+        Effect::SetStatus {
+            text,
+            kind: MessageKind::Error,
+        } if text == "No valid squash target"
+    )));
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::SaveOperationForUndo))
+    );
+}
+
+#[test]
+fn test_execute_squash_removes_selected_target_from_sources() {
+    let tree = make_tree(vec![
+        TestNodeKind::Plain.make_node("aaaa", 0),
+        TestNodeKind::Plain.make_node("bbbb", 0),
+        TestNodeKind::Plain.make_node("cccc", 0),
+    ]);
+    let mut state = TestState::new(tree);
+    state.mode = ModeState::Squashing(crate::cmd::jj_tui::state::SquashState {
+        source_revs: vec!["bbbb".to_string(), "cccc".to_string()],
+        dest_cursor: 1,
+        op_before: "before".to_string(),
+    });
+
+    let effects = state.reduce(Action::ExecuteSquash);
+
+    assert!(matches!(
+        effects.first(),
+        Some(Effect::RunInteractive(InteractiveOperation::Squash(SquashOperation {
+            source_revs,
+            target_rev,
+            op_before,
+        }))) if source_revs == &vec!["cccc".to_string()]
+            && target_rev == "bbbb"
+            && op_before == "before"
+    ));
+    assert!(matches!(state.mode, ModeState::Normal));
+}
+
+#[test]
+fn test_execute_squash_errors_when_target_removes_all_sources() {
+    let tree = make_tree(vec![TestNodeKind::Plain.make_node("aaaa", 0)]);
+    let mut state = TestState::new(tree);
+    state.mode = ModeState::Squashing(crate::cmd::jj_tui::state::SquashState {
+        source_revs: vec!["aaaa".to_string()],
+        dest_cursor: 0,
+        op_before: String::new(),
+    });
+
+    let effects = state.reduce(Action::ExecuteSquash);
+
+    assert!(effects.iter().any(|effect| matches!(
+        effect,
+        Effect::SetStatus {
+            text,
+            kind: MessageKind::Error,
+        } if text == "Select at least one source revision"
+    )));
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::RunInteractive(_)))
+    );
+    assert!(matches!(state.mode, ModeState::Squashing(_)));
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use super::super::selection::get_revs_for_action;
+use super::super::selection::{get_revs_for_action, selected_revs_in_visible_order};
 use super::{Effect, ReduceCtx};
 use crate::cmd::jj_tui::state::{
     ClipboardBranchOption, ClipboardBranchSelectState, MessageKind, ModeState,
@@ -125,11 +125,5 @@ fn selected_revs_in_order(ctx: &ReduceCtx<'_>) -> Vec<String> {
         return get_revs_for_action(ctx.tree);
     }
 
-    ctx.tree
-        .visible_entries()
-        .iter()
-        .enumerate()
-        .filter(|(index, _entry)| ctx.tree.view.selected.contains(index))
-        .map(|(_index, entry)| ctx.tree.nodes()[entry.node_index].change_id.clone())
-        .collect()
+    selected_revs_in_visible_order(ctx.tree)
 }

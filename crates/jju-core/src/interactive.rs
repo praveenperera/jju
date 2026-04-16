@@ -1,6 +1,6 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SquashOperation {
-    pub source_rev: String,
+    pub source_revs: Vec<String>,
     pub target_rev: String,
     pub op_before: String,
 }

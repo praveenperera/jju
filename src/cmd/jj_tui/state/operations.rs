@@ -20,7 +20,7 @@ pub struct ConflictsState {
 
 #[derive(Debug, Clone)]
 pub struct SquashState {
-    pub source_rev: String,
+    pub source_revs: Vec<String>,
     pub dest_cursor: usize,
     pub op_before: String,
 }
