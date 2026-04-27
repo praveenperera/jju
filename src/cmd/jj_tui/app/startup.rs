@@ -19,7 +19,7 @@ pub(super) fn new_app(options: AppOptions) -> Result<App> {
     apply_startup_options(&mut tree, options);
     let syntax_set = SyntaxSet::load_defaults_newlines();
     let theme_set = ThemeSet::load_defaults();
-    let mut app = App {
+    let app = App {
         tree,
         mode: ModeState::Normal,
         should_quit: false,
@@ -37,10 +37,8 @@ pub(super) fn new_app(options: AppOptions) -> Result<App> {
         syntax_set,
         theme_set,
         repo_path,
-        detail_hydrator: None,
-        detail_generation: 0,
+        row_data_loader: Default::default(),
     };
-    app.start_detail_hydration();
     info!("Initialized jj_tui in {:?}", startup_started_at.elapsed());
 
     Ok(app)

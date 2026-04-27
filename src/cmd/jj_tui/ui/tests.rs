@@ -48,8 +48,7 @@ fn test_split_view_renders_tree_and_diff_when_viewing_diff() {
         syntax_set: SyntaxSet::load_defaults_newlines(),
         theme_set: ThemeSet::load_defaults(),
         repo_path: std::env::current_dir().unwrap_or_default(),
-        detail_hydrator: None,
-        detail_generation: 0,
+        row_data_loader: Default::default(),
     };
 
     let backend = TestBackend::new(80, 20);
@@ -91,8 +90,7 @@ fn test_pane_plan_no_secondary_viewing_diff() {
         syntax_set: SyntaxSet::load_defaults_newlines(),
         theme_set: ThemeSet::load_defaults(),
         repo_path: std::env::current_dir().unwrap_or_default(),
-        detail_hydrator: None,
-        detail_generation: 0,
+        row_data_loader: Default::default(),
     };
 
     let plan = pane_plan(&app, false);
@@ -120,8 +118,7 @@ fn test_pane_plan_with_secondary_viewing_diff() {
         syntax_set: SyntaxSet::load_defaults_newlines(),
         theme_set: ThemeSet::load_defaults(),
         repo_path: std::env::current_dir().unwrap_or_default(),
-        detail_hydrator: None,
-        detail_generation: 0,
+        row_data_loader: Default::default(),
     };
 
     let plan = pane_plan(&app, true);
@@ -144,8 +141,7 @@ fn test_pane_plan_with_secondary_normal_mode() {
         syntax_set: SyntaxSet::load_defaults_newlines(),
         theme_set: ThemeSet::load_defaults(),
         repo_path: std::env::current_dir().unwrap_or_default(),
-        detail_hydrator: None,
-        detail_generation: 0,
+        row_data_loader: Default::default(),
     };
 
     let plan = pane_plan(&app, true);

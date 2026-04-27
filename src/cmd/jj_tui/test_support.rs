@@ -83,7 +83,6 @@ pub(crate) fn make_app_with_tree(tree: TreeState) -> App {
         syntax_set: SyntaxSet::load_defaults_newlines(),
         theme_set: ThemeSet::load_defaults(),
         repo_path: std::env::current_dir().unwrap_or_default(),
-        detail_hydrator: None,
-        detail_generation: 0,
+        row_data_loader: Default::default(),
     }
 }

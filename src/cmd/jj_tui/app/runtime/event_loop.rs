@@ -17,8 +17,8 @@ fn run_loop(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
         let viewport_height = size.height.saturating_sub(3) as usize;
         let viewport_width = size.width.saturating_sub(2) as usize;
 
-        app.apply_detail_updates();
-        app.ensure_expanded_row_data();
+        app.apply_row_data_updates();
+        app.schedule_current_row_data_load();
 
         let vms = vm::build_tree_view(app, viewport_width);
         let cursor_vm = vms.get(app.tree.view.cursor);

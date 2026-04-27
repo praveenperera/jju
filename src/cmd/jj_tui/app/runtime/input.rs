@@ -63,7 +63,7 @@ impl App {
         self.transition_neighborhood_mode(&old_mode);
 
         if result.tree_refreshed {
-            self.start_detail_hydration();
+            self.reset_row_data_loader();
         }
 
         if let Some((text, kind)) = result.status_message {

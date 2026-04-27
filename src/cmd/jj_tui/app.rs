@@ -4,8 +4,8 @@
 //! Key handling is delegated to the controller, business logic to the engine,
 //! and IO operations to the runner
 
-mod details;
-mod diff_stats;
+mod replaceable_task;
+mod row_data;
 mod runtime;
 mod startup;
 #[cfg(test)]
@@ -13,7 +13,7 @@ mod tests;
 
 use super::state::{DiffStats, ModeState, StatusMessage};
 use super::tree::TreeState;
-use crate::cmd::jj_tui::app::details::DetailHydrator;
+use crate::cmd::jj_tui::app::row_data::RowDataLoader;
 use eyre::Result;
 use std::path::PathBuf;
 use syntect::highlighting::ThemeSet;
@@ -36,8 +36,7 @@ pub struct App {
     pub(crate) syntax_set: SyntaxSet,
     pub(crate) theme_set: ThemeSet,
     pub(crate) repo_path: PathBuf,
-    pub(crate) detail_hydrator: Option<DetailHydrator>,
-    pub(crate) detail_generation: u64,
+    pub(crate) row_data_loader: RowDataLoader,
 }
 
 impl App {
