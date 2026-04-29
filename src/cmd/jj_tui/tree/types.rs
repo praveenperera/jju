@@ -28,6 +28,7 @@ pub struct TreeNode {
     pub description: String,
     pub bookmarks: Vec<BookmarkInfo>,
     pub is_working_copy: bool,
+    pub is_empty: bool,
     pub has_conflicts: bool,
     pub is_divergent: bool,
     pub divergent_versions: Vec<DivergentVersion>, // all versions if divergent

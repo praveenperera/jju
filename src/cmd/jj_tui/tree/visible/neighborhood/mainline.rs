@@ -21,10 +21,7 @@ pub(super) fn mainline_path(
     mainline.push(anchor_index);
 
     let mut current = anchor_index;
-    loop {
-        let [child_index] = topology.children_of(current) else {
-            break;
-        };
+    while let [child_index] = topology.children_of(current) {
         mainline.push(*child_index);
         current = *child_index;
     }

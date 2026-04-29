@@ -70,4 +70,13 @@ impl JjRepo {
     pub fn has_conflict(commit: &Commit) -> bool {
         commit.has_conflict()
     }
+
+    pub fn commit_is_empty(&self, commit: &Commit) -> Result<bool> {
+        commit.is_empty(self.repo.as_ref()).wrap_err_with(|| {
+            format!(
+                "failed to determine if commit {} is empty",
+                commit.id().hex()
+            )
+        })
+    }
 }

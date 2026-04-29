@@ -1,4 +1,5 @@
 use super::super::preview::NodeRole;
+use super::super::state::DiffStats;
 use super::super::tree::{BookmarkInfo, TreeNode};
 use super::details::{RowDetails, row_height};
 
@@ -17,6 +18,7 @@ pub struct TreeRowVm {
     pub change_id_suffix: String,
     pub bookmarks: Vec<BookmarkInfo>,
     pub description: String,
+    pub inline_badge: Option<InlineRowBadge>,
     pub is_neighborhood_preview: bool,
     pub neighborhood_hidden_count: usize,
     pub marker: Option<Marker>,
@@ -33,6 +35,12 @@ pub enum Marker {
     Bookmark,
 }
 
+#[derive(Debug, Clone)]
+pub enum InlineRowBadge {
+    EmptyRevision,
+    DiffStats(DiffStats),
+}
+
 pub(super) struct RowVmBuilder<'a> {
     visual_depth: usize,
     node: &'a TreeNode,
@@ -44,6 +52,7 @@ pub(super) struct RowVmBuilder<'a> {
     is_neighborhood_preview: bool,
     neighborhood_hidden_count: usize,
     marker: Option<Marker>,
+    inline_diff_stats: Option<DiffStats>,
     details: Option<RowDetails>,
     has_separator_before: bool,
 }
@@ -61,6 +70,7 @@ impl<'a> RowVmBuilder<'a> {
             is_neighborhood_preview: false,
             neighborhood_hidden_count: 0,
             marker: None,
+            inline_diff_stats: None,
             details: None,
             has_separator_before: false,
         }
@@ -102,6 +112,11 @@ impl<'a> RowVmBuilder<'a> {
         self
     }
 
+    pub(super) fn inline_diff_stats(mut self, inline_diff_stats: Option<DiffStats>) -> Self {
+        self.inline_diff_stats = inline_diff_stats;
+        self
+    }
+
     pub(super) fn details(mut self, details: Option<RowDetails>) -> Self {
         self.details = details;
         self
@@ -126,6 +141,10 @@ impl<'a> RowVmBuilder<'a> {
         } else {
             self.node.description.clone()
         };
+        let inline_badge = self
+            .inline_diff_stats
+            .map(InlineRowBadge::DiffStats)
+            .or_else(|| self.node.is_empty.then_some(InlineRowBadge::EmptyRevision));
 
         TreeRowVm {
             visual_depth: self.visual_depth,
@@ -141,6 +160,7 @@ impl<'a> RowVmBuilder<'a> {
             change_id_suffix: suffix.to_string(),
             bookmarks: self.node.bookmarks.clone(),
             description,
+            inline_badge,
             is_neighborhood_preview: self.is_neighborhood_preview,
             neighborhood_hidden_count: self.neighborhood_hidden_count,
             marker: self.marker,

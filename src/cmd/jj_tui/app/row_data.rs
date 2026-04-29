@@ -5,6 +5,7 @@ use crate::cmd::jj_tui::state::DiffStats;
 use crate::jj_lib_helpers::{CommitDetails, JjRepo};
 use eyre::{Result, bail};
 use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{Sender, TryRecvError};
 use std::time::{Duration, Instant};
@@ -172,7 +173,7 @@ fn load_row_data(
     token: CancellationToken,
     sender: Sender<RowDataUpdate>,
     generation: u64,
-    repo_path: std::path::PathBuf,
+    repo_path: PathBuf,
     request: RowDataRequest,
 ) {
     let details = if request.load_details {
@@ -186,7 +187,7 @@ fn load_row_data(
     }
 
     let stats = if request.load_stats {
-        fetch_diff_stats(&token, &request.change_id).ok()
+        fetch_diff_stats(&token, &repo_path, &request.change_id).ok()
     } else {
         None
     };
@@ -206,7 +207,7 @@ fn load_row_data(
 
 fn load_details(
     token: &CancellationToken,
-    repo_path: &std::path::Path,
+    repo_path: &Path,
     commit_id: &str,
 ) -> Option<CommitDetails> {
     if token.is_cancelled() {
@@ -230,17 +231,21 @@ fn load_details(
         .ok()
 }
 
-fn fetch_diff_stats(token: &CancellationToken, change_id: &str) -> Result<DiffStats> {
-    let output = capture_cancellable_diff_stats(token, change_id)?;
+fn fetch_diff_stats(
+    token: &CancellationToken,
+    repo_path: &Path,
+    change_id: &str,
+) -> Result<DiffStats> {
+    let output = capture_cancellable_diff_stats(token, repo_path, change_id)?;
     Ok(handlers::diff::parse_diff_stats(&output))
 }
 
-fn capture_cancellable_diff_stats(token: &CancellationToken, change_id: &str) -> Result<String> {
-    let mut child = Command::new("jj")
-        .args(["diff", "--stat", "-r", change_id])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()?;
+fn capture_cancellable_diff_stats(
+    token: &CancellationToken,
+    repo_path: &Path,
+    change_id: &str,
+) -> Result<String> {
+    let mut child = diff_stats_command(repo_path, change_id).spawn()?;
 
     let started_at = Instant::now();
 
@@ -272,6 +277,16 @@ fn capture_cancellable_diff_stats(token: &CancellationToken, change_id: &str) ->
 
         std::thread::sleep(CHILD_POLL_INTERVAL);
     }
+}
+
+fn diff_stats_command(repo_path: &Path, change_id: &str) -> Command {
+    let mut command = Command::new("jj");
+    command
+        .current_dir(repo_path)
+        .args(["diff", "--stat", "-r", change_id])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    command
 }
 
 #[cfg(test)]
@@ -380,5 +395,20 @@ mod tests {
             app.row_data_loader,
             super::RowDataLoader::Pending { .. }
         ));
+    }
+
+    #[test]
+    fn diff_stats_command_uses_repo_path() {
+        let repo_path = std::path::Path::new("/tmp/jju-row-data-test");
+        let command = super::diff_stats_command(repo_path, "abcd");
+
+        assert_eq!(command.get_current_dir(), Some(repo_path));
+        assert_eq!(
+            command
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            ["diff", "--stat", "-r", "abcd"]
+        );
     }
 }

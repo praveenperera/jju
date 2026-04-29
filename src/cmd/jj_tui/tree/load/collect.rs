@@ -47,6 +47,7 @@ pub(super) fn collect_tree_inputs(
             &mut parent_display_cache,
         )?;
         let is_working_copy = change_id == working_copy_id;
+        let is_empty = jj_repo.commit_is_empty(commit)?;
         let is_divergent = divergent_commit_ids.contains_key(&full_change_id);
         let divergent_versions = divergent_versions_for_commit(
             &divergent_commit_ids,
@@ -65,6 +66,7 @@ pub(super) fn collect_tree_inputs(
                 .map(|(name, is_diverged)| BookmarkInfo { name, is_diverged })
                 .collect(),
             is_working_copy,
+            is_empty,
             has_conflicts: JjRepo::has_conflict(commit),
             is_divergent,
             divergent_versions,

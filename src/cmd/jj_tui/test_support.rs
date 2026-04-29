@@ -33,6 +33,7 @@ impl TestNodeKind<'_> {
             description: String::new(),
             bookmarks,
             is_working_copy: false,
+            is_empty: false,
             has_conflicts: false,
             is_divergent: false,
             divergent_versions: vec![],

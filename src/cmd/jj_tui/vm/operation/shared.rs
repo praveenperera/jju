@@ -20,6 +20,11 @@ impl OperationViewBuilder<'_> {
                 let node = self.app.tree.get_node(entry);
                 let is_cursor = visible_idx == cursor_idx;
                 let is_this_expanded = self.app.tree.is_expanded(visible_idx);
+                let inline_diff_stats = if is_cursor || node.is_working_copy {
+                    self.app.diff_stats_cache.get(&node.change_id).cloned()
+                } else {
+                    None
+                };
                 let details = is_this_expanded.then(|| {
                     build_row_details(node, self.app.diff_stats_cache.get(&node.change_id))
                 });
@@ -39,6 +44,7 @@ impl OperationViewBuilder<'_> {
                             .unwrap_or_default(),
                     )
                     .marker(marker)
+                    .inline_diff_stats(inline_diff_stats)
                     .details(details)
                     .separator_before(entry.has_separator_before)
                     .build()

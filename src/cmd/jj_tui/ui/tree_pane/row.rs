@@ -1,7 +1,7 @@
 use super::bookmarks::format_bookmarks_truncated;
 use crate::cmd::jj_tui::preview::NodeRole;
 use crate::cmd::jj_tui::theme;
-use crate::cmd::jj_tui::vm::{Marker, TreeRowVm};
+use crate::cmd::jj_tui::vm::{InlineRowBadge, Marker, TreeRowVm};
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
@@ -29,6 +29,7 @@ pub(super) fn render_row(vm: &TreeRowVm) -> Line<'static> {
         ));
     }
 
+    spans.extend(inline_badge_spans(vm));
     spans.push(Span::styled(
         format!("  {}", vm.description),
         Style::default().fg(Color::Reset),
@@ -46,6 +47,28 @@ pub(super) fn render_row(vm: &TreeRowVm) -> Line<'static> {
     }
 
     apply_row_style(vm, is_source, Line::from(spans))
+}
+
+fn inline_badge_spans(vm: &TreeRowVm) -> Vec<Span<'static>> {
+    match vm.inline_badge.as_ref() {
+        Some(InlineRowBadge::DiffStats(stats)) => vec![
+            Span::raw("  "),
+            Span::styled(
+                format!("+{}", stats.insertions),
+                Style::default().fg(Color::Green),
+            ),
+            Span::raw(" "),
+            Span::styled(
+                format!("-{}", stats.deletions),
+                Style::default().fg(Color::Red),
+            ),
+        ],
+        Some(InlineRowBadge::EmptyRevision) => vec![
+            Span::raw("  "),
+            Span::styled("∅", Style::default().fg(Color::Yellow)),
+        ],
+        None => Vec::new(),
+    }
 }
 
 fn prefix_fragment(vm: &TreeRowVm) -> Span<'static> {
@@ -139,5 +162,85 @@ fn apply_row_style(vm: &TreeRowVm, is_source: bool, line: Line<'static>) -> Line
         line.style(Style::default().add_modifier(Modifier::DIM))
     } else {
         line
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_row;
+    use crate::cmd::jj_tui::state::DiffStats;
+    use crate::cmd::jj_tui::vm::{InlineRowBadge, TreeRowVm};
+
+    fn row_text(vm: &TreeRowVm) -> String {
+        render_row(vm)
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    fn make_vm() -> TreeRowVm {
+        TreeRowVm {
+            visual_depth: 0,
+            role: crate::cmd::jj_tui::preview::NodeRole::Normal,
+            is_cursor: false,
+            is_selected: false,
+            is_dimmed: false,
+            is_zoom_root: false,
+            is_working_copy: false,
+            has_conflicts: false,
+            is_divergent: false,
+            change_id_prefix: "abcd".to_string(),
+            change_id_suffix: String::new(),
+            bookmarks: vec![],
+            description: "desc".to_string(),
+            inline_badge: None,
+            is_neighborhood_preview: false,
+            neighborhood_hidden_count: 0,
+            marker: None,
+            details: None,
+            height: 1,
+            has_separator_before: false,
+        }
+    }
+
+    #[test]
+    fn renders_empty_marker_for_empty_revision() {
+        let mut vm = make_vm();
+        vm.inline_badge = Some(InlineRowBadge::EmptyRevision);
+
+        let row = row_text(&vm);
+
+        assert!(row.contains("∅"));
+    }
+
+    #[test]
+    fn renders_inline_diff_stats_for_working_copy_or_cursor_rows() {
+        let mut vm = make_vm();
+        vm.inline_badge = Some(InlineRowBadge::DiffStats(DiffStats {
+            files_changed: 1,
+            insertions: 3,
+            deletions: 2,
+        }));
+
+        let row = row_text(&vm);
+
+        assert!(row.contains("+3 -2"));
+    }
+
+    #[test]
+    fn suppresses_empty_marker_when_inline_diff_stats_are_shown() {
+        let mut vm = make_vm();
+        vm.inline_badge = Some(InlineRowBadge::DiffStats(DiffStats {
+            files_changed: 0,
+            insertions: 0,
+            deletions: 0,
+        }));
+
+        let row = row_text(&vm);
+
+        assert!(row.contains("+0 -0"));
+        assert!(!row.contains("∅"));
     }
 }

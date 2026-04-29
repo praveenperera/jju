@@ -6,7 +6,7 @@ mod row;
 
 pub use self::details::RowDetails;
 use self::operation::OperationViewBuilder;
-pub use self::row::{Marker, TreeRowVm};
+pub use self::row::{InlineRowBadge, Marker, TreeRowVm};
 use super::app::App;
 use super::state::ModeState;
 
